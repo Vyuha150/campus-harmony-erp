@@ -31,6 +31,20 @@ interface MenuItem {
   roles?: UserRole[];
 }
 
+// Student-specific menu items
+const studentMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'profile', label: 'My Profile', icon: Users, path: '/student/profile' },
+  { id: 'courses', label: 'My Courses', icon: BookOpen, path: '/student/courses' },
+  { id: 'assignments', label: 'Assignments', icon: ClipboardList, path: '/student/assignments' },
+  { id: 'attendance', label: 'Attendance', icon: Calendar, path: '/student/attendance' },
+  { id: 'examinations', label: 'Examinations', icon: GraduationCap, path: '/student/examinations' },
+  { id: 'fees', label: 'Fees & Payments', icon: Wallet, path: '/student/fees' },
+  { id: 'library', label: 'Library', icon: Library, path: '/student/library' },
+  { id: 'placements', label: 'Placements', icon: Briefcase, path: '/student/placements' },
+  { id: 'grievances', label: 'Grievances', icon: MessageSquare, path: '/student/grievances' },
+];
+
 const menuItems: MenuItem[] = [
   {
     id: 'dashboard',
@@ -135,10 +149,13 @@ export function Sidebar() {
 
   const isActiveRoute = (path: string) => location.pathname.startsWith(path);
 
-  const filteredMenuItems = menuItems.filter(item => {
-    if (!item.roles) return true;
-    return item.roles.includes(user.role);
-  });
+  // Use student menu for student role, otherwise filter regular menu
+  const filteredMenuItems = user.role === 'student' 
+    ? studentMenuItems 
+    : menuItems.filter(item => {
+        if (!item.roles) return true;
+        return item.roles.includes(user.role);
+      });
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
