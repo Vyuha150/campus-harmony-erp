@@ -5,7 +5,8 @@ import {
   BookOpen, Calendar, Wallet, FileBarChart, Settings,
   Building2, Award, Briefcase, MessageSquare, Library,
   ChevronDown, ChevronRight, LogOut, Bell, Search,
-  Menu, X, Shield, Trophy, Users2, ShieldCheck
+  Menu, X, Shield, Trophy, Users2, ShieldCheck,
+  BarChart3, Package, FileText, Megaphone
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
