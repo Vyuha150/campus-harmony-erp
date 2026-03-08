@@ -21,6 +21,7 @@ const routeLabels: Record<string, string> = {
   dashboard: 'Dashboard',
   student: 'Student Portal',
   faculty: 'Faculty Portal',
+  hod: 'HOD Portal',
   profile: 'Profile',
   courses: 'Courses',
   assignments: 'Assignments',
@@ -31,7 +32,7 @@ const routeLabels: Record<string, string> = {
   placements: 'Placements',
   grievances: 'Grievances',
   academics: 'Academics',
-  students: 'Students',
+  students: 'Student Academics',
   finance: 'Finance',
   research: 'Research',
   settings: 'Settings',
@@ -40,6 +41,10 @@ const routeLabels: Record<string, string> = {
   mentoring: 'Mentoring',
   committees: 'Committees',
   communication: 'Communication',
+  workload: 'Workload & Timetable',
+  results: 'Results Analysis',
+  accreditation: 'Accreditation Data',
+  inventory: 'Lab & Inventory',
 };
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
