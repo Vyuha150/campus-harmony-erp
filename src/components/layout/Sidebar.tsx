@@ -31,6 +31,21 @@ interface MenuItem {
   roles?: UserRole[];
 }
 
+// Faculty-specific menu items
+const facultyMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'profile', label: 'Profile & Service', icon: Users, path: '/faculty/profile' },
+  { id: 'courses', label: 'My Courses', icon: BookOpen, path: '/faculty/courses' },
+  { id: 'attendance', label: 'Attendance', icon: ClipboardList, path: '/faculty/attendance' },
+  { id: 'assignments', label: 'Assignments', icon: ClipboardList, path: '/faculty/assignments' },
+  { id: 'marks', label: 'Gradebook', icon: ClipboardList, path: '/faculty/marks' },
+  { id: 'mentoring', label: 'Mentoring', icon: Users, path: '/faculty/mentoring' },
+  { id: 'research', label: 'Research', icon: Award, path: '/faculty/research' },
+  { id: 'committees', label: 'Committees', icon: Building2, path: '/faculty/committees' },
+  { id: 'grievances', label: 'Grievances & Feedback', icon: MessageSquare, path: '/faculty/grievances' },
+  { id: 'communication', label: 'Communication', icon: MessageSquare, path: '/faculty/communication' },
+];
+
 // Student-specific menu items
 const studentMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
