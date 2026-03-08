@@ -36,6 +36,17 @@ import FacultyCommittees from "./components/faculty/FacultyCommittees";
 import FacultyGrievancesFeedback from "./components/faculty/FacultyGrievances";
 import FacultyCommunication from "./components/faculty/FacultyCommunication";
 
+// HOD Portal Pages
+import HODDashboard from "./components/hod/HODDashboard";
+import HODFacultyManagement from "./components/hod/HODFacultyManagement";
+import HODWorkload from "./components/hod/HODWorkload";
+import HODStudentAcademics from "./components/hod/HODStudentAcademics";
+import HODResultsAnalysis from "./components/hod/HODResultsAnalysis";
+import HODAccreditation from "./components/hod/HODAccreditation";
+import HODInventory from "./components/hod/HODInventory";
+import HODGrievances from "./components/hod/HODGrievances";
+import HODCommunication from "./components/hod/HODCommunication";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
@@ -61,7 +72,7 @@ function AppRoutes() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : <Dashboard />}
+            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -86,6 +97,15 @@ function AppRoutes() {
       <Route path="/faculty/committees" element={<ProtectedRoute><FacultyCommittees /></ProtectedRoute>} />
       <Route path="/faculty/grievances" element={<ProtectedRoute><FacultyGrievancesFeedback /></ProtectedRoute>} />
       <Route path="/faculty/communication" element={<ProtectedRoute><FacultyCommunication /></ProtectedRoute>} />
+      {/* HOD Portal Routes */}
+      <Route path="/hod/faculty" element={<ProtectedRoute><HODFacultyManagement /></ProtectedRoute>} />
+      <Route path="/hod/workload" element={<ProtectedRoute><HODWorkload /></ProtectedRoute>} />
+      <Route path="/hod/students" element={<ProtectedRoute><HODStudentAcademics /></ProtectedRoute>} />
+      <Route path="/hod/results" element={<ProtectedRoute><HODResultsAnalysis /></ProtectedRoute>} />
+      <Route path="/hod/accreditation" element={<ProtectedRoute><HODAccreditation /></ProtectedRoute>} />
+      <Route path="/hod/inventory" element={<ProtectedRoute><HODInventory /></ProtectedRoute>} />
+      <Route path="/hod/grievances" element={<ProtectedRoute><HODGrievances /></ProtectedRoute>} />
+      <Route path="/hod/communication" element={<ProtectedRoute><HODCommunication /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

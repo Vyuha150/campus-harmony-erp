@@ -5,7 +5,8 @@ import {
   BookOpen, Calendar, Wallet, FileBarChart, Settings,
   Building2, Award, Briefcase, MessageSquare, Library,
   ChevronDown, ChevronRight, LogOut, Bell, Search,
-  Menu, X, Shield, Trophy, Users2, ShieldCheck
+  Menu, X, Shield, Trophy, Users2, ShieldCheck,
+  BarChart3, Package, FileText, Megaphone
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -44,6 +45,19 @@ const facultyMenuItems: MenuItem[] = [
   { id: 'committees', label: 'Committees', icon: Building2, path: '/faculty/committees' },
   { id: 'grievances', label: 'Grievances & Feedback', icon: MessageSquare, path: '/faculty/grievances' },
   { id: 'communication', label: 'Communication', icon: MessageSquare, path: '/faculty/communication' },
+];
+
+// HOD-specific menu items
+const hodMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'faculty', label: 'Faculty Management', icon: Users, path: '/hod/faculty' },
+  { id: 'workload', label: 'Workload & Timetable', icon: Calendar, path: '/hod/workload' },
+  { id: 'students', label: 'Student Academics', icon: GraduationCap, path: '/hod/students' },
+  { id: 'results', label: 'Results Analysis', icon: BarChart3, path: '/hod/results' },
+  { id: 'accreditation', label: 'Accreditation Data', icon: FileText, path: '/hod/accreditation' },
+  { id: 'inventory', label: 'Lab & Inventory', icon: Package, path: '/hod/inventory' },
+  { id: 'grievances', label: 'Grievances', icon: MessageSquare, path: '/hod/grievances' },
+  { id: 'communication', label: 'Communication', icon: Megaphone, path: '/hod/communication' },
 ];
 
 // Student-specific menu items
@@ -169,6 +183,8 @@ export function Sidebar() {
     ? studentMenuItems 
     : user.role === 'faculty'
     ? facultyMenuItems
+    : user.role === 'hod'
+    ? hodMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);
