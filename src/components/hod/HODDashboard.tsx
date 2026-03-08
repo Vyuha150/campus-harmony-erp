@@ -2,25 +2,34 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Users, GraduationCap, BookOpen, AlertTriangle, Calendar,
   CheckCircle, XCircle, Clock, ArrowRight, Bell, TrendingUp,
-  FileText, ShoppingCart, UserX, Megaphone, BarChart3
+  FileText, ShoppingCart, UserX, Megaphone, BarChart3, Forward
 } from 'lucide-react';
-import { departmentFaculty, departmentStudents, hodApprovals, departmentCalendar } from '@/data/hodMockData';
+import { departmentFaculty, departmentStudents, hodApprovals as initialApprovals, departmentCalendar } from '@/data/hodMockData';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { HODApprovalItem } from '@/types/hod';
 
 export default function HODDashboard() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [approvals, setApprovals] = useState<HODApprovalItem[]>(initialApprovals);
+  const [selectedApproval, setSelectedApproval] = useState<HODApprovalItem | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [showDetailDialog, setShowDetailDialog] = useState(false);
 
   const permanentFaculty = departmentFaculty.filter(f => f.type === 'permanent').length;
   const adjunctFaculty = departmentFaculty.filter(f => f.type !== 'permanent').length;
   const totalStudents = departmentStudents.length;
   const onLeaveFaculty = departmentFaculty.filter(f => f.isOnLeave).length;
   const atRiskStudents = departmentStudents.filter(s => s.cgpa < 6 || s.attendance < 65).length;
-  const pendingApprovals = hodApprovals.filter(a => a.status === 'pending').length;
+  const pendingApprovals = approvals.filter(a => a.status === 'pending').length;
 
   const studentsByYear = [1, 2, 3, 4].map(y => ({
     year: y,
@@ -37,6 +46,26 @@ export default function HODDashboard() {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 5);
 
+  const handleApprove = (item: HODApprovalItem) => {
+    setApprovals(prev => prev.map(a => a.id === item.id ? { ...a, status: 'approved' } : a));
+    toast({ title: '✅ Approved', description: item.title });
+  };
+
+  const handleReject = () => {
+    if (selectedApproval) {
+      setApprovals(prev => prev.map(a => a.id === selectedApproval.id ? { ...a, status: 'rejected' } : a));
+      toast({ title: '❌ Rejected', description: `${selectedApproval.title}${rejectReason ? ` — Reason: ${rejectReason}` : ''}` });
+      setShowRejectDialog(false);
+      setRejectReason('');
+      setSelectedApproval(null);
+    }
+  };
+
+  const handleForward = (item: HODApprovalItem) => {
+    setApprovals(prev => prev.map(a => a.id === item.id ? { ...a, status: 'forwarded' } : a));
+    toast({ title: '📤 Forwarded to Dean', description: item.title });
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -50,12 +79,12 @@ export default function HODDashboard() {
         {/* Department Overview Stats */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: 'Faculty (Permanent)', value: permanentFaculty, sub: `+${adjunctFaculty} adjunct/visiting`, icon: Users, color: 'text-blue-600 bg-blue-100' },
-            { label: 'Total Students', value: totalStudents, sub: studentsByYear.map(s => `Y${s.year}: ${s.count}`).join(' | '), icon: GraduationCap, color: 'text-green-600 bg-green-100' },
-            { label: 'Pending Approvals', value: pendingApprovals, sub: 'Requires your action', icon: Bell, color: 'text-amber-600 bg-amber-100' },
-            { label: 'At-Risk Students', value: atRiskStudents, sub: 'Low CGPA or attendance', icon: AlertTriangle, color: 'text-destructive bg-destructive/10' },
+            { label: 'Faculty (Permanent)', value: permanentFaculty, sub: `+${adjunctFaculty} adjunct/visiting`, icon: Users, color: 'text-blue-600 bg-blue-100', path: '/hod/faculty' },
+            { label: 'Total Students', value: totalStudents, sub: studentsByYear.map(s => `Y${s.year}: ${s.count}`).join(' | '), icon: GraduationCap, color: 'text-green-600 bg-green-100', path: '/hod/students' },
+            { label: 'Pending Approvals', value: pendingApprovals, sub: 'Requires your action', icon: Bell, color: 'text-amber-600 bg-amber-100', path: '' },
+            { label: 'At-Risk Students', value: atRiskStudents, sub: 'Low CGPA or attendance', icon: AlertTriangle, color: 'text-destructive bg-destructive/10', path: '/hod/students' },
           ].map((stat) => (
-            <Card key={stat.label} className="border-border">
+            <Card key={stat.label} className="border-border cursor-pointer hover:shadow-md transition-shadow" onClick={() => stat.path && navigate(stat.path)}>
               <CardContent className="flex items-center gap-4 p-5">
                 <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${stat.color}`}>
                   <stat.icon className="h-6 w-6" />
@@ -77,41 +106,71 @@ export default function HODDashboard() {
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Bell className="h-5 w-5 text-amber-500" />
-                  Pending Approvals
+                  Pending Approvals ({pendingApprovals})
                 </CardTitle>
-                <Button variant="outline" size="sm" onClick={() => navigate('/hod/approvals')}>
-                  View All <ArrowRight className="ml-1 h-4 w-4" />
-                </Button>
+                {approvals.filter(a => a.status !== 'pending').length > 0 && (
+                  <Badge variant="outline" className="text-[10px]">
+                    {approvals.filter(a => a.status === 'approved').length} approved, {approvals.filter(a => a.status === 'rejected').length} rejected
+                  </Badge>
+                )}
               </CardHeader>
               <CardContent className="space-y-3">
-                {hodApprovals.filter(a => a.status === 'pending').slice(0, 5).map((item) => {
-                  const Icon = approvalIcons[item.type] || FileText;
-                  return (
-                    <div key={item.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                        <Icon className="h-4 w-4 text-muted-foreground" />
+                {approvals.filter(a => a.status === 'pending').length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle className="h-10 w-10 mx-auto mb-2 text-green-500" />
+                    <p className="font-medium">All caught up!</p>
+                    <p className="text-sm">No pending approvals</p>
+                  </div>
+                ) : (
+                  approvals.filter(a => a.status === 'pending').slice(0, 6).map((item) => {
+                    const Icon = approvalIcons[item.type] || FileText;
+                    return (
+                      <div key={item.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted cursor-pointer"
+                          onClick={() => { setSelectedApproval(item); setShowDetailDialog(true); }}>
+                          <Icon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { setSelectedApproval(item); setShowDetailDialog(true); }}>
+                          <p className="text-sm font-medium text-foreground">{item.title}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-1">{item.details}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">By {item.requestedBy} • {item.requestedAt}</p>
+                        </div>
+                        <div className="flex shrink-0 gap-1.5">
+                          <Badge variant={item.priority === 'high' ? 'destructive' : item.priority === 'medium' ? 'secondary' : 'outline'} className="text-[10px] capitalize">
+                            {item.priority}
+                          </Badge>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-100"
+                            onClick={() => handleApprove(item)}>
+                            <CheckCircle className="h-4 w-4" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                            onClick={() => { setSelectedApproval(item); setShowRejectDialog(true); }}>
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-600 hover:bg-blue-100"
+                            onClick={() => handleForward(item)}>
+                            <Forward className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground">{item.title}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-1">{item.details}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">By {item.requestedBy} • {item.requestedAt}</p>
+                    );
+                  })
+                )}
+                {/* Show recently processed */}
+                {approvals.filter(a => a.status !== 'pending').length > 0 && (
+                  <div className="pt-2 border-t border-border space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Recently Processed</p>
+                    {approvals.filter(a => a.status !== 'pending').map(item => (
+                      <div key={item.id} className="flex items-center gap-2 text-sm">
+                        {item.status === 'approved' && <CheckCircle className="h-3.5 w-3.5 text-green-600" />}
+                        {item.status === 'rejected' && <XCircle className="h-3.5 w-3.5 text-destructive" />}
+                        {item.status === 'forwarded' && <Forward className="h-3.5 w-3.5 text-blue-600" />}
+                        <span className="text-muted-foreground line-through">{item.title}</span>
+                        <Badge variant={item.status === 'approved' ? 'default' : item.status === 'forwarded' ? 'secondary' : 'destructive'} className="text-[10px] capitalize ml-auto">{item.status}</Badge>
                       </div>
-                      <div className="flex shrink-0 gap-1.5">
-                        <Badge variant={item.priority === 'high' ? 'destructive' : item.priority === 'medium' ? 'secondary' : 'outline'} className="text-[10px] capitalize">
-                          {item.priority}
-                        </Badge>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-100"
-                          onClick={() => toast({ title: 'Approved', description: item.title })}>
-                          <CheckCircle className="h-4 w-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                          onClick={() => toast({ title: 'Rejected', description: item.title })}>
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -224,6 +283,59 @@ export default function HODDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Reject Reason Dialog */}
+      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject: {selectedApproval?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">{selectedApproval?.details}</p>
+            <div>
+              <label className="text-sm font-medium">Reason for Rejection (optional)</label>
+              <Textarea placeholder="Enter reason..." value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowRejectDialog(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleReject}>
+                <XCircle className="mr-1 h-4 w-4" />Confirm Rejection
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approval Detail Dialog */}
+      <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedApproval?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Badge variant={selectedApproval?.priority === 'high' ? 'destructive' : 'secondary'} className="capitalize">{selectedApproval?.priority}</Badge>
+              <Badge variant="outline" className="capitalize">{selectedApproval?.type?.replace('_', ' ')}</Badge>
+            </div>
+            <div className="text-sm space-y-2">
+              <p><span className="text-muted-foreground">Requested by:</span> {selectedApproval?.requestedBy}</p>
+              <p><span className="text-muted-foreground">Date:</span> {selectedApproval?.requestedAt}</p>
+              <p><span className="text-muted-foreground">Details:</span> {selectedApproval?.details}</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { handleForward(selectedApproval!); setShowDetailDialog(false); }}>
+                <Forward className="mr-1 h-4 w-4" />Forward to Dean
+              </Button>
+              <Button variant="destructive" onClick={() => { setShowDetailDialog(false); setShowRejectDialog(true); }}>
+                <XCircle className="mr-1 h-4 w-4" />Reject
+              </Button>
+              <Button onClick={() => { handleApprove(selectedApproval!); setShowDetailDialog(false); }}>
+                <CheckCircle className="mr-1 h-4 w-4" />Approve
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

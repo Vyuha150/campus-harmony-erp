@@ -4,52 +4,112 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Users, Search, Mail, Phone, BookOpen, Award, UserCheck,
-  UserX, Edit, Eye, MoreHorizontal
+  UserX, Edit, Eye, MoreHorizontal, Plus, Send, Clock
 } from 'lucide-react';
-import { departmentFaculty } from '@/data/hodMockData';
+import { departmentFaculty as initialFaculty } from '@/data/hodMockData';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { DepartmentFaculty } from '@/types/hod';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+
+const availableRoles = [
+  'Class Coordinator', 'Lab In-charge', 'Exam Coordinator', 'NSS Coordinator',
+  'Placement Coordinator', 'Mentoring Coordinator', 'Club Advisor',
+  'NAAC Criterion Lead', 'IQAC Member', 'BoS Member', 'PhD Guide',
+];
 
 export default function HODFacultyManagement() {
   const [search, setSearch] = useState('');
   const [selectedFaculty, setSelectedFaculty] = useState<string | null>(null);
+  const [faculty, setFaculty] = useState<DepartmentFaculty[]>(initialFaculty);
+  const [showRoleDialog, setShowRoleDialog] = useState(false);
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [showPromoDialog, setShowPromoDialog] = useState(false);
+  const [roleTarget, setRoleTarget] = useState<DepartmentFaculty | null>(null);
+  const [newRole, setNewRole] = useState('');
+  const [promoReason, setPromoReason] = useState('');
   const { toast } = useToast();
 
-  const filtered = departmentFaculty.filter(f =>
+  const filtered = faculty.filter(f =>
     f.name.toLowerCase().includes(search.toLowerCase()) ||
     f.specialization.toLowerCase().includes(search.toLowerCase())
   );
 
-  const faculty = departmentFaculty.find(f => f.id === selectedFaculty);
+  const currentFaculty = faculty.find(f => f.id === selectedFaculty);
 
-  if (faculty) {
+  const handleAssignRole = () => {
+    if (roleTarget && newRole) {
+      setFaculty(prev => prev.map(f =>
+        f.id === roleTarget.id ? { ...f, roles: [...f.roles, newRole] } : f
+      ));
+      toast({ title: 'Role Assigned', description: `"${newRole}" assigned to ${roleTarget.name}` });
+      setShowRoleDialog(false);
+      setNewRole('');
+    }
+  };
+
+  const handleRemoveRole = (fId: string, role: string) => {
+    setFaculty(prev => prev.map(f =>
+      f.id === fId ? { ...f, roles: f.roles.filter(r => r !== role) } : f
+    ));
+    toast({ title: 'Role Removed', description: `"${role}" removed` });
+  };
+
+  const handleApproveLeave = (f: DepartmentFaculty) => {
+    setFaculty(prev => prev.map(fac =>
+      fac.id === f.id ? { ...fac, isOnLeave: true, leaveType: 'Approved Leave' } : fac
+    ));
+    toast({ title: 'Leave Approved', description: `Leave approved for ${f.name}` });
+    setShowLeaveDialog(false);
+  };
+
+  const handleRejectLeave = (f: DepartmentFaculty) => {
+    setFaculty(prev => prev.map(fac =>
+      fac.id === f.id ? { ...fac, isOnLeave: false, leaveType: undefined } : fac
+    ));
+    toast({ title: 'Leave Rejected', description: `Leave rejected for ${f.name}` });
+    setShowLeaveDialog(false);
+  };
+
+  const handlePromote = () => {
+    if (roleTarget) {
+      toast({ title: '📤 Promotion Recommended', description: `Recommendation for ${roleTarget.name} forwarded to Dean. Reason: ${promoReason || 'N/A'}` });
+      setShowPromoDialog(false);
+      setPromoReason('');
+    }
+  };
+
+  if (currentFaculty) {
     return (
       <DashboardLayout>
         <div className="space-y-6">
           <Button variant="ghost" size="sm" onClick={() => setSelectedFaculty(null)}>← Back to Faculty List</Button>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">{faculty.name}</h1>
-              <p className="text-muted-foreground">{faculty.employeeId} • {faculty.designation} • {faculty.specialization}</p>
+              <h1 className="text-2xl font-bold text-foreground">{currentFaculty.name}</h1>
+              <p className="text-muted-foreground">{currentFaculty.employeeId} • {currentFaculty.designation} • {currentFaculty.specialization}</p>
             </div>
-            <Badge variant={faculty.isOnLeave ? 'destructive' : 'default'}>{faculty.isOnLeave ? 'On Leave' : 'Active'}</Badge>
+            <Badge variant={currentFaculty.isOnLeave ? 'destructive' : 'default'}>{currentFaculty.isOnLeave ? `On Leave (${currentFaculty.leaveType})` : 'Active'}</Badge>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-4">
             {[
-              { label: 'Courses', value: faculty.coursesAssigned },
-              { label: 'Weekly Hours', value: `${faculty.weeklyHours}h` },
-              { label: 'Publications', value: faculty.publications },
-              { label: 'Type', value: faculty.type.charAt(0).toUpperCase() + faculty.type.slice(1) },
+              { label: 'Courses', value: currentFaculty.coursesAssigned },
+              { label: 'Weekly Hours', value: `${currentFaculty.weeklyHours}h` },
+              { label: 'Publications', value: currentFaculty.publications },
+              { label: 'Type', value: currentFaculty.type.charAt(0).toUpperCase() + currentFaculty.type.slice(1) },
             ].map(s => (
               <Card key={s.label} className="border-border">
                 <CardContent className="p-4 text-center">
@@ -62,31 +122,114 @@ export default function HODFacultyManagement() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <p className="text-sm flex items-center gap-2"><Mail className="h-4 w-4 text-muted-foreground" />{faculty.email}</p>
-              <p className="text-sm flex items-center gap-2"><Phone className="h-4 w-4 text-muted-foreground" />{faculty.phone}</p>
-              <p className="text-sm"><span className="text-muted-foreground">Qualification:</span> {faculty.qualification}</p>
-              <p className="text-sm"><span className="text-muted-foreground">Joined:</span> {faculty.dateOfJoining}</p>
+              <p className="text-sm flex items-center gap-2"><Mail className="h-4 w-4 text-muted-foreground" />{currentFaculty.email}</p>
+              <p className="text-sm flex items-center gap-2"><Phone className="h-4 w-4 text-muted-foreground" />{currentFaculty.phone}</p>
+              <p className="text-sm"><span className="text-muted-foreground">Qualification:</span> {currentFaculty.qualification}</p>
+              <p className="text-sm"><span className="text-muted-foreground">Joined:</span> {currentFaculty.dateOfJoining}</p>
             </div>
             <Card className="border-border">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Assigned Roles</CardTitle></CardHeader>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">Assigned Roles</CardTitle>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setRoleTarget(currentFaculty); setShowRoleDialog(true); }}>
+                    <Plus className="mr-1 h-3 w-3" />Add Role
+                  </Button>
+                </div>
+              </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
-                {faculty.roles.length === 0
+                {currentFaculty.roles.length === 0
                   ? <p className="text-sm text-muted-foreground">No special roles assigned</p>
-                  : faculty.roles.map((role, i) => <Badge key={i} variant="secondary">{role}</Badge>)
+                  : currentFaculty.roles.map((role, i) => (
+                    <Badge key={i} variant="secondary" className="cursor-pointer hover:bg-destructive/20" onClick={() => handleRemoveRole(currentFaculty.id, role)}>
+                      {role} ×
+                    </Badge>
+                  ))
                 }
               </CardContent>
             </Card>
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => toast({ title: 'Role Updated' })}>
+            <Button variant="outline" onClick={() => { setRoleTarget(currentFaculty); setShowRoleDialog(true); }}>
               <Edit className="mr-1 h-4 w-4" />Assign Role
             </Button>
-            <Button variant="outline" onClick={() => toast({ title: 'Recommendation Submitted' })}>
+            <Button variant="outline" onClick={() => { setRoleTarget(currentFaculty); setShowPromoDialog(true); }}>
               <Award className="mr-1 h-4 w-4" />Recommend for Promotion
+            </Button>
+            <Button variant="outline" onClick={() => { setRoleTarget(currentFaculty); setShowLeaveDialog(true); }}>
+              <Clock className="mr-1 h-4 w-4" />Manage Leave
+            </Button>
+            <Button variant="outline" onClick={() => toast({ title: 'Email Sent', description: `Message sent to ${currentFaculty.email}` })}>
+              <Send className="mr-1 h-4 w-4" />Send Message
             </Button>
           </div>
         </div>
+
+        {/* Role Dialog */}
+        <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Assign Role to {roleTarget?.name}</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Select Role</Label>
+                <Select value={newRole} onValueChange={setNewRole}>
+                  <SelectTrigger><SelectValue placeholder="Choose a role..." /></SelectTrigger>
+                  <SelectContent>
+                    {availableRoles.filter(r => !roleTarget?.roles.includes(r)).map(r => (
+                      <SelectItem key={r} value={r}>{r}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowRoleDialog(false)}>Cancel</Button>
+                <Button onClick={handleAssignRole} disabled={!newRole}>Assign Role</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Leave Dialog */}
+        <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Manage Leave – {roleTarget?.name}</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Current Status: {roleTarget?.isOnLeave ? `On Leave (${roleTarget.leaveType})` : 'Active'}
+              </p>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={() => roleTarget && handleApproveLeave(roleTarget)}>
+                  <UserCheck className="mr-1 h-4 w-4" />Approve Leave
+                </Button>
+                <Button variant="destructive" className="flex-1" onClick={() => roleTarget && handleRejectLeave(roleTarget)}>
+                  <UserX className="mr-1 h-4 w-4" />Reject / Cancel Leave
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Promotion Dialog */}
+        <Dialog open={showPromoDialog} onOpenChange={setShowPromoDialog}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Recommend {roleTarget?.name} for Promotion</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Current: {roleTarget?.designation} • Publications: {roleTarget?.publications} • Experience since {roleTarget?.dateOfJoining}
+              </p>
+              <div>
+                <Label>Justification / Remarks</Label>
+                <Textarea placeholder="Reason for recommendation..." value={promoReason} onChange={e => setPromoReason(e.target.value)} rows={3} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowPromoDialog(false)}>Cancel</Button>
+                <Button onClick={handlePromote}>
+                  <Award className="mr-1 h-4 w-4" />Submit Recommendation
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DashboardLayout>
     );
   }
@@ -100,8 +243,11 @@ export default function HODFacultyManagement() {
             <p className="text-muted-foreground">Manage all faculty members in the department</p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline">{departmentFaculty.filter(f => f.type === 'permanent').length} Permanent</Badge>
-            <Badge variant="secondary">{departmentFaculty.filter(f => f.type !== 'permanent').length} Adjunct/Visiting</Badge>
+            <Badge variant="outline">{faculty.filter(f => f.type === 'permanent').length} Permanent</Badge>
+            <Badge variant="secondary">{faculty.filter(f => f.type !== 'permanent').length} Adjunct/Visiting</Badge>
+            <Badge variant={faculty.some(f => f.isOnLeave) ? 'destructive' : 'default'}>
+              {faculty.filter(f => f.isOnLeave).length} On Leave
+            </Badge>
           </div>
         </div>
 
@@ -159,11 +305,15 @@ export default function HODFacultyManagement() {
                           <DropdownMenuItem onClick={() => setSelectedFaculty(f.id)}>
                             <Eye className="mr-2 h-4 w-4" />View Profile
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast({ title: 'Leave Approved' })}>
-                            Approve Leave
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRoleTarget(f); setShowRoleDialog(true); }}>
+                            <Edit className="mr-2 h-4 w-4" />Assign Role
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast({ title: 'Role Assigned' })}>
-                            Assign Role
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRoleTarget(f); setShowLeaveDialog(true); }}>
+                            <Clock className="mr-2 h-4 w-4" />Manage Leave
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRoleTarget(f); setShowPromoDialog(true); }}>
+                            <Award className="mr-2 h-4 w-4" />Recommend Promotion
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -175,6 +325,57 @@ export default function HODFacultyManagement() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Role Dialog */}
+      <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Assign Role to {roleTarget?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <Select value={newRole} onValueChange={setNewRole}>
+              <SelectTrigger><SelectValue placeholder="Choose a role..." /></SelectTrigger>
+              <SelectContent>
+                {availableRoles.filter(r => !roleTarget?.roles.includes(r)).map(r => (
+                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowRoleDialog(false)}>Cancel</Button>
+              <Button onClick={handleAssignRole} disabled={!newRole}>Assign</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Leave Dialog */}
+      <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Manage Leave – {roleTarget?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Status: {roleTarget?.isOnLeave ? `On Leave (${roleTarget.leaveType})` : 'Active'}
+            </p>
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={() => roleTarget && handleApproveLeave(roleTarget)}>Approve Leave</Button>
+              <Button variant="destructive" className="flex-1" onClick={() => roleTarget && handleRejectLeave(roleTarget)}>Reject Leave</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Promotion Dialog */}
+      <Dialog open={showPromoDialog} onOpenChange={setShowPromoDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Recommend {roleTarget?.name} for Promotion</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <Textarea placeholder="Justification..." value={promoReason} onChange={e => setPromoReason(e.target.value)} rows={3} />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowPromoDialog(false)}>Cancel</Button>
+              <Button onClick={handlePromote}>Submit Recommendation</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

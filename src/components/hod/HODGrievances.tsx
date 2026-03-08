@@ -5,35 +5,48 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
   AlertTriangle, MessageSquare, Shield, FileWarning, CheckCircle,
-  Clock, Send, Eye
+  Clock, Send, Forward, XCircle
 } from 'lucide-react';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
-const grievances = [
+interface Grievance {
+  id: string;
+  type: 'student_complaint' | 'faculty_complaint' | 'disciplinary';
+  subject: string;
+  description: string;
+  filedBy: string;
+  filedAt: string;
+  status: 'new' | 'under_review' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high';
+  category: string;
+  response?: string;
+}
+
+const initialGrievances: Grievance[] = [
   {
-    id: 'hg-1', type: 'student_complaint' as const, subject: 'Lab 3 Systems Non-functional',
+    id: 'hg-1', type: 'student_complaint', subject: 'Lab 3 Systems Non-functional',
     description: 'Multiple systems in Computer Lab 3 are not working. Students unable to complete database practicals on time.',
-    filedBy: 'Anonymous Student', filedAt: '2026-03-03', status: 'new' as const,
-    priority: 'high' as const, category: 'facility',
+    filedBy: 'Anonymous Student', filedAt: '2026-03-03', status: 'new',
+    priority: 'high', category: 'facility',
   },
   {
-    id: 'hg-2', type: 'faculty_complaint' as const, subject: 'Unfair Grading Allegation – CS201',
+    id: 'hg-2', type: 'faculty_complaint', subject: 'Unfair Grading Allegation – CS201',
     description: 'A group of students allege that internal marks in CS201 were awarded inconsistently. Request HOD review.',
-    filedBy: '3 Students (Sec A, 2nd Year)', filedAt: '2026-02-28', status: 'under_review' as const,
-    priority: 'medium' as const, category: 'academic',
+    filedBy: '3 Students (Sec A, 2nd Year)', filedAt: '2026-02-28', status: 'under_review',
+    priority: 'medium', category: 'academic',
   },
   {
-    id: 'hg-3', type: 'disciplinary' as const, subject: 'Malpractice in Quiz – Jay Singh',
+    id: 'hg-3', type: 'disciplinary', subject: 'Malpractice in Quiz – Jay Singh',
     description: 'Invigilator reported suspicious behavior during CS401 quiz. Answer script shows copied responses.',
-    filedBy: 'Dr. Rahul Deshmukh', filedAt: '2026-02-25', status: 'under_review' as const,
-    priority: 'high' as const, category: 'disciplinary',
+    filedBy: 'Dr. Rahul Deshmukh', filedAt: '2026-02-25', status: 'under_review',
+    priority: 'high', category: 'disciplinary',
   },
   {
-    id: 'hg-4', type: 'student_complaint' as const, subject: 'Classroom Projector Malfunction',
+    id: 'hg-4', type: 'student_complaint', subject: 'Classroom Projector Malfunction',
     description: 'LH-301 projector has been non-functional for 2 weeks. Faculty using whiteboards as alternative.',
-    filedBy: 'Class Rep – 3rd Year A', filedAt: '2026-02-20', status: 'resolved' as const,
-    priority: 'low' as const, category: 'facility',
+    filedBy: 'Class Rep – 3rd Year A', filedAt: '2026-02-20', status: 'resolved',
+    priority: 'low', category: 'facility',
   },
 ];
 
@@ -51,10 +64,44 @@ const statusColors: Record<string, string> = {
 };
 
 export default function HODGrievances() {
+  const [grievances, setGrievances] = useState<Grievance[]>(initialGrievances);
   const [selected, setSelected] = useState<string | null>(null);
+  const [response, setResponse] = useState('');
   const { toast } = useToast();
 
   const item = grievances.find(g => g.id === selected);
+
+  const handleSubmitResponse = () => {
+    if (item && response) {
+      setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'resolved', response } : g));
+      toast({ title: '✅ Response Submitted', description: `Grievance "${item.subject}" resolved` });
+      setResponse('');
+      setSelected(null);
+    }
+  };
+
+  const handleIssueWarning = () => {
+    if (item) {
+      setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'resolved' } : g));
+      toast({ title: '⚠️ Warning Issued', description: `Disciplinary warning recorded for "${item.subject}"` });
+      setSelected(null);
+    }
+  };
+
+  const handleForwardToDean = () => {
+    if (item) {
+      setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'under_review' } : g));
+      toast({ title: '📤 Forwarded to Dean', description: `"${item.subject}" escalated to Dean for review` });
+      setSelected(null);
+    }
+  };
+
+  const handleMarkUnderReview = () => {
+    if (item) {
+      setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'under_review' } : g));
+      toast({ title: 'Status Updated', description: 'Marked as Under Review' });
+    }
+  };
 
   if (item) {
     const Icon = typeIcons[item.type] || MessageSquare;
@@ -83,23 +130,37 @@ export default function HODGrievances() {
             <CardContent><p className="text-sm text-muted-foreground">{item.description}</p></CardContent>
           </Card>
 
-          <Card className="border-border">
-            <CardHeader className="pb-2"><CardTitle className="text-sm">HOD Response / Action</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <Textarea placeholder="Enter your response or action taken..." rows={4} />
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => toast({ title: 'Warning Issued', description: 'Disciplinary warning recorded.' })}>
-                  <FileWarning className="mr-1 h-4 w-4" />Issue Warning
-                </Button>
-                <Button variant="outline" onClick={() => toast({ title: 'Escalated', description: 'Forwarded to Dean for review.' })}>
-                  Forward to Dean
-                </Button>
-                <Button onClick={() => { toast({ title: 'Response Submitted' }); setSelected(null); }}>
-                  <Send className="mr-1 h-4 w-4" />Submit Response
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {item.response && (
+            <Card className="border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20">
+              <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CheckCircle className="h-4 w-4 text-green-600" />HOD Response</CardTitle></CardHeader>
+              <CardContent><p className="text-sm">{item.response}</p></CardContent>
+            </Card>
+          )}
+
+          {item.status !== 'resolved' && item.status !== 'closed' && (
+            <Card className="border-border">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">HOD Response / Action</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {item.status === 'new' && (
+                  <Button variant="outline" size="sm" onClick={handleMarkUnderReview}>
+                    <Clock className="mr-1 h-4 w-4" />Mark as Under Review
+                  </Button>
+                )}
+                <Textarea placeholder="Enter your response or action taken..." rows={4} value={response} onChange={e => setResponse(e.target.value)} />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={handleIssueWarning}>
+                    <FileWarning className="mr-1 h-4 w-4" />Issue Warning
+                  </Button>
+                  <Button variant="outline" onClick={handleForwardToDean}>
+                    <Forward className="mr-1 h-4 w-4" />Forward to Dean
+                  </Button>
+                  <Button onClick={handleSubmitResponse} disabled={!response}>
+                    <Send className="mr-1 h-4 w-4" />Submit & Resolve
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </DashboardLayout>
     );
