@@ -4,15 +4,44 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import {
-  BarChart3, Download, TrendingUp, TrendingDown, AlertTriangle, Award
+  BarChart3, Download, TrendingUp, TrendingDown, AlertTriangle, Award, CheckCircle, FileText, Send
 } from 'lucide-react';
 import { courseResults } from '@/data/hodMockData';
+import { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { CourseResult } from '@/types/hod';
 
 export default function HODResultsAnalysis() {
+  const { toast } = useToast();
+  const [verifiedCourses, setVerifiedCourses] = useState<string[]>([]);
+  const [showRemedialDialog, setShowRemedialDialog] = useState(false);
+  const [showGradeDialog, setShowGradeDialog] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState<CourseResult | null>(null);
+  const [remedialNote, setRemedialNote] = useState('');
+
   const overallPass = Math.round(courseResults.reduce((s, c) => s + c.passPercentage, 0) / courseResults.length * 10) / 10;
   const overallAvg = Math.round(courseResults.reduce((s, c) => s + c.avgScore, 0) / courseResults.length * 10) / 10;
   const totalFailed = courseResults.reduce((s, c) => s + c.failed, 0);
+
+  const handleVerify = (code: string) => {
+    setVerifiedCourses(prev => [...prev, code]);
+    toast({ title: '✅ Results Verified', description: `${code} results verified and locked by HOD` });
+  };
+
+  const handleDownload = () => {
+    toast({ title: '📥 Report Downloaded', description: 'Department results analysis report exported as PDF' });
+  };
+
+  const handleArrangeRemedial = () => {
+    if (selectedCourse) {
+      toast({ title: '📋 Remedial Class Scheduled', description: `Remedial for ${selectedCourse.courseCode} – ${selectedCourse.courseName}. ${remedialNote || 'No additional notes.'}` });
+      setShowRemedialDialog(false);
+      setRemedialNote('');
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -22,9 +51,15 @@ export default function HODResultsAnalysis() {
             <h1 className="text-2xl font-bold text-foreground">Department Results Analysis</h1>
             <p className="text-muted-foreground">Semester-wise performance analysis • Even Semester 2025-26</p>
           </div>
-          <Button variant="outline" size="sm">
-            <Download className="mr-1 h-4 w-4" />Download Report
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => toast({ title: 'All Results Verified', description: 'Forwarded to CoE for publication' })}
+              disabled={verifiedCourses.length < courseResults.length}>
+              <Send className="mr-1 h-4 w-4" />Forward to CoE
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleDownload}>
+              <Download className="mr-1 h-4 w-4" />Download Report
+            </Button>
+          </div>
         </div>
 
         {/* Summary */}
@@ -33,7 +68,7 @@ export default function HODResultsAnalysis() {
             { label: 'Overall Pass %', value: `${overallPass}%`, icon: TrendingUp, color: 'text-green-600 bg-green-100' },
             { label: 'Average Score', value: overallAvg, icon: BarChart3, color: 'text-blue-600 bg-blue-100' },
             { label: 'Total Failures', value: totalFailed, icon: TrendingDown, color: 'text-destructive bg-destructive/10' },
-            { label: 'Courses Analyzed', value: courseResults.length, icon: Award, color: 'text-primary bg-primary/10' },
+            { label: 'Verified', value: `${verifiedCourses.length}/${courseResults.length}`, icon: CheckCircle, color: 'text-primary bg-primary/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
               <CardContent className="flex items-center gap-3 p-4">
@@ -66,6 +101,7 @@ export default function HODResultsAnalysis() {
                   <TableHead className="text-center">Pass %</TableHead>
                   <TableHead className="text-center">Avg Score</TableHead>
                   <TableHead className="text-center">Highest</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -89,6 +125,20 @@ export default function HODResultsAnalysis() {
                     </TableCell>
                     <TableCell className="text-center">{c.avgScore}</TableCell>
                     <TableCell className="text-center font-bold text-green-600">{c.highestScore}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {verifiedCourses.includes(c.courseCode) ? (
+                          <Badge variant="default" className="text-[10px]"><CheckCircle className="mr-1 h-3 w-3" />Verified</Badge>
+                        ) : (
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleVerify(c.courseCode)}>
+                            Verify & Lock
+                          </Button>
+                        )}
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setSelectedCourse(c); setShowGradeDialog(true); }}>
+                          <Eye className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -101,7 +151,10 @@ export default function HODResultsAnalysis() {
           {courseResults.map(c => (
             <Card key={c.courseCode} className="border-border">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{c.courseCode} – Grade Distribution</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">{c.courseCode} – Grade Distribution</CardTitle>
+                  {verifiedCourses.includes(c.courseCode) && <CheckCircle className="h-4 w-4 text-green-600" />}
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-1.5">
@@ -133,7 +186,9 @@ export default function HODResultsAnalysis() {
                   <span className="text-foreground">{c.courseCode} – {c.courseName}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{c.failed} students failed</span>
-                    <Button size="sm" variant="outline" className="h-7 text-xs">Arrange Remedial</Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setSelectedCourse(c); setShowRemedialDialog(true); }}>
+                      Arrange Remedial
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -141,6 +196,64 @@ export default function HODResultsAnalysis() {
           </Card>
         )}
       </div>
+
+      {/* Remedial Dialog */}
+      <Dialog open={showRemedialDialog} onOpenChange={setShowRemedialDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Arrange Remedial – {selectedCourse?.courseCode}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="text-sm space-y-1">
+              <p><span className="text-muted-foreground">Course:</span> {selectedCourse?.courseName}</p>
+              <p><span className="text-muted-foreground">Faculty:</span> {selectedCourse?.faculty}</p>
+              <p><span className="text-muted-foreground">Failed:</span> <span className="text-destructive font-bold">{selectedCourse?.failed} students</span></p>
+            </div>
+            <Textarea placeholder="Additional instructions for remedial class..." value={remedialNote} onChange={e => setRemedialNote(e.target.value)} rows={3} />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowRemedialDialog(false)}>Cancel</Button>
+              <Button onClick={handleArrangeRemedial}>
+                <FileText className="mr-1 h-4 w-4" />Schedule Remedial
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grade Detail Dialog */}
+      <Dialog open={showGradeDialog} onOpenChange={setShowGradeDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{selectedCourse?.courseCode} – Detailed Analysis</DialogTitle></DialogHeader>
+          {selectedCourse && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-muted-foreground">Course:</span> {selectedCourse.courseName}</div>
+                <div><span className="text-muted-foreground">Faculty:</span> {selectedCourse.faculty}</div>
+                <div><span className="text-muted-foreground">Pass %:</span> <span className="font-bold">{selectedCourse.passPercentage}%</span></div>
+                <div><span className="text-muted-foreground">Avg Score:</span> {selectedCourse.avgScore}</div>
+                <div><span className="text-muted-foreground">Highest:</span> {selectedCourse.highestScore}</div>
+                <div><span className="text-muted-foreground">Total:</span> {selectedCourse.totalStudents}</div>
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium">Grade Distribution</p>
+                {selectedCourse.gradeDistribution.map(g => (
+                  <div key={g.grade} className="flex items-center gap-2">
+                    <span className="w-8 text-xs font-medium">{g.grade}</span>
+                    <Progress value={(g.count / selectedCourse.totalStudents) * 100} className="flex-1 h-2" />
+                    <span className="w-10 text-xs text-right">{g.count} ({Math.round(g.count / selectedCourse.totalStudents * 100)}%)</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
+  );
+}
+
+function Eye(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
+    </svg>
   );
 }
