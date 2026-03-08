@@ -1,26 +1,47 @@
+import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
   Users, GraduationCap, Building2, Bell, TrendingUp, TrendingDown,
   AlertTriangle, CheckCircle, XCircle, ArrowRight, BarChart3,
   Award, Calendar, Briefcase, Target, Minus
 } from 'lucide-react';
-import { departmentSummaries, deanApprovals, qualityMetrics } from '@/data/deanMockData';
+import { departmentSummaries as initialDepts, deanApprovals as initialApprovals, qualityMetrics } from '@/data/deanMockData';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { DeanApproval } from '@/types/dean';
 
 export default function DeanDashboard() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [approvals, setApprovals] = useState<DeanApproval[]>(initialApprovals);
+  const [rejectDialog, setRejectDialog] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
-  const totalStudents = departmentSummaries.reduce((s, d) => s + d.totalStudents, 0);
-  const totalFaculty = departmentSummaries.reduce((s, d) => s + d.totalFaculty, 0);
-  const totalVacancies = departmentSummaries.reduce((s, d) => s + d.vacancies, 0);
-  const avgPass = Math.round(departmentSummaries.reduce((s, d) => s + d.avgPassPercentage, 0) / departmentSummaries.length * 10) / 10;
-  const pendingApprovals = deanApprovals.filter(a => a.status === 'pending').length;
+  const totalStudents = initialDepts.reduce((s, d) => s + d.totalStudents, 0);
+  const totalFaculty = initialDepts.reduce((s, d) => s + d.totalFaculty, 0);
+  const totalVacancies = initialDepts.reduce((s, d) => s + d.vacancies, 0);
+  const avgPass = Math.round(initialDepts.reduce((s, d) => s + d.avgPassPercentage, 0) / initialDepts.length * 10) / 10;
+  const pendingApprovals = approvals.filter(a => a.status === 'pending');
+
+  const handleApprove = (id: string) => {
+    const item = approvals.find(a => a.id === id);
+    setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'approved' } : a));
+    toast({ title: 'Approved', description: item?.title });
+  };
+
+  const handleReject = (id: string) => {
+    const item = approvals.find(a => a.id === id);
+    setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'rejected' } : a));
+    toast({ title: 'Rejected', description: `${item?.title} – ${rejectReason || 'No reason provided'}` });
+    setRejectDialog(null);
+    setRejectReason('');
+  };
 
   const trendIcon = (t: string) => t === 'up' ? <TrendingUp className="h-3 w-3 text-green-600" /> : t === 'down' ? <TrendingDown className="h-3 w-3 text-destructive" /> : <Minus className="h-3 w-3 text-muted-foreground" />;
 
@@ -37,14 +58,13 @@ export default function DeanDashboard() {
           <p className="text-muted-foreground">Faculty of Engineering • Academic Year 2025-26</p>
         </div>
 
-        {/* Top Stats */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {[
-            { label: 'Departments', value: departmentSummaries.length, icon: Building2, color: 'text-blue-600 bg-blue-100' },
+            { label: 'Departments', value: initialDepts.length, icon: Building2, color: 'text-blue-600 bg-blue-100' },
             { label: 'Total Students', value: totalStudents.toLocaleString(), icon: GraduationCap, color: 'text-green-600 bg-green-100' },
             { label: 'Total Faculty', value: totalFaculty, icon: Users, color: 'text-purple-600 bg-purple-100' },
             { label: 'Vacancies', value: totalVacancies, icon: AlertTriangle, color: 'text-amber-600 bg-amber-100' },
-            { label: 'Pending Approvals', value: pendingApprovals, icon: Bell, color: 'text-destructive bg-destructive/10' },
+            { label: 'Pending Approvals', value: pendingApprovals.length, icon: Bell, color: 'text-destructive bg-destructive/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
               <CardContent className="flex items-center gap-3 p-4">
@@ -61,30 +81,25 @@ export default function DeanDashboard() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-5">
-          {/* Left: Department Comparison + Approvals */}
           <div className="lg:col-span-3 space-y-6">
-            {/* Department Comparison */}
             <Card className="border-border">
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Building2 className="h-5 w-5 text-primary" />
-                  Department Overview
+                  <Building2 className="h-5 w-5 text-primary" />Department Overview
                 </CardTitle>
                 <Button variant="outline" size="sm" onClick={() => navigate('/dean/academics')}>
                   Details <ArrowRight className="ml-1 h-4 w-4" />
                 </Button>
               </CardHeader>
               <CardContent className="space-y-4">
-                {departmentSummaries.map(dept => (
+                {initialDepts.map(dept => (
                   <div key={dept.id} className="rounded-lg border border-border p-3">
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <p className="font-medium text-foreground text-sm">{dept.name}</p>
                         <p className="text-[10px] text-muted-foreground">HOD: {dept.hod} • {dept.totalStudents} students • {dept.totalFaculty} faculty</p>
                       </div>
-                      {dept.vacancies > 0 && (
-                        <Badge variant="secondary" className="text-[10px]">{dept.vacancies} vacancies</Badge>
-                      )}
+                      {dept.vacancies > 0 && <Badge variant="secondary" className="text-[10px]">{dept.vacancies} vacancies</Badge>}
                     </div>
                     <div className="grid grid-cols-4 gap-3 text-center">
                       {[
@@ -104,16 +119,17 @@ export default function DeanDashboard() {
               </CardContent>
             </Card>
 
-            {/* Pending Approvals */}
             <Card className="border-border">
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Bell className="h-5 w-5 text-amber-500" />
-                  Pending Approvals ({pendingApprovals})
+                  <Bell className="h-5 w-5 text-amber-500" />Pending Approvals ({pendingApprovals.length})
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {deanApprovals.filter(a => a.status === 'pending').slice(0, 5).map(item => {
+                {pendingApprovals.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground py-6">All approvals have been processed ✓</p>
+                )}
+                {pendingApprovals.slice(0, 5).map(item => {
                   const Icon = approvalIcons[item.type] || Bell;
                   return (
                     <div key={item.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
@@ -129,11 +145,11 @@ export default function DeanDashboard() {
                         {item.amount && <span className="text-xs font-mono text-muted-foreground">₹{(item.amount / 100000).toFixed(1)}L</span>}
                         <Badge variant={item.priority === 'high' || item.priority === 'critical' ? 'destructive' : 'secondary'} className="text-[10px] capitalize">{item.priority}</Badge>
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-100"
-                          onClick={() => toast({ title: 'Approved', description: item.title })}>
+                          onClick={() => handleApprove(item.id)}>
                           <CheckCircle className="h-4 w-4" />
                         </Button>
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                          onClick={() => toast({ title: 'Rejected', description: item.title })}>
+                          onClick={() => setRejectDialog(item.id)}>
                           <XCircle className="h-4 w-4" />
                         </Button>
                       </div>
@@ -144,13 +160,11 @@ export default function DeanDashboard() {
             </Card>
           </div>
 
-          {/* Right: Quality Metrics */}
           <div className="lg:col-span-2 space-y-4">
             <Card className="border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Award className="h-5 w-5 text-primary" />
-                  Quality Metrics
+                  <Award className="h-5 w-5 text-primary" />Quality Metrics
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -172,7 +186,6 @@ export default function DeanDashboard() {
               </CardContent>
             </Card>
 
-            {/* Quick Actions */}
             <Card className="border-border">
               <CardHeader className="pb-3"><CardTitle className="text-lg">Quick Actions</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 gap-2">
@@ -194,6 +207,23 @@ export default function DeanDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Reject Dialog */}
+      <Dialog open={!!rejectDialog} onOpenChange={() => { setRejectDialog(null); setRejectReason(''); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Request</DialogTitle>
+            <DialogDescription>Provide a reason for rejecting this request.</DialogDescription>
+          </DialogHeader>
+          <Textarea placeholder="Reason for rejection..." value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setRejectDialog(null); setRejectReason(''); }}>Cancel</Button>
+            <Button variant="destructive" onClick={() => rejectDialog && handleReject(rejectDialog)}>
+              <XCircle className="mr-1 h-4 w-4" />Reject
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

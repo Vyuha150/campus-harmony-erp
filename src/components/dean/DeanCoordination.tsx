@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -5,14 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   CalendarDays, Users, Megaphone, Send, Plus, Trophy,
-  Laptop, Music, Dumbbell, BookOpen, Eye
+  Laptop, Music, Dumbbell, BookOpen, Eye, CheckCircle
 } from 'lucide-react';
-import { interDeptEvents } from '@/data/deanMockData';
+import { interDeptEvents as initialEvents } from '@/data/deanMockData';
 import { useToast } from '@/hooks/use-toast';
+import { InterDeptEvent } from '@/types/dean';
 
 const typeIcons: Record<string, React.ElementType> = {
   technical: Laptop, cultural: Music, sports: Dumbbell, seminar: BookOpen, workshop: BookOpen,
@@ -25,6 +27,42 @@ const typeColors: Record<string, string> = {
 
 export default function DeanCoordination() {
   const { toast } = useToast();
+  const [events, setEvents] = useState<InterDeptEvent[]>(initialEvents);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [broadcastSubject, setBroadcastSubject] = useState('');
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [newEvent, setNewEvent] = useState({ title: '', type: 'technical', date: '', budget: '', coordinator: '' });
+
+  const sendBroadcast = () => {
+    if (!broadcastSubject.trim()) { toast({ title: 'Subject required', variant: 'destructive' }); return; }
+    toast({ title: 'Broadcast Sent', description: `"${broadcastSubject}" sent to all department HODs` });
+    setBroadcastOpen(false);
+    setBroadcastSubject('');
+    setBroadcastMessage('');
+  };
+
+  const createEvent = () => {
+    if (!newEvent.title.trim()) { toast({ title: 'Title required', variant: 'destructive' }); return; }
+    const ev: InterDeptEvent = {
+      id: `ev-${Date.now()}`,
+      title: newEvent.title,
+      type: newEvent.type as InterDeptEvent['type'],
+      date: newEvent.date || '2026-05-01',
+      departments: ['CSE', 'ECE', 'EEE', 'ME', 'CE'],
+      coordinator: newEvent.coordinator || 'TBD',
+      budget: parseInt(newEvent.budget) || 0,
+      participants: 0,
+      status: 'planned',
+    };
+    setEvents(prev => [ev, ...prev]);
+    toast({ title: 'Event Created', description: newEvent.title });
+    setCreateOpen(false);
+    setNewEvent({ title: '', type: 'technical', date: '', budget: '', coordinator: '' });
+  };
+
+  const detailEvent = events.find(e => e.id === detailId);
 
   return (
     <DashboardLayout>
@@ -35,61 +73,16 @@ export default function DeanCoordination() {
             <p className="text-muted-foreground">Cross-department events, communication, and activities</p>
           </div>
           <div className="flex gap-2">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline"><Megaphone className="mr-1 h-4 w-4" />Broadcast to All HODs</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Broadcast Message</DialogTitle></DialogHeader>
-                <div className="space-y-4">
-                  <div><Label>Subject</Label><Input placeholder="Message subject..." /></div>
-                  <div><Label>Message</Label><Textarea placeholder="Type your message to all HODs..." rows={4} /></div>
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="rounded" />Email</label>
-                    <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="rounded" />WhatsApp</label>
-                  </div>
-                  <Button className="w-full" onClick={() => toast({ title: 'Broadcast Sent', description: 'Message sent to all department HODs' })}>
-                    <Send className="mr-1 h-4 w-4" />Send
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button><Plus className="mr-1 h-4 w-4" />Create Event</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Create Inter-Department Event</DialogTitle></DialogHeader>
-                <div className="space-y-4">
-                  <div><Label>Event Title</Label><Input placeholder="e.g., TechVista 2026" /></div>
-                  <div><Label>Type</Label>
-                    <Select>
-                      <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="technical">Technical</SelectItem>
-                        <SelectItem value="cultural">Cultural</SelectItem>
-                        <SelectItem value="sports">Sports</SelectItem>
-                        <SelectItem value="seminar">Seminar</SelectItem>
-                        <SelectItem value="workshop">Workshop</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div><Label>Date</Label><Input type="date" /></div>
-                  <div><Label>Budget (₹)</Label><Input type="number" placeholder="e.g., 500000" /></div>
-                  <div><Label>Coordinator</Label><Input placeholder="Faculty coordinator name" /></div>
-                  <Button className="w-full" onClick={() => toast({ title: 'Event Created' })}>Create Event</Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <Button variant="outline" onClick={() => setBroadcastOpen(true)}><Megaphone className="mr-1 h-4 w-4" />Broadcast to All HODs</Button>
+            <Button onClick={() => setCreateOpen(true)}><Plus className="mr-1 h-4 w-4" />Create Event</Button>
           </div>
         </div>
 
-        {/* Summary */}
         <div className="grid gap-4 sm:grid-cols-3">
           {[
-            { label: 'Planned Events', count: interDeptEvents.filter(e => e.status === 'planned').length, icon: CalendarDays, color: 'text-blue-600 bg-blue-100' },
-            { label: 'Ongoing', count: interDeptEvents.filter(e => e.status === 'ongoing').length, icon: Trophy, color: 'text-green-600 bg-green-100' },
-            { label: 'Completed', count: interDeptEvents.filter(e => e.status === 'completed').length, icon: Users, color: 'text-primary bg-primary/10' },
+            { label: 'Planned Events', count: events.filter(e => e.status === 'planned').length, icon: CalendarDays, color: 'text-blue-600 bg-blue-100' },
+            { label: 'Ongoing', count: events.filter(e => e.status === 'ongoing').length, icon: Trophy, color: 'text-green-600 bg-green-100' },
+            { label: 'Completed', count: events.filter(e => e.status === 'completed').length, icon: Users, color: 'text-primary bg-primary/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
               <CardContent className="flex items-center gap-3 p-4">
@@ -103,9 +96,8 @@ export default function DeanCoordination() {
           ))}
         </div>
 
-        {/* Events List */}
         <div className="space-y-4">
-          {interDeptEvents.map(event => {
+          {events.map(event => {
             const Icon = typeIcons[event.type] || CalendarDays;
             const colorClass = typeColors[event.type] || '';
             return (
@@ -135,7 +127,9 @@ export default function DeanCoordination() {
                         ))}
                       </div>
                     </div>
-                    <Button variant="ghost" size="sm" className="shrink-0"><Eye className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setDetailId(event.id)}>
+                      <Eye className="h-4 w-4" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -143,6 +137,90 @@ export default function DeanCoordination() {
           })}
         </div>
       </div>
+
+      {/* Broadcast Dialog */}
+      <Dialog open={broadcastOpen} onOpenChange={setBroadcastOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Broadcast Message</DialogTitle>
+            <DialogDescription>Send a message to all department HODs.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Subject</Label><Input placeholder="Message subject..." value={broadcastSubject} onChange={e => setBroadcastSubject(e.target.value)} /></div>
+            <div><Label>Message</Label><Textarea placeholder="Type your message to all HODs..." rows={4} value={broadcastMessage} onChange={e => setBroadcastMessage(e.target.value)} /></div>
+            <Button className="w-full" onClick={sendBroadcast}><Send className="mr-1 h-4 w-4" />Send</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Event Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Inter-Department Event</DialogTitle>
+            <DialogDescription>Plan a new cross-department activity.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Event Title</Label><Input placeholder="e.g., TechVista 2026" value={newEvent.title} onChange={e => setNewEvent(p => ({ ...p, title: e.target.value }))} /></div>
+            <div><Label>Type</Label>
+              <Select value={newEvent.type} onValueChange={v => setNewEvent(p => ({ ...p, type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="technical">Technical</SelectItem>
+                  <SelectItem value="cultural">Cultural</SelectItem>
+                  <SelectItem value="sports">Sports</SelectItem>
+                  <SelectItem value="seminar">Seminar</SelectItem>
+                  <SelectItem value="workshop">Workshop</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div><Label>Date</Label><Input type="date" value={newEvent.date} onChange={e => setNewEvent(p => ({ ...p, date: e.target.value }))} /></div>
+            <div><Label>Budget (₹)</Label><Input type="number" placeholder="e.g., 500000" value={newEvent.budget} onChange={e => setNewEvent(p => ({ ...p, budget: e.target.value }))} /></div>
+            <div><Label>Coordinator</Label><Input placeholder="Faculty coordinator name" value={newEvent.coordinator} onChange={e => setNewEvent(p => ({ ...p, coordinator: e.target.value }))} /></div>
+            <Button className="w-full" onClick={createEvent}><Plus className="mr-1 h-4 w-4" />Create Event</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Event Detail Dialog */}
+      <Dialog open={!!detailId} onOpenChange={() => setDetailId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{detailEvent?.title}</DialogTitle>
+            <DialogDescription>Event details and management</DialogDescription>
+          </DialogHeader>
+          {detailEvent && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-muted-foreground">Type:</span> <span className="capitalize font-medium">{detailEvent.type}</span></div>
+                <div><span className="text-muted-foreground">Status:</span> <Badge variant="outline" className="capitalize ml-1">{detailEvent.status}</Badge></div>
+                <div><span className="text-muted-foreground">Date:</span> <span className="font-medium">{detailEvent.date}</span></div>
+                <div><span className="text-muted-foreground">Budget:</span> <span className="font-medium">₹{(detailEvent.budget / 1000).toFixed(0)}K</span></div>
+                <div><span className="text-muted-foreground">Coordinator:</span> <span className="font-medium">{detailEvent.coordinator}</span></div>
+                <div><span className="text-muted-foreground">Participants:</span> <span className="font-medium">{detailEvent.participants}</span></div>
+              </div>
+              <div>
+                <span className="text-sm text-muted-foreground">Departments:</span>
+                <div className="flex flex-wrap gap-1 mt-1">{detailEvent.departments.map(d => <Badge key={d} variant="outline">{d}</Badge>)}</div>
+              </div>
+              {detailEvent.status === 'planned' && (
+                <Button className="w-full" onClick={() => {
+                  setEvents(prev => prev.map(e => e.id === detailEvent.id ? { ...e, status: 'ongoing' } : e));
+                  toast({ title: 'Event Started', description: detailEvent.title });
+                  setDetailId(null);
+                }}><CheckCircle className="mr-1 h-4 w-4" />Mark as Ongoing</Button>
+              )}
+              {detailEvent.status === 'ongoing' && (
+                <Button className="w-full" onClick={() => {
+                  setEvents(prev => prev.map(e => e.id === detailEvent.id ? { ...e, status: 'completed' } : e));
+                  toast({ title: 'Event Completed', description: detailEvent.title });
+                  setDetailId(null);
+                }}><CheckCircle className="mr-1 h-4 w-4" />Mark as Completed</Button>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
