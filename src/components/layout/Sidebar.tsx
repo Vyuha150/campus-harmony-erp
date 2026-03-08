@@ -72,6 +72,19 @@ const deanMenuItems: MenuItem[] = [
   { id: 'coordination', label: 'Coordination', icon: Building2, path: '/dean/coordination' },
 ];
 
+// Registrar-specific menu items
+const registrarMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'student-records', label: 'Student Records', icon: Users, path: '/registrar/student-records' },
+  { id: 'transfers', label: 'Transfers & Migration', icon: Building2, path: '/registrar/transfers' },
+  { id: 'certificates', label: 'Degree Certificates', icon: Award, path: '/registrar/certificates' },
+  { id: 'exam-oversight', label: 'Exam Oversight', icon: ClipboardList, path: '/registrar/exam-oversight' },
+  { id: 'documents', label: 'Document Repository', icon: FileText, path: '/registrar/documents' },
+  { id: 'hr', label: 'Establishment & HR', icon: Briefcase, path: '/registrar/hr' },
+  { id: 'accreditation', label: 'Accreditation', icon: FileBarChart, path: '/registrar/accreditation' },
+  { id: 'queries', label: 'Queries & Verification', icon: Search, path: '/registrar/queries' },
+];
+
 // VC / Pro-VC specific menu items
 const vcMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -84,6 +97,8 @@ const vcMenuItems: MenuItem[] = [
   { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3, path: '/vc/analytics' },
   { id: 'global-access', label: 'Global Access', icon: Search, path: '/vc/global-access' },
 ];
+
+
 
 // Student-specific menu items
 const studentMenuItems: MenuItem[] = [
@@ -214,6 +229,8 @@ export function Sidebar() {
     ? deanMenuItems
     : (user.role === 'vice_chancellor' || user.role === 'pro_vc')
     ? vcMenuItems
+    : user.role === 'registrar'
+    ? registrarMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);

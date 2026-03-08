@@ -57,6 +57,17 @@ import DeanFinance from "./components/dean/DeanFinance";
 import DeanAccreditation from "./components/dean/DeanAccreditation";
 import DeanCoordination from "./components/dean/DeanCoordination";
 
+// Registrar Portal Pages
+import RegistrarDashboard from "./components/registrar/RegistrarDashboard";
+import RegistrarStudentRecords from "./components/registrar/RegistrarStudentRecords";
+import RegistrarTransfers from "./components/registrar/RegistrarTransfers";
+import RegistrarCertificates from "./components/registrar/RegistrarCertificates";
+import RegistrarExamOversight from "./components/registrar/RegistrarExamOversight";
+import RegistrarDocuments from "./components/registrar/RegistrarDocuments";
+import RegistrarHR from "./components/registrar/RegistrarHR";
+import RegistrarAccreditation from "./components/registrar/RegistrarAccreditation";
+import RegistrarQueries from "./components/registrar/RegistrarQueries";
+
 // VC / Pro-VC Portal Pages
 import VCDashboard from "./components/vc/VCDashboard";
 import VCApprovals from "./components/vc/VCApprovals";
@@ -67,7 +78,6 @@ import VCCompliance from "./components/vc/VCCompliance";
 import VCFinance from "./components/vc/VCFinance";
 import VCAnalytics from "./components/vc/VCAnalytics";
 import VCGlobalAccess from "./components/vc/VCGlobalAccess";
-
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
@@ -93,7 +103,7 @@ function AppRoutes() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : (user?.role === 'vice_chancellor' || user?.role === 'pro_vc') ? <VCDashboard /> : <Dashboard />}
+            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : (user?.role === 'vice_chancellor' || user?.role === 'pro_vc') ? <VCDashboard /> : user?.role === 'registrar' ? <RegistrarDashboard /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -144,6 +154,15 @@ function AppRoutes() {
       <Route path="/vc/finance" element={<ProtectedRoute><VCFinance /></ProtectedRoute>} />
       <Route path="/vc/analytics" element={<ProtectedRoute><VCAnalytics /></ProtectedRoute>} />
       <Route path="/vc/global-access" element={<ProtectedRoute><VCGlobalAccess /></ProtectedRoute>} />
+      {/* Registrar Portal Routes */}
+      <Route path="/registrar/student-records" element={<ProtectedRoute><RegistrarStudentRecords /></ProtectedRoute>} />
+      <Route path="/registrar/transfers" element={<ProtectedRoute><RegistrarTransfers /></ProtectedRoute>} />
+      <Route path="/registrar/certificates" element={<ProtectedRoute><RegistrarCertificates /></ProtectedRoute>} />
+      <Route path="/registrar/exam-oversight" element={<ProtectedRoute><RegistrarExamOversight /></ProtectedRoute>} />
+      <Route path="/registrar/documents" element={<ProtectedRoute><RegistrarDocuments /></ProtectedRoute>} />
+      <Route path="/registrar/hr" element={<ProtectedRoute><RegistrarHR /></ProtectedRoute>} />
+      <Route path="/registrar/accreditation" element={<ProtectedRoute><RegistrarAccreditation /></ProtectedRoute>} />
+      <Route path="/registrar/queries" element={<ProtectedRoute><RegistrarQueries /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
