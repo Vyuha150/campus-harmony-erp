@@ -237,6 +237,8 @@ export function Sidebar() {
     ? deanMenuItems
     : (user.role === 'vice_chancellor' || user.role === 'pro_vc')
     ? vcMenuItems
+    : user.role === 'registrar'
+    ? registrarMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);
