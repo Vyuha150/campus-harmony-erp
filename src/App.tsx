@@ -23,6 +23,19 @@ import StudentLibrary from "./components/student/StudentLibrary";
 import StudentPlacements from "./components/student/StudentPlacements";
 import StudentGrievances from "./components/student/StudentGrievances";
 
+// Faculty Portal Pages
+import FacultyDashboard from "./components/faculty/FacultyDashboard";
+import FacultyProfile from "./components/faculty/FacultyProfile";
+import FacultyCourses from "./components/faculty/FacultyCourses";
+import FacultyAttendance from "./components/faculty/FacultyAttendance";
+import FacultyAssignments from "./components/faculty/FacultyAssignments";
+import FacultyMarks from "./components/faculty/FacultyMarks";
+import FacultyMentoring from "./components/faculty/FacultyMentoring";
+import FacultyResearch from "./components/faculty/FacultyResearch";
+import FacultyCommittees from "./components/faculty/FacultyCommittees";
+import FacultyGrievancesFeedback from "./components/faculty/FacultyGrievances";
+import FacultyCommunication from "./components/faculty/FacultyCommunication";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
