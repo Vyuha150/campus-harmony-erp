@@ -60,6 +60,18 @@ const hodMenuItems: MenuItem[] = [
   { id: 'communication', label: 'Communication', icon: Megaphone, path: '/hod/communication' },
 ];
 
+// Dean-specific menu items
+const deanMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'academics', label: 'Academic Oversight', icon: GraduationCap, path: '/dean/academics' },
+  { id: 'faculty-hr', label: 'Faculty HR', icon: Users, path: '/dean/faculty-hr' },
+  { id: 'student-affairs', label: 'Student Affairs', icon: Shield, path: '/dean/student-affairs' },
+  { id: 'results', label: 'Exams & Results', icon: BarChart3, path: '/dean/results' },
+  { id: 'finance', label: 'Finance', icon: Wallet, path: '/dean/finance' },
+  { id: 'accreditation', label: 'Accreditation', icon: Award, path: '/dean/accreditation' },
+  { id: 'coordination', label: 'Coordination', icon: Building2, path: '/dean/coordination' },
+];
+
 // Student-specific menu items
 const studentMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -185,6 +197,8 @@ export function Sidebar() {
     ? facultyMenuItems
     : user.role === 'hod'
     ? hodMenuItems
+    : user.role === 'dean'
+    ? deanMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);

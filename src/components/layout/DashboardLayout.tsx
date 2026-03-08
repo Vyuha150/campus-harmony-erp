@@ -45,6 +45,10 @@ const routeLabels: Record<string, string> = {
   results: 'Results Analysis',
   accreditation: 'Accreditation Data',
   inventory: 'Lab & Inventory',
+  dean: 'Dean Portal',
+  'faculty-hr': 'Faculty HR',
+  'student-affairs': 'Student Affairs',
+  coordination: 'Coordination',
 };
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {

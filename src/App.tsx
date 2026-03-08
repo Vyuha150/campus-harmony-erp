@@ -47,6 +47,16 @@ import HODInventory from "./components/hod/HODInventory";
 import HODGrievances from "./components/hod/HODGrievances";
 import HODCommunication from "./components/hod/HODCommunication";
 
+// Dean Portal Pages
+import DeanDashboard from "./components/dean/DeanDashboard";
+import DeanAcademics from "./components/dean/DeanAcademics";
+import DeanFacultyHR from "./components/dean/DeanFacultyHR";
+import DeanStudentAffairs from "./components/dean/DeanStudentAffairs";
+import DeanResults from "./components/dean/DeanResults";
+import DeanFinance from "./components/dean/DeanFinance";
+import DeanAccreditation from "./components/dean/DeanAccreditation";
+import DeanCoordination from "./components/dean/DeanCoordination";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
@@ -72,7 +82,7 @@ function AppRoutes() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : <Dashboard />}
+            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -106,6 +116,14 @@ function AppRoutes() {
       <Route path="/hod/inventory" element={<ProtectedRoute><HODInventory /></ProtectedRoute>} />
       <Route path="/hod/grievances" element={<ProtectedRoute><HODGrievances /></ProtectedRoute>} />
       <Route path="/hod/communication" element={<ProtectedRoute><HODCommunication /></ProtectedRoute>} />
+      {/* Dean Portal Routes */}
+      <Route path="/dean/academics" element={<ProtectedRoute><DeanAcademics /></ProtectedRoute>} />
+      <Route path="/dean/faculty-hr" element={<ProtectedRoute><DeanFacultyHR /></ProtectedRoute>} />
+      <Route path="/dean/student-affairs" element={<ProtectedRoute><DeanStudentAffairs /></ProtectedRoute>} />
+      <Route path="/dean/results" element={<ProtectedRoute><DeanResults /></ProtectedRoute>} />
+      <Route path="/dean/finance" element={<ProtectedRoute><DeanFinance /></ProtectedRoute>} />
+      <Route path="/dean/accreditation" element={<ProtectedRoute><DeanAccreditation /></ProtectedRoute>} />
+      <Route path="/dean/coordination" element={<ProtectedRoute><DeanCoordination /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
