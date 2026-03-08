@@ -57,6 +57,17 @@ import DeanFinance from "./components/dean/DeanFinance";
 import DeanAccreditation from "./components/dean/DeanAccreditation";
 import DeanCoordination from "./components/dean/DeanCoordination";
 
+// Registrar Portal Pages
+import RegistrarDashboard from "./components/registrar/RegistrarDashboard";
+import RegistrarStudentRecords from "./components/registrar/RegistrarStudentRecords";
+import RegistrarTransfers from "./components/registrar/RegistrarTransfers";
+import RegistrarCertificates from "./components/registrar/RegistrarCertificates";
+import RegistrarExamOversight from "./components/registrar/RegistrarExamOversight";
+import RegistrarDocuments from "./components/registrar/RegistrarDocuments";
+import RegistrarHR from "./components/registrar/RegistrarHR";
+import RegistrarAccreditation from "./components/registrar/RegistrarAccreditation";
+import RegistrarQueries from "./components/registrar/RegistrarQueries";
+
 // VC / Pro-VC Portal Pages
 import VCDashboard from "./components/vc/VCDashboard";
 import VCApprovals from "./components/vc/VCApprovals";
@@ -67,7 +78,6 @@ import VCCompliance from "./components/vc/VCCompliance";
 import VCFinance from "./components/vc/VCFinance";
 import VCAnalytics from "./components/vc/VCAnalytics";
 import VCGlobalAccess from "./components/vc/VCGlobalAccess";
-
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
