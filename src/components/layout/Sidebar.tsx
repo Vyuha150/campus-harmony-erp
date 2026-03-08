@@ -72,8 +72,31 @@ const deanMenuItems: MenuItem[] = [
   { id: 'coordination', label: 'Coordination', icon: Building2, path: '/dean/coordination' },
 ];
 
+// Registrar-specific menu items
+const registrarMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'student-records', label: 'Student Records', icon: Users, path: '/registrar/student-records' },
+  { id: 'transfers', label: 'Transfers & Migration', icon: Building2, path: '/registrar/transfers' },
+  { id: 'certificates', label: 'Degree Certificates', icon: Award, path: '/registrar/certificates' },
+  { id: 'exam-oversight', label: 'Exam Oversight', icon: ClipboardList, path: '/registrar/exam-oversight' },
+  { id: 'documents', label: 'Document Repository', icon: FileText, path: '/registrar/documents' },
+  { id: 'hr', label: 'Establishment & HR', icon: Briefcase, path: '/registrar/hr' },
+  { id: 'accreditation', label: 'Accreditation', icon: FileBarChart, path: '/registrar/accreditation' },
+  { id: 'queries', label: 'Queries & Verification', icon: Search, path: '/registrar/queries' },
+];
+
 // VC / Pro-VC specific menu items
 const vcMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'approvals', label: 'Approvals & Decisions', icon: ClipboardList, path: '/vc/approvals' },
+  { id: 'policy', label: 'Policy & Planning', icon: FileBarChart, path: '/vc/policy' },
+  { id: 'meetings', label: 'Meetings & Workflow', icon: Calendar, path: '/vc/meetings' },
+  { id: 'communication', label: 'Communication', icon: Megaphone, path: '/vc/communication' },
+  { id: 'compliance', label: 'Compliance & Accreditation', icon: Award, path: '/vc/compliance' },
+  { id: 'finance', label: 'Financial Overview', icon: Wallet, path: '/vc/finance' },
+  { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3, path: '/vc/analytics' },
+  { id: 'global-access', label: 'Global Access', icon: Search, path: '/vc/global-access' },
+];
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { id: 'approvals', label: 'Approvals & Decisions', icon: ClipboardList, path: '/vc/approvals' },
   { id: 'policy', label: 'Policy & Planning', icon: FileBarChart, path: '/vc/policy' },
