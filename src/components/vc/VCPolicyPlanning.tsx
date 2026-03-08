@@ -9,10 +9,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import {
   TrendingUp, TrendingDown, Lightbulb, Calculator, BarChart3,
-  ArrowRight, Settings, Play, Info
+  ArrowRight, Settings, Play, Info, Download, Save
 } from 'lucide-react';
 import { policyScenarios } from '@/data/vcMockData';
 import { PolicyScenario } from '@/types/vc';
@@ -27,6 +28,23 @@ export default function VCPolicyPlanning() {
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newCategory, setNewCategory] = useState<string>('academic');
+
+  // Financial forecasting state
+  const [feeIncrease, setFeeIncrease] = useState(10);
+  const [enrollmentChange, setEnrollmentChange] = useState(5);
+  const [grantGrowth, setGrantGrowth] = useState(20);
+  const [forecastCalculated, setForecastCalculated] = useState(false);
+
+  const baseTuition = 9500; // lakhs
+  const baseGrants = 1000;
+  const baseExpenditure = 14800;
+
+  const projectedTuition = Math.round(baseTuition * (1 + feeIncrease / 100) * (1 + enrollmentChange / 100));
+  const projectedGrants = Math.round(baseGrants * (1 + grantGrowth / 100));
+  const projectedRevenue = projectedTuition + projectedGrants + 2500 + 1800 + 500 + 600; // other sources constant
+  const projectedExpenditure = Math.round(baseExpenditure * 1.08); // 8% cost increase
+  const projectedSurplus = projectedRevenue - projectedExpenditure;
+  const revenueChange = ((projectedRevenue - 15900) / 15900 * 100).toFixed(1);
 
   const handleRunSimulation = (scenario: PolicyScenario) => {
     setSelectedScenario(scenario);
@@ -48,6 +66,11 @@ export default function VCPolicyPlanning() {
     setNewTitle('');
     setNewDescription('');
     toast({ title: 'Scenario Created', description: `"${newTitle}" added to planning scenarios.` });
+  };
+
+  const handleDeleteScenario = (id: string) => {
+    setScenarios(prev => prev.filter(s => s.id !== id));
+    toast({ title: 'Deleted', description: 'Scenario removed.' });
   };
 
   return (
@@ -99,9 +122,14 @@ export default function VCPolicyPlanning() {
                     <div className="rounded-md bg-muted/50 p-2 mb-3">
                       <p className="text-xs text-muted-foreground flex gap-1"><Info className="h-3 w-3 shrink-0 mt-0.5" /> {scenario.projectedOutcome}</p>
                     </div>
-                    <Button size="sm" variant="outline" className="w-full gap-1" onClick={() => handleRunSimulation(scenario)}>
-                      <Play className="h-3 w-3" /> Run Simulation
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => handleRunSimulation(scenario)}>
+                        <Play className="h-3 w-3" /> Run Simulation
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-destructive text-xs" onClick={() => handleDeleteScenario(scenario.id)}>
+                        Remove
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -174,41 +202,85 @@ export default function VCPolicyPlanning() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Calculator className="h-5 w-5 text-primary" /> Financial Forecasting</CardTitle>
+                <CardDescription>Adjust parameters to see projected financial impact for FY 2026-27</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-4 md:grid-cols-3 mb-6">
-                  {[
-                    { label: 'Projected Revenue FY27', value: '₹165 Cr', change: '+15.5%' },
-                    { label: 'Projected Expenditure FY27', value: '₹148 Cr', change: '+10.2%' },
-                    { label: 'Projected Surplus', value: '₹17 Cr', change: '+38%' },
-                  ].map(item => (
-                    <div key={item.label} className="rounded-lg border p-4 text-center">
-                      <p className="text-xs text-muted-foreground">{item.label}</p>
-                      <p className="text-xl font-bold mt-1">{item.value}</p>
-                      <p className="text-xs text-emerald-600 mt-1">{item.change}</p>
+                {/* Interactive Sliders */}
+                <div className="rounded-lg border p-4 mb-6 space-y-5">
+                  <h4 className="font-medium text-sm">Revenue Scenario Calculator</h4>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label className="text-sm">Fee Increase</Label>
+                      <span className="text-sm font-bold text-primary">{feeIncrease}%</span>
                     </div>
-                  ))}
-                </div>
-                <div className="rounded-lg border p-4">
-                  <h4 className="font-medium text-sm mb-3">Revenue Scenario Calculator</h4>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div>
-                      <Label className="text-xs">Fee Increase (%)</Label>
-                      <Input type="number" defaultValue={10} className="mt-1" />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Enrollment Change (%)</Label>
-                      <Input type="number" defaultValue={5} className="mt-1" />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Research Grant Growth (%)</Label>
-                      <Input type="number" defaultValue={20} className="mt-1" />
-                    </div>
+                    <Slider value={[feeIncrease]} onValueChange={v => { setFeeIncrease(v[0]); setForecastCalculated(false); }} min={0} max={25} step={1} />
                   </div>
-                  <Button className="mt-4 gap-2" onClick={() => toast({ title: 'Simulation Complete', description: 'Projected net revenue increase: ₹12.4 Cr. See detailed breakdown below.' })}>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label className="text-sm">Enrollment Change</Label>
+                      <span className="text-sm font-bold text-primary">{enrollmentChange > 0 ? '+' : ''}{enrollmentChange}%</span>
+                    </div>
+                    <Slider value={[enrollmentChange]} onValueChange={v => { setEnrollmentChange(v[0]); setForecastCalculated(false); }} min={-10} max={20} step={1} />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label className="text-sm">Research Grant Growth</Label>
+                      <span className="text-sm font-bold text-primary">{grantGrowth}%</span>
+                    </div>
+                    <Slider value={[grantGrowth]} onValueChange={v => { setGrantGrowth(v[0]); setForecastCalculated(false); }} min={0} max={50} step={1} />
+                  </div>
+                  <Button className="gap-2" onClick={() => setForecastCalculated(true)}>
                     <Calculator className="h-4 w-4" /> Calculate Projection
                   </Button>
                 </div>
+
+                {/* Results */}
+                <div className="grid gap-4 md:grid-cols-3 mb-6">
+                  {[
+                    { label: 'Projected Revenue FY27', value: `₹${(projectedRevenue / 100).toFixed(0)} Cr`, change: `${Number(revenueChange) > 0 ? '+' : ''}${revenueChange}%`, positive: Number(revenueChange) > 0 },
+                    { label: 'Projected Expenditure FY27', value: `₹${(projectedExpenditure / 100).toFixed(0)} Cr`, change: '+8.0%', positive: false },
+                    { label: 'Projected Surplus', value: `₹${(projectedSurplus / 100).toFixed(1)} Cr`, change: projectedSurplus > 0 ? 'Healthy' : 'Deficit', positive: projectedSurplus > 0 },
+                  ].map(item => (
+                    <div key={item.label} className={`rounded-lg border p-4 text-center ${forecastCalculated ? 'ring-2 ring-primary/30' : ''}`}>
+                      <p className="text-xs text-muted-foreground">{item.label}</p>
+                      <p className="text-xl font-bold mt-1">{item.value}</p>
+                      <p className={`text-xs mt-1 ${item.positive ? 'text-emerald-600' : 'text-amber-600'}`}>{item.change}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {forecastCalculated && (
+                  <div className="rounded-lg bg-muted/50 p-4 space-y-3">
+                    <h4 className="font-medium text-sm flex items-center gap-2"><Lightbulb className="h-4 w-4 text-primary" /> Detailed Breakdown</h4>
+                    {[
+                      { source: 'Tuition Fees', current: baseTuition, projected: projectedTuition },
+                      { source: 'Research Grants', current: baseGrants, projected: projectedGrants },
+                      { source: 'Government Grants', current: 2500, projected: 2500 },
+                      { source: 'Self-Financed Courses', current: 1800, projected: 1800 },
+                      { source: 'Other Income', current: 1100, projected: 1100 },
+                    ].map(row => (
+                      <div key={row.source} className="flex items-center justify-between text-sm border-b border-border/50 pb-2">
+                        <span className="text-muted-foreground">{row.source}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground">₹{row.current}L</span>
+                          <ArrowRight className="h-3 w-3 text-primary" />
+                          <span className="font-medium">₹{row.projected}L</span>
+                          <Badge variant={row.projected > row.current ? 'default' : 'secondary'} className="text-[10px]">
+                            {row.projected > row.current ? '+' : ''}{((row.projected - row.current) / row.current * 100).toFixed(1)}%
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex gap-2 pt-2">
+                      <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Report Saved', description: 'Financial projection saved to documents.' })}>
+                        <Save className="h-3 w-3" /> Save Report
+                      </Button>
+                      <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Exported', description: 'Financial projection exported as PDF.' })}>
+                        <Download className="h-3 w-3" /> Export PDF
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

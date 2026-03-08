@@ -4,16 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Slider } from '@/components/ui/slider';
+import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import {
   Award, CheckCircle, AlertTriangle, Clock, FileText,
-  Eye, Download, Send, BarChart3, TrendingUp, Shield
+  Download, Send, BarChart3, TrendingUp, Shield, Edit, Save
 } from 'lucide-react';
-import { complianceReports } from '@/data/vcMockData';
-import { ComplianceReport } from '@/types/vc';
+import { complianceReports as initialReports } from '@/data/vcMockData';
+import { ComplianceReport, CriterionScore } from '@/types/vc';
 
 const frameworkColors: Record<string, string> = {
   NAAC: 'bg-blue-50 text-blue-700',
@@ -38,9 +39,23 @@ const criterionStatusColors: Record<string, string> = {
 
 export default function VCCompliance() {
   const { toast } = useToast();
-  const [reports, setReports] = useState(complianceReports);
+  const [reports, setReports] = useState(initialReports);
   const [selectedReport, setSelectedReport] = useState<ComplianceReport | null>(null);
   const [reviewComment, setReviewComment] = useState('');
+  const [editingNIRF, setEditingNIRF] = useState(false);
+  const [nirfScores, setNirfScores] = useState<Record<string, number>>({});
+  const [editingNAAC, setEditingNAAC] = useState(false);
+  const [naacScores, setNaacScores] = useState<Record<string, number>>({});
+
+  const nirfReport = reports.find(r => r.framework === 'NIRF');
+  const naacReport = reports.find(r => r.framework === 'NAAC');
+
+  // Initialize scores from report data
+  const getNirfScore = (id: string, defaultVal: number) => nirfScores[id] ?? defaultVal;
+  const getNaacScore = (id: string, defaultVal: number) => naacScores[id] ?? defaultVal;
+
+  const nirfTotal = nirfReport ? nirfReport.criteria.reduce((sum, c) => sum + (getNirfScore(c.id, c.score)), 0) / nirfReport.criteria.length : 0;
+  const naacTotal = naacReport ? naacReport.criteria.reduce((sum, c) => sum + getNaacScore(c.id, c.score), 0) / naacReport.criteria.length : 0;
 
   const handleApproveReport = (id: string) => {
     setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' as const } : r));
@@ -51,6 +66,17 @@ export default function VCCompliance() {
   const handleSubmitReport = (id: string) => {
     setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'submitted' as const } : r));
     toast({ title: 'Report Submitted', description: 'Report submitted to the respective authority.' });
+  };
+
+  const handleSaveNirfSimulation = () => {
+    setEditingNIRF(false);
+    toast({ title: 'NIRF Simulation Saved', description: `Projected score: ${nirfTotal.toFixed(1)}/100. Estimated rank: #${Math.max(1, Math.round(150 - nirfTotal * 2))}.` });
+  };
+
+  const handleSaveNaacSimulation = () => {
+    setEditingNAAC(false);
+    const grade = naacTotal >= 3.51 ? 'A++' : naacTotal >= 3.26 ? 'A+' : naacTotal >= 3.01 ? 'A' : naacTotal >= 2.76 ? 'B++' : 'B+';
+    toast({ title: 'NAAC Simulation Saved', description: `Projected CGPA: ${naacTotal.toFixed(2)}/4.00 — Grade: ${grade}` });
   };
 
   return (
@@ -102,26 +128,48 @@ export default function VCCompliance() {
         {/* NIRF Score Simulator */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-primary" /> NIRF Score Simulator</CardTitle>
-            <CardDescription>Current projected rank: #48 (Score: 52.8/100)</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-primary" /> NIRF Score Simulator</CardTitle>
+                <CardDescription>Current projected rank: #{Math.max(1, Math.round(150 - nirfTotal * 2))} (Score: {nirfTotal.toFixed(1)}/100)</CardDescription>
+              </div>
+              <Button variant={editingNIRF ? 'default' : 'outline'} size="sm" className="gap-1" onClick={() => editingNIRF ? handleSaveNirfSimulation() : setEditingNIRF(true)}>
+                {editingNIRF ? <><Save className="h-3 w-3" /> Save</> : <><Edit className="h-3 w-3" /> Simulate</>}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 md:grid-cols-5">
-              {(reports.find(r => r.framework === 'NIRF')?.criteria || []).map(c => (
+              {(nirfReport?.criteria || []).map(c => (
                 <div key={c.id} className="rounded-lg border p-3 text-center">
                   <p className="text-xs text-muted-foreground truncate">{c.name}</p>
-                  <p className="text-lg font-bold mt-1">{c.score}</p>
-                  <Progress value={c.score} className="h-1.5 mt-1" />
+                  {editingNIRF ? (
+                    <div className="mt-2">
+                      <p className="text-lg font-bold text-primary">{getNirfScore(c.id, c.score)}</p>
+                      <Slider value={[getNirfScore(c.id, c.score)]} onValueChange={v => setNirfScores(prev => ({ ...prev, [c.id]: v[0] }))} min={0} max={100} step={1} className="mt-2" />
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-lg font-bold mt-1">{getNirfScore(c.id, c.score)}</p>
+                      <Progress value={getNirfScore(c.id, c.score)} className="h-1.5 mt-1" />
+                    </>
+                  )}
                   <Badge variant="outline" className={`text-[10px] mt-1 ${criterionStatusColors[c.status]}`}>{c.status.replace('_', ' ')}</Badge>
                 </div>
               ))}
             </div>
             <div className="mt-4 flex gap-2">
-              <Button variant="outline" className="gap-1" onClick={() => toast({ title: 'NIRF Simulation', description: 'To reach Top 40: improve Research score by +12 and Perception by +8.' })}>
-                <TrendingUp className="h-4 w-4" /> Simulate Improvement
+              <Button variant="outline" className="gap-1" onClick={() => {
+                const gaps = (nirfReport?.criteria || []).filter(c => getNirfScore(c.id, c.score) < 60);
+                const msg = gaps.length > 0
+                  ? `Focus areas: ${gaps.map(g => `${g.name} (${getNirfScore(g.id, g.score)}/100)`).join(', ')}`
+                  : 'All criteria above 60. Focus on Perception and Research for Top 40.';
+                toast({ title: 'NIRF Gap Analysis', description: msg });
+              }}>
+                <TrendingUp className="h-4 w-4" /> Gap Analysis
               </Button>
               <Button variant="outline" className="gap-1" onClick={() => toast({ title: 'Report Generated', description: 'NIRF gap analysis report downloaded.' })}>
-                <Download className="h-4 w-4" /> Gap Analysis Report
+                <Download className="h-4 w-4" /> Download Report
               </Button>
             </div>
           </CardContent>
@@ -130,18 +178,31 @@ export default function VCCompliance() {
         {/* NAAC Criteria Breakdown */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Award className="h-5 w-5 text-primary" /> NAAC Criteria Breakdown</CardTitle>
-            <CardDescription>Projected CGPA: 3.42 / 4.00 — Target: A++ (3.51+)</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2"><Award className="h-5 w-5 text-primary" /> NAAC Criteria Breakdown</CardTitle>
+                <CardDescription>
+                  Projected CGPA: {naacTotal.toFixed(2)} / 4.00 — Target: {naacTotal >= 3.51 ? 'A++ ✓' : `A++ (3.51+) — Need +${(3.51 - naacTotal).toFixed(2)}`}
+                </CardDescription>
+              </div>
+              <Button variant={editingNAAC ? 'default' : 'outline'} size="sm" className="gap-1" onClick={() => editingNAAC ? handleSaveNaacSimulation() : setEditingNAAC(true)}>
+                {editingNAAC ? <><Save className="h-3 w-3" /> Save</> : <><Edit className="h-3 w-3" /> Simulate</>}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {(reports.find(r => r.framework === 'NAAC')?.criteria || []).map(c => (
+              {(naacReport?.criteria || []).map(c => (
                 <div key={c.id} className="flex items-center gap-4">
                   <div className="w-48 text-sm truncate">{c.name}</div>
                   <div className="flex-1">
-                    <Progress value={(c.score / c.maxScore) * 100} className="h-2.5" />
+                    {editingNAAC ? (
+                      <Slider value={[getNaacScore(c.id, c.score) * 25]} onValueChange={v => setNaacScores(prev => ({ ...prev, [c.id]: v[0] / 25 }))} min={0} max={100} step={1} />
+                    ) : (
+                      <Progress value={(getNaacScore(c.id, c.score) / c.maxScore) * 100} className="h-2.5" />
+                    )}
                   </div>
-                  <div className="w-16 text-right text-sm font-medium">{c.score}/{c.maxScore}</div>
+                  <div className="w-16 text-right text-sm font-medium">{getNaacScore(c.id, c.score).toFixed(1)}/{c.maxScore}</div>
                   <Badge variant="outline" className={`text-[10px] w-20 justify-center ${criterionStatusColors[c.status]}`}>{c.status.replace('_', ' ')}</Badge>
                 </div>
               ))}
@@ -180,6 +241,11 @@ export default function VCCompliance() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setSelectedReport(null)}>Close</Button>
+              {selectedReport?.status === 'draft' && (
+                <Button onClick={() => { setReports(prev => prev.map(r => r.id === selectedReport.id ? { ...r, status: 'in_review' as const } : r)); setSelectedReport(null); toast({ title: 'Sent for Review', description: 'Report sent to IQAC for review.' }); }} className="gap-1">
+                  <Send className="h-4 w-4" /> Send for Review
+                </Button>
+              )}
               {selectedReport?.status === 'in_review' && (
                 <Button onClick={() => selectedReport && handleApproveReport(selectedReport.id)} className="gap-1">
                   <Shield className="h-4 w-4" /> Approve & Sign

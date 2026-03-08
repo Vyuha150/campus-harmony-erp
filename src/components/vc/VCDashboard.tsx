@@ -1,20 +1,24 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import {
   Users, GraduationCap, TrendingUp, TrendingDown, Minus, AlertTriangle,
   CheckCircle, Info, XCircle, MapPin, Building2, BarChart3, Activity,
-  Clock, ChevronRight, Briefcase, BookOpen, FlaskConical
+  Clock, ChevronRight, Briefcase, BookOpen, FlaskConical, Eye, EyeOff, X
 } from 'lucide-react';
 import {
-  campusSummaries, institutionKPIs, liveUpdates, executiveApprovals, departmentPerformance
+  campusSummaries, institutionKPIs, liveUpdates as initialLiveUpdates, executiveApprovals, departmentPerformance
 } from '@/data/vcMockData';
 import { useAuth } from '@/context/AuthContext';
+import { ExecutiveApproval } from '@/types/vc';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend } from 'recharts';
 
 const statusIcons = {
@@ -39,12 +43,30 @@ const statusColors = {
 export default function VCDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [approvals, setApprovals] = useState(executiveApprovals);
+  const [liveUpdates, setLiveUpdates] = useState(initialLiveUpdates);
+  const [selectedApproval, setSelectedApproval] = useState<ExecutiveApproval | null>(null);
+  const [actionType, setActionType] = useState<'approve' | 'reject' | null>(null);
+  const [comment, setComment] = useState('');
   const pendingApprovals = approvals.filter(a => a.status === 'pending');
 
-  const handleQuickApprove = (id: string) => {
-    setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'approved' as const } : a));
-    toast({ title: 'Approved', description: 'Item has been approved successfully.' });
+  const handleApprovalAction = () => {
+    if (!selectedApproval || !actionType) return;
+    setApprovals(prev => prev.map(a => a.id === selectedApproval.id ? { ...a, status: actionType === 'approve' ? 'approved' as const : 'rejected' as const } : a));
+    toast({ title: actionType === 'approve' ? 'Approved' : 'Rejected', description: `"${selectedApproval.title}" has been ${actionType === 'approve' ? 'approved' : 'rejected'}.` });
+    setSelectedApproval(null);
+    setActionType(null);
+    setComment('');
+  };
+
+  const handleDismissAlert = (id: string) => {
+    setLiveUpdates(prev => prev.filter(u => u.id !== id));
+    toast({ title: 'Alert Dismissed', description: 'Update removed from feed.' });
+  };
+
+  const handleMarkAlertRead = (id: string) => {
+    toast({ title: 'Noted', description: 'Alert acknowledged and logged.' });
   };
 
   const radarData = departmentPerformance.slice(0, 6).map(d => ({
@@ -150,7 +172,7 @@ export default function VCDashboard() {
                     {institutionKPIs
                       .filter(k => tab === 'all' || k.category === tab)
                       .map(kpi => (
-                        <div key={kpi.id} className="rounded-lg border p-3 hover:bg-muted/30 transition-colors">
+                        <div key={kpi.id} className="rounded-lg border p-3 hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => toast({ title: kpi.label, description: `Current: ${kpi.value} | Target: ${kpi.target} | Trend: ${kpi.trendValue}` })}>
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-xs text-muted-foreground">{kpi.label}</span>
                             <Badge variant="outline" className={`text-[10px] ${statusColors[kpi.status]}`}>
@@ -183,6 +205,7 @@ export default function VCDashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {liveUpdates.length === 0 && <p className="text-center text-muted-foreground py-8">All alerts cleared.</p>}
                 {liveUpdates.map(update => (
                   <div key={update.id} className={`flex items-start gap-3 rounded-lg border p-3 ${update.type === 'critical' ? 'border-destructive/40 bg-destructive/5' : ''}`}>
                     {statusIcons[update.type]}
@@ -195,6 +218,14 @@ export default function VCDashboard() {
                           {update.timestamp.toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleMarkAlertRead(update.id)} title="Acknowledge">
+                        <Eye className="h-3 w-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleDismissAlert(update.id)} title="Dismiss">
+                        <X className="h-3 w-3" />
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -213,6 +244,7 @@ export default function VCDashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {pendingApprovals.length === 0 && <p className="text-center text-muted-foreground py-8">All approvals cleared! 🎉</p>}
                 {pendingApprovals.slice(0, 5).map(item => (
                   <div key={item.id} className="flex items-center justify-between rounded-lg border p-3">
                     <div className="flex-1 min-w-0 mr-3">
@@ -223,15 +255,23 @@ export default function VCDashboard() {
                       <Badge variant={item.priority === 'critical' ? 'destructive' : item.priority === 'high' ? 'default' : 'secondary'} className="text-[10px]">
                         {item.priority}
                       </Badge>
-                      <Button size="sm" variant="outline" onClick={() => handleQuickApprove(item.id)} className="h-7 text-xs">
-                        <CheckCircle className="h-3 w-3 mr-1" /> Approve
+                      <Button size="sm" variant="outline" onClick={() => { setSelectedApproval(item); setActionType('approve'); }} className="h-7 text-xs gap-1">
+                        <CheckCircle className="h-3 w-3" /> Approve
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setSelectedApproval(item); setActionType('reject'); }} className="h-7 text-xs gap-1 text-destructive">
+                        <XCircle className="h-3 w-3" /> Reject
                       </Button>
                     </div>
                   </div>
                 ))}
                 {pendingApprovals.length > 5 && (
-                  <Button variant="ghost" className="w-full text-xs">
+                  <Button variant="ghost" className="w-full text-xs" onClick={() => navigate('/vc/approvals')}>
                     View all {pendingApprovals.length} approvals <ChevronRight className="h-3 w-3 ml-1" />
+                  </Button>
+                )}
+                {pendingApprovals.length > 0 && pendingApprovals.length <= 5 && (
+                  <Button variant="outline" className="w-full text-xs" onClick={() => navigate('/vc/approvals')}>
+                    Go to Approvals Page <ChevronRight className="h-3 w-3 ml-1" />
                   </Button>
                 )}
               </div>
@@ -276,6 +316,30 @@ export default function VCDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Approval Action Dialog */}
+        <Dialog open={!!selectedApproval && !!actionType} onOpenChange={() => { setSelectedApproval(null); setActionType(null); setComment(''); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{actionType === 'approve' ? 'Approve Request' : 'Reject Request'}</DialogTitle>
+              <DialogDescription>{selectedApproval?.title}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">{selectedApproval?.description}</p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>From: {selectedApproval?.requestedBy}</span>
+                {selectedApproval?.amount && <span>• Amount: ₹{(selectedApproval.amount / 10000000).toFixed(1)} Cr</span>}
+              </div>
+              <Textarea placeholder={actionType === 'reject' ? 'Reason for rejection (required)...' : 'Add remarks (optional)...'} value={comment} onChange={e => setComment(e.target.value)} rows={3} />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setSelectedApproval(null); setActionType(null); setComment(''); }}>Cancel</Button>
+              <Button variant={actionType === 'reject' ? 'destructive' : 'default'} onClick={handleApprovalAction} disabled={actionType === 'reject' && !comment}>
+                {actionType === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
