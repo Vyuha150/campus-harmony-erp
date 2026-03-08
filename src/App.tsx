@@ -36,6 +36,17 @@ import FacultyCommittees from "./components/faculty/FacultyCommittees";
 import FacultyGrievancesFeedback from "./components/faculty/FacultyGrievances";
 import FacultyCommunication from "./components/faculty/FacultyCommunication";
 
+// HOD Portal Pages
+import HODDashboard from "./components/hod/HODDashboard";
+import HODFacultyManagement from "./components/hod/HODFacultyManagement";
+import HODWorkload from "./components/hod/HODWorkload";
+import HODStudentAcademics from "./components/hod/HODStudentAcademics";
+import HODResultsAnalysis from "./components/hod/HODResultsAnalysis";
+import HODAccreditation from "./components/hod/HODAccreditation";
+import HODInventory from "./components/hod/HODInventory";
+import HODGrievances from "./components/hod/HODGrievances";
+import HODCommunication from "./components/hod/HODCommunication";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
