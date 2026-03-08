@@ -154,6 +154,15 @@ function AppRoutes() {
       <Route path="/vc/finance" element={<ProtectedRoute><VCFinance /></ProtectedRoute>} />
       <Route path="/vc/analytics" element={<ProtectedRoute><VCAnalytics /></ProtectedRoute>} />
       <Route path="/vc/global-access" element={<ProtectedRoute><VCGlobalAccess /></ProtectedRoute>} />
+      {/* Registrar Portal Routes */}
+      <Route path="/registrar/student-records" element={<ProtectedRoute><RegistrarStudentRecords /></ProtectedRoute>} />
+      <Route path="/registrar/transfers" element={<ProtectedRoute><RegistrarTransfers /></ProtectedRoute>} />
+      <Route path="/registrar/certificates" element={<ProtectedRoute><RegistrarCertificates /></ProtectedRoute>} />
+      <Route path="/registrar/exam-oversight" element={<ProtectedRoute><RegistrarExamOversight /></ProtectedRoute>} />
+      <Route path="/registrar/documents" element={<ProtectedRoute><RegistrarDocuments /></ProtectedRoute>} />
+      <Route path="/registrar/hr" element={<ProtectedRoute><RegistrarHR /></ProtectedRoute>} />
+      <Route path="/registrar/accreditation" element={<ProtectedRoute><RegistrarAccreditation /></ProtectedRoute>} />
+      <Route path="/registrar/queries" element={<ProtectedRoute><RegistrarQueries /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
