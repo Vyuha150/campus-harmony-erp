@@ -47,6 +47,16 @@ import HODInventory from "./components/hod/HODInventory";
 import HODGrievances from "./components/hod/HODGrievances";
 import HODCommunication from "./components/hod/HODCommunication";
 
+// Dean Portal Pages
+import DeanDashboard from "./components/dean/DeanDashboard";
+import DeanAcademics from "./components/dean/DeanAcademics";
+import DeanFacultyHR from "./components/dean/DeanFacultyHR";
+import DeanStudentAffairs from "./components/dean/DeanStudentAffairs";
+import DeanResults from "./components/dean/DeanResults";
+import DeanFinance from "./components/dean/DeanFinance";
+import DeanAccreditation from "./components/dean/DeanAccreditation";
+import DeanCoordination from "./components/dean/DeanCoordination";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
