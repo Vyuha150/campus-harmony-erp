@@ -23,6 +23,19 @@ import StudentLibrary from "./components/student/StudentLibrary";
 import StudentPlacements from "./components/student/StudentPlacements";
 import StudentGrievances from "./components/student/StudentGrievances";
 
+// Faculty Portal Pages
+import FacultyDashboard from "./components/faculty/FacultyDashboard";
+import FacultyProfile from "./components/faculty/FacultyProfile";
+import FacultyCourses from "./components/faculty/FacultyCourses";
+import FacultyAttendance from "./components/faculty/FacultyAttendance";
+import FacultyAssignments from "./components/faculty/FacultyAssignments";
+import FacultyMarks from "./components/faculty/FacultyMarks";
+import FacultyMentoring from "./components/faculty/FacultyMentoring";
+import FacultyResearch from "./components/faculty/FacultyResearch";
+import FacultyCommittees from "./components/faculty/FacultyCommittees";
+import FacultyGrievancesFeedback from "./components/faculty/FacultyGrievances";
+import FacultyCommunication from "./components/faculty/FacultyCommunication";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
@@ -48,7 +61,7 @@ function AppRoutes() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            {user?.role === 'student' ? <StudentDashboard /> : <Dashboard />}
+            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -62,6 +75,17 @@ function AppRoutes() {
       <Route path="/student/library" element={<ProtectedRoute><StudentLibrary /></ProtectedRoute>} />
       <Route path="/student/placements" element={<ProtectedRoute><StudentPlacements /></ProtectedRoute>} />
       <Route path="/student/grievances" element={<ProtectedRoute><StudentGrievances /></ProtectedRoute>} />
+      {/* Faculty Portal Routes */}
+      <Route path="/faculty/profile" element={<ProtectedRoute><FacultyProfile /></ProtectedRoute>} />
+      <Route path="/faculty/courses" element={<ProtectedRoute><FacultyCourses /></ProtectedRoute>} />
+      <Route path="/faculty/attendance" element={<ProtectedRoute><FacultyAttendance /></ProtectedRoute>} />
+      <Route path="/faculty/assignments" element={<ProtectedRoute><FacultyAssignments /></ProtectedRoute>} />
+      <Route path="/faculty/marks" element={<ProtectedRoute><FacultyMarks /></ProtectedRoute>} />
+      <Route path="/faculty/mentoring" element={<ProtectedRoute><FacultyMentoring /></ProtectedRoute>} />
+      <Route path="/faculty/research" element={<ProtectedRoute><FacultyResearch /></ProtectedRoute>} />
+      <Route path="/faculty/committees" element={<ProtectedRoute><FacultyCommittees /></ProtectedRoute>} />
+      <Route path="/faculty/grievances" element={<ProtectedRoute><FacultyGrievancesFeedback /></ProtectedRoute>} />
+      <Route path="/faculty/communication" element={<ProtectedRoute><FacultyCommunication /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

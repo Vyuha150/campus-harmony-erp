@@ -20,8 +20,9 @@ interface DashboardLayoutProps {
 const routeLabels: Record<string, string> = {
   dashboard: 'Dashboard',
   student: 'Student Portal',
-  profile: 'My Profile',
-  courses: 'My Courses',
+  faculty: 'Faculty Portal',
+  profile: 'Profile',
+  courses: 'Courses',
   assignments: 'Assignments',
   attendance: 'Attendance',
   examinations: 'Examinations',
@@ -35,6 +36,10 @@ const routeLabels: Record<string, string> = {
   research: 'Research',
   settings: 'Settings',
   reports: 'Reports',
+  marks: 'Gradebook',
+  mentoring: 'Mentoring',
+  committees: 'Committees',
+  communication: 'Communication',
 };
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
