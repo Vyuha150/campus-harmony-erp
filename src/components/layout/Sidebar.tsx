@@ -212,6 +212,8 @@ export function Sidebar() {
     ? hodMenuItems
     : user.role === 'dean'
     ? deanMenuItems
+    : (user.role === 'vice_chancellor' || user.role === 'pro_vc')
+    ? vcMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);
