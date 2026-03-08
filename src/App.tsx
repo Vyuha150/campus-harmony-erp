@@ -82,7 +82,7 @@ function AppRoutes() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : <Dashboard />}
+            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
