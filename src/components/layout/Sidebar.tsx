@@ -164,9 +164,11 @@ export function Sidebar() {
 
   const isActiveRoute = (path: string) => location.pathname.startsWith(path);
 
-  // Use student menu for student role, otherwise filter regular menu
+  // Use role-specific menus
   const filteredMenuItems = user.role === 'student' 
     ? studentMenuItems 
+    : user.role === 'faculty'
+    ? facultyMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);
