@@ -116,6 +116,14 @@ function AppRoutes() {
       <Route path="/hod/inventory" element={<ProtectedRoute><HODInventory /></ProtectedRoute>} />
       <Route path="/hod/grievances" element={<ProtectedRoute><HODGrievances /></ProtectedRoute>} />
       <Route path="/hod/communication" element={<ProtectedRoute><HODCommunication /></ProtectedRoute>} />
+      {/* Dean Portal Routes */}
+      <Route path="/dean/academics" element={<ProtectedRoute><DeanAcademics /></ProtectedRoute>} />
+      <Route path="/dean/faculty-hr" element={<ProtectedRoute><DeanFacultyHR /></ProtectedRoute>} />
+      <Route path="/dean/student-affairs" element={<ProtectedRoute><DeanStudentAffairs /></ProtectedRoute>} />
+      <Route path="/dean/results" element={<ProtectedRoute><DeanResults /></ProtectedRoute>} />
+      <Route path="/dean/finance" element={<ProtectedRoute><DeanFinance /></ProtectedRoute>} />
+      <Route path="/dean/accreditation" element={<ProtectedRoute><DeanAccreditation /></ProtectedRoute>} />
+      <Route path="/dean/coordination" element={<ProtectedRoute><DeanCoordination /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
