@@ -3,13 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
-  Wallet, TrendingUp, Download, IndianRupee, PieChart, Target
+  Wallet, Download, IndianRupee, PieChart, Target
 } from 'lucide-react';
 import { departmentBudgets } from '@/data/deanMockData';
+import { useToast } from '@/hooks/use-toast';
 
 export default function DeanFinance() {
+  const { toast } = useToast();
   const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
   const totalSpent = departmentBudgets.reduce((s, d) => s + d.spent, 0);
   const utilization = Math.round((totalSpent / totalAllocated) * 100);
@@ -24,7 +25,9 @@ export default function DeanFinance() {
             <h1 className="text-2xl font-bold text-foreground">Finance Overview</h1>
             <p className="text-muted-foreground">Budget allocation and utilization across departments</p>
           </div>
-          <Button variant="outline" size="sm"><Download className="mr-1 h-4 w-4" />Export Report</Button>
+          <Button variant="outline" size="sm" onClick={() => toast({ title: 'Export Started', description: 'Finance report CSV downloading...' })}>
+            <Download className="mr-1 h-4 w-4" />Export Report
+          </Button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-4">
@@ -46,7 +49,6 @@ export default function DeanFinance() {
           ))}
         </div>
 
-        {/* Department Budget Comparison */}
         <Card className="border-border">
           <CardHeader className="pb-3"><CardTitle className="text-lg">Budget Utilization by Department</CardTitle></CardHeader>
           <CardContent className="space-y-4">

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -5,16 +6,27 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import {
-  BarChart3, CheckCircle, Clock, Download, Award, TrendingUp, AlertTriangle
+  BarChart3, CheckCircle, Clock, Download, TrendingUp, AlertTriangle
 } from 'lucide-react';
-import { resultSummaries } from '@/data/deanMockData';
+import { resultSummaries as initialResults } from '@/data/deanMockData';
 import { useToast } from '@/hooks/use-toast';
+import { ResultSummary } from '@/types/dean';
 
 export default function DeanResults() {
   const { toast } = useToast();
+  const [results, setResults] = useState<ResultSummary[]>(initialResults);
 
-  const pending = resultSummaries.filter(r => r.status === 'pending_approval');
-  const avgPass = Math.round(resultSummaries.reduce((s, r) => s + r.passPercentage, 0) / resultSummaries.length * 10) / 10;
+  const pending = results.filter(r => r.status === 'pending_approval');
+  const avgPass = Math.round(results.reduce((s, r) => s + r.passPercentage, 0) / results.length * 10) / 10;
+
+  const approveResult = (dept: string, program: string, sem: number) => {
+    setResults(prev => prev.map(r =>
+      r.department === dept && r.program === program && r.semester === sem
+        ? { ...r, status: 'published' }
+        : r
+    ));
+    toast({ title: 'Results Approved & Published', description: `${program} Sem ${sem}` });
+  };
 
   return (
     <DashboardLayout>
@@ -24,15 +36,17 @@ export default function DeanResults() {
             <h1 className="text-2xl font-bold text-foreground">Exams & Results</h1>
             <p className="text-muted-foreground">Review and approve semester results before publication</p>
           </div>
-          <Button variant="outline" size="sm"><Download className="mr-1 h-4 w-4" />Export All Results</Button>
+          <Button variant="outline" size="sm" onClick={() => toast({ title: 'Export Started', description: 'Results CSV will be downloaded shortly' })}>
+            <Download className="mr-1 h-4 w-4" />Export All Results
+          </Button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-4">
           {[
-            { label: 'Programs Reviewed', value: resultSummaries.length, icon: BarChart3, color: 'text-blue-600 bg-blue-100' },
+            { label: 'Programs Reviewed', value: results.length, icon: BarChart3, color: 'text-blue-600 bg-blue-100' },
             { label: 'Pending Approval', value: pending.length, icon: Clock, color: 'text-amber-600 bg-amber-100' },
             { label: 'Overall Pass %', value: `${avgPass}%`, icon: TrendingUp, color: 'text-green-600 bg-green-100' },
-            { label: 'Published', value: resultSummaries.filter(r => r.status === 'published').length, icon: CheckCircle, color: 'text-primary bg-primary/10' },
+            { label: 'Published', value: results.filter(r => r.status === 'published').length, icon: CheckCircle, color: 'text-primary bg-primary/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
               <CardContent className="flex items-center gap-3 p-4">
@@ -46,7 +60,6 @@ export default function DeanResults() {
           ))}
         </div>
 
-        {/* Pending Results */}
         {pending.length > 0 && (
           <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20">
             <CardHeader className="pb-2">
@@ -61,7 +74,7 @@ export default function DeanResults() {
                     <p className="text-sm font-medium text-foreground">{r.program} – Semester {r.semester}</p>
                     <p className="text-xs text-muted-foreground">{r.department} • {r.totalStudents} students • Pass: {r.passPercentage}%</p>
                   </div>
-                  <Button size="sm" onClick={() => toast({ title: 'Results Approved', description: `${r.program} Sem ${r.semester} approved for publication` })}>
+                  <Button size="sm" onClick={() => approveResult(r.department, r.program, r.semester)}>
                     <CheckCircle className="mr-1 h-4 w-4" />Approve & Publish
                   </Button>
                 </div>
@@ -70,7 +83,6 @@ export default function DeanResults() {
           </Card>
         )}
 
-        {/* All Results */}
         <Card className="border-border">
           <CardHeader className="pb-3"><CardTitle className="text-lg">Result Summary – All Programs</CardTitle></CardHeader>
           <CardContent className="p-0">
@@ -90,7 +102,7 @@ export default function DeanResults() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {resultSummaries.map(r => (
+                {results.map(r => (
                   <TableRow key={`${r.department}-${r.program}-${r.semester}`}>
                     <TableCell className="font-medium">{r.department}</TableCell>
                     <TableCell className="text-sm">{r.program}</TableCell>

@@ -1,17 +1,39 @@
+import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
-  GraduationCap, BookOpen, CheckCircle, XCircle, Clock, ArrowRight, FileText, Send
+  GraduationCap, CheckCircle, XCircle, Clock
 } from 'lucide-react';
-import { departmentSummaries, curriculumProposals } from '@/data/deanMockData';
+import { departmentSummaries, curriculumProposals as initialProposals } from '@/data/deanMockData';
 import { useToast } from '@/hooks/use-toast';
+import { CurriculumProposal } from '@/types/dean';
 
 export default function DeanAcademics() {
   const { toast } = useToast();
+  const [proposals, setProposals] = useState<CurriculumProposal[]>(initialProposals);
+  const [rejectDialog, setRejectDialog] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const approveProposal = (id: string) => {
+    const cp = proposals.find(p => p.id === id);
+    setProposals(prev => prev.map(p => p.id === id ? { ...p, status: 'sent_to_ac' } : p));
+    toast({ title: 'Approved & Sent to Academic Council', description: cp?.title });
+  };
+
+  const rejectProposal = () => {
+    if (!rejectDialog) return;
+    const cp = proposals.find(p => p.id === rejectDialog);
+    setProposals(prev => prev.map(p => p.id === rejectDialog ? { ...p, status: 'rejected' } : p));
+    toast({ title: 'Rejected', description: `${cp?.title} – ${rejectReason || 'No reason'}` });
+    setRejectDialog(null);
+    setRejectReason('');
+  };
 
   return (
     <DashboardLayout>
@@ -24,7 +46,7 @@ export default function DeanAcademics() {
         <Tabs defaultValue="departments">
           <TabsList>
             <TabsTrigger value="departments">Department Academics</TabsTrigger>
-            <TabsTrigger value="curriculum">Curriculum Proposals</TabsTrigger>
+            <TabsTrigger value="curriculum">Curriculum Proposals ({proposals.filter(p => p.status === 'pending_dean').length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="departments" className="mt-4">
@@ -74,7 +96,7 @@ export default function DeanAcademics() {
           </TabsContent>
 
           <TabsContent value="curriculum" className="mt-4 space-y-4">
-            {curriculumProposals.map(cp => (
+            {proposals.map(cp => (
               <Card key={cp.id} className="border-border">
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between">
@@ -83,6 +105,11 @@ export default function DeanAcademics() {
                         <Badge variant="outline" className="text-[10px]">{cp.department}</Badge>
                         <Badge variant="secondary" className="text-[10px] capitalize">{cp.type.replace('_', ' ')}</Badge>
                         {cp.bosApproved && <Badge className="text-[10px] bg-green-100 text-green-700">BoS Approved</Badge>}
+                        {cp.status !== 'pending_dean' && (
+                          <Badge variant={cp.status === 'sent_to_ac' ? 'default' : cp.status === 'approved' ? 'default' : 'destructive'} className="text-[10px] capitalize">
+                            {cp.status === 'sent_to_ac' ? 'Sent to AC' : cp.status.replace('_', ' ')}
+                          </Badge>
+                        )}
                       </div>
                       <p className="font-medium text-foreground">{cp.title}</p>
                       <p className="text-sm text-muted-foreground mt-1">{cp.description}</p>
@@ -91,11 +118,11 @@ export default function DeanAcademics() {
                     {cp.status === 'pending_dean' && (
                       <div className="flex shrink-0 gap-1.5 ml-4">
                         <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50"
-                          onClick={() => toast({ title: 'Approved & Sent to Academic Council', description: cp.title })}>
+                          onClick={() => approveProposal(cp.id)}>
                           <CheckCircle className="mr-1 h-4 w-4" />Approve
                         </Button>
                         <Button size="sm" variant="outline" className="text-destructive"
-                          onClick={() => toast({ title: 'Rejected', description: cp.title })}>
+                          onClick={() => setRejectDialog(cp.id)}>
                           <XCircle className="mr-1 h-4 w-4" />Reject
                         </Button>
                       </div>
@@ -107,6 +134,20 @@ export default function DeanAcademics() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={!!rejectDialog} onOpenChange={() => { setRejectDialog(null); setRejectReason(''); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Curriculum Proposal</DialogTitle>
+            <DialogDescription>Provide feedback for the department.</DialogDescription>
+          </DialogHeader>
+          <Textarea placeholder="Reason for rejection or feedback..." value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setRejectDialog(null); setRejectReason(''); }}>Cancel</Button>
+            <Button variant="destructive" onClick={rejectProposal}><XCircle className="mr-1 h-4 w-4" />Reject</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
