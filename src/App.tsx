@@ -57,6 +57,17 @@ import DeanFinance from "./components/dean/DeanFinance";
 import DeanAccreditation from "./components/dean/DeanAccreditation";
 import DeanCoordination from "./components/dean/DeanCoordination";
 
+// VC / Pro-VC Portal Pages
+import VCDashboard from "./components/vc/VCDashboard";
+import VCApprovals from "./components/vc/VCApprovals";
+import VCPolicyPlanning from "./components/vc/VCPolicyPlanning";
+import VCMeetings from "./components/vc/VCMeetings";
+import VCCommunication from "./components/vc/VCCommunication";
+import VCCompliance from "./components/vc/VCCompliance";
+import VCFinance from "./components/vc/VCFinance";
+import VCAnalytics from "./components/vc/VCAnalytics";
+import VCGlobalAccess from "./components/vc/VCGlobalAccess";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
