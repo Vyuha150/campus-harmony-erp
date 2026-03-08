@@ -97,16 +97,8 @@ const vcMenuItems: MenuItem[] = [
   { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3, path: '/vc/analytics' },
   { id: 'global-access', label: 'Global Access', icon: Search, path: '/vc/global-access' },
 ];
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { id: 'approvals', label: 'Approvals & Decisions', icon: ClipboardList, path: '/vc/approvals' },
-  { id: 'policy', label: 'Policy & Planning', icon: FileBarChart, path: '/vc/policy' },
-  { id: 'meetings', label: 'Meetings & Workflow', icon: Calendar, path: '/vc/meetings' },
-  { id: 'communication', label: 'Communication', icon: Megaphone, path: '/vc/communication' },
-  { id: 'compliance', label: 'Compliance & Accreditation', icon: Award, path: '/vc/compliance' },
-  { id: 'finance', label: 'Financial Overview', icon: Wallet, path: '/vc/finance' },
-  { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3, path: '/vc/analytics' },
-  { id: 'global-access', label: 'Global Access', icon: Search, path: '/vc/global-access' },
-];
+
+
 
 // Student-specific menu items
 const studentMenuItems: MenuItem[] = [
