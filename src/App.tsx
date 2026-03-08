@@ -57,6 +57,17 @@ import DeanFinance from "./components/dean/DeanFinance";
 import DeanAccreditation from "./components/dean/DeanAccreditation";
 import DeanCoordination from "./components/dean/DeanCoordination";
 
+// VC / Pro-VC Portal Pages
+import VCDashboard from "./components/vc/VCDashboard";
+import VCApprovals from "./components/vc/VCApprovals";
+import VCPolicyPlanning from "./components/vc/VCPolicyPlanning";
+import VCMeetings from "./components/vc/VCMeetings";
+import VCCommunication from "./components/vc/VCCommunication";
+import VCCompliance from "./components/vc/VCCompliance";
+import VCFinance from "./components/vc/VCFinance";
+import VCAnalytics from "./components/vc/VCAnalytics";
+import VCGlobalAccess from "./components/vc/VCGlobalAccess";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
@@ -82,7 +93,7 @@ function AppRoutes() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : <Dashboard />}
+            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : (user?.role === 'vice_chancellor' || user?.role === 'pro_vc') ? <VCDashboard /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -124,6 +135,15 @@ function AppRoutes() {
       <Route path="/dean/finance" element={<ProtectedRoute><DeanFinance /></ProtectedRoute>} />
       <Route path="/dean/accreditation" element={<ProtectedRoute><DeanAccreditation /></ProtectedRoute>} />
       <Route path="/dean/coordination" element={<ProtectedRoute><DeanCoordination /></ProtectedRoute>} />
+      {/* VC / Pro-VC Portal Routes */}
+      <Route path="/vc/approvals" element={<ProtectedRoute><VCApprovals /></ProtectedRoute>} />
+      <Route path="/vc/policy" element={<ProtectedRoute><VCPolicyPlanning /></ProtectedRoute>} />
+      <Route path="/vc/meetings" element={<ProtectedRoute><VCMeetings /></ProtectedRoute>} />
+      <Route path="/vc/communication" element={<ProtectedRoute><VCCommunication /></ProtectedRoute>} />
+      <Route path="/vc/compliance" element={<ProtectedRoute><VCCompliance /></ProtectedRoute>} />
+      <Route path="/vc/finance" element={<ProtectedRoute><VCFinance /></ProtectedRoute>} />
+      <Route path="/vc/analytics" element={<ProtectedRoute><VCAnalytics /></ProtectedRoute>} />
+      <Route path="/vc/global-access" element={<ProtectedRoute><VCGlobalAccess /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

@@ -72,6 +72,19 @@ const deanMenuItems: MenuItem[] = [
   { id: 'coordination', label: 'Coordination', icon: Building2, path: '/dean/coordination' },
 ];
 
+// VC / Pro-VC specific menu items
+const vcMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'approvals', label: 'Approvals & Decisions', icon: ClipboardList, path: '/vc/approvals' },
+  { id: 'policy', label: 'Policy & Planning', icon: FileBarChart, path: '/vc/policy' },
+  { id: 'meetings', label: 'Meetings & Workflow', icon: Calendar, path: '/vc/meetings' },
+  { id: 'communication', label: 'Communication', icon: Megaphone, path: '/vc/communication' },
+  { id: 'compliance', label: 'Compliance & Accreditation', icon: Award, path: '/vc/compliance' },
+  { id: 'finance', label: 'Financial Overview', icon: Wallet, path: '/vc/finance' },
+  { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3, path: '/vc/analytics' },
+  { id: 'global-access', label: 'Global Access', icon: Search, path: '/vc/global-access' },
+];
+
 // Student-specific menu items
 const studentMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -199,6 +212,8 @@ export function Sidebar() {
     ? hodMenuItems
     : user.role === 'dean'
     ? deanMenuItems
+    : (user.role === 'vice_chancellor' || user.role === 'pro_vc')
+    ? vcMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);
