@@ -1,20 +1,42 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
-  IndianRupee, TrendingUp, TrendingDown, Download, PieChart,
-  ArrowUpRight, ArrowDownRight, BarChart3, Wallet, Receipt, FileText
+  TrendingUp, Download, PieChart, Wallet, Receipt, Eye
 } from 'lucide-react';
 import { financialOverview } from '@/data/vcMockData';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+interface DeptBudget { dept: string; allocated: number; spent: number; util: number; categories: { name: string; amount: number }[]; }
+
+const deptBudgets: DeptBudget[] = [
+  { dept: 'Computer Science', allocated: 450, spent: 380, util: 84, categories: [{ name: 'Faculty Salaries', amount: 220 }, { name: 'Lab Equipment', amount: 85 }, { name: 'Research', amount: 45 }, { name: 'Events', amount: 30 }] },
+  { dept: 'Electronics', allocated: 380, spent: 340, util: 89, categories: [{ name: 'Faculty Salaries', amount: 190 }, { name: 'Lab Equipment', amount: 90 }, { name: 'Research', amount: 35 }, { name: 'Events', amount: 25 }] },
+  { dept: 'Mechanical', allocated: 420, spent: 390, util: 93, categories: [{ name: 'Faculty Salaries', amount: 200 }, { name: 'Workshop/Lab', amount: 120 }, { name: 'Research', amount: 40 }, { name: 'Maintenance', amount: 30 }] },
+  { dept: 'Civil Engineering', allocated: 350, spent: 395, util: 113, categories: [{ name: 'Faculty Salaries', amount: 180 }, { name: 'Lab Equipment', amount: 100 }, { name: 'Field Trips', amount: 65 }, { name: 'Research', amount: 50 }] },
+  { dept: 'Business Admin', allocated: 280, spent: 245, util: 88, categories: [{ name: 'Faculty Salaries', amount: 150 }, { name: 'Case Licenses', amount: 45 }, { name: 'Industry Events', amount: 30 }, { name: 'Research', amount: 20 }] },
+  { dept: 'Physics', allocated: 200, spent: 175, util: 88, categories: [{ name: 'Faculty Salaries', amount: 100 }, { name: 'Lab Equipment', amount: 50 }, { name: 'Research', amount: 25 }] },
+  { dept: 'Chemistry', allocated: 220, spent: 195, util: 89, categories: [{ name: 'Faculty Salaries', amount: 95 }, { name: 'Lab Consumables', amount: 60 }, { name: 'Research', amount: 40 }] },
+];
+
+const revenueStreams = [
+  { source: 'Tuition Fees', amount: 9500, percentage: 60, trend: '+5%' },
+  { source: 'Government Grants', amount: 2500, percentage: 16, trend: '0%' },
+  { source: 'Research Grants', amount: 1000, percentage: 6, trend: '+22%' },
+  { source: 'Self-Financed Courses', amount: 1800, percentage: 11, trend: '+12%' },
+  { source: 'Consultancy & Services', amount: 500, percentage: 3, trend: '+8%' },
+  { source: 'Other Income', amount: 600, percentage: 4, trend: '+3%' },
+];
 
 export default function VCFinance() {
   const { toast } = useToast();
+  const [selectedDept, setSelectedDept] = useState<DeptBudget | null>(null);
 
   const totalBudget = financialOverview.reduce((sum, f) => sum + f.budget, 0);
   const totalActual = financialOverview.reduce((sum, f) => sum + f.actual, 0);
@@ -26,15 +48,6 @@ export default function VCFinance() {
     Actual: f.actual,
   }));
 
-  const revenueStreams = [
-    { source: 'Tuition Fees', amount: 9500, percentage: 60, trend: '+5%' },
-    { source: 'Government Grants', amount: 2500, percentage: 16, trend: '0%' },
-    { source: 'Research Grants', amount: 1000, percentage: 6, trend: '+22%' },
-    { source: 'Self-Financed Courses', amount: 1800, percentage: 11, trend: '+12%' },
-    { source: 'Consultancy & Services', amount: 500, percentage: 3, trend: '+8%' },
-    { source: 'Other Income', amount: 600, percentage: 4, trend: '+3%' },
-  ];
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -43,7 +56,7 @@ export default function VCFinance() {
             <h1 className="text-2xl font-bold text-foreground">Financial Overview</h1>
             <p className="text-muted-foreground">Institution-wide budget, revenue, and expenditure tracking</p>
           </div>
-          <Button variant="outline" className="gap-2" onClick={() => toast({ title: 'Exported', description: 'Financial summary report downloaded.' })}>
+          <Button variant="outline" className="gap-2" onClick={() => toast({ title: 'Exported', description: 'Financial summary report downloaded as PDF.' })}>
             <Download className="h-4 w-4" /> Export Report
           </Button>
         </div>
@@ -152,16 +165,8 @@ export default function VCFinance() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {[
-                    { dept: 'Computer Science', allocated: 450, spent: 380, util: 84 },
-                    { dept: 'Electronics', allocated: 380, spent: 340, util: 89 },
-                    { dept: 'Mechanical', allocated: 420, spent: 390, util: 93 },
-                    { dept: 'Civil Engineering', allocated: 350, spent: 395, util: 113 },
-                    { dept: 'Business Admin', allocated: 280, spent: 245, util: 88 },
-                    { dept: 'Physics', allocated: 200, spent: 175, util: 88 },
-                    { dept: 'Chemistry', allocated: 220, spent: 195, util: 89 },
-                  ].map(d => (
-                    <div key={d.dept} className="flex items-center gap-4 rounded-lg border p-3">
+                  {deptBudgets.map(d => (
+                    <div key={d.dept} className="flex items-center gap-4 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setSelectedDept(d)}>
                       <div className="w-36 text-sm font-medium">{d.dept}</div>
                       <div className="flex-1">
                         <Progress value={Math.min(d.util, 100)} className="h-2" />
@@ -172,6 +177,9 @@ export default function VCFinance() {
                       <Badge variant={d.util > 100 ? 'destructive' : d.util > 90 ? 'default' : 'secondary'} className="text-[10px] w-14 justify-center">
                         {d.util}%
                       </Badge>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={e => { e.stopPropagation(); setSelectedDept(d); }}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -179,6 +187,50 @@ export default function VCFinance() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Department Drill-down Dialog */}
+        <Dialog open={!!selectedDept} onOpenChange={() => setSelectedDept(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{selectedDept?.dept} — Budget Breakdown</DialogTitle>
+              <DialogDescription>
+                Allocated: ₹{selectedDept?.allocated}L • Spent: ₹{selectedDept?.spent}L • Utilization: {selectedDept?.util}%
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Progress value={Math.min(selectedDept?.util || 0, 100)} className="h-3 flex-1" />
+                <Badge variant={(selectedDept?.util || 0) > 100 ? 'destructive' : 'default'} className="text-xs">
+                  {(selectedDept?.util || 0) > 100 ? 'Over Budget' : 'Within Budget'}
+                </Badge>
+              </div>
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm">Spending Categories</h4>
+                {selectedDept?.categories.map(cat => (
+                  <div key={cat.name} className="flex items-center justify-between rounded-lg border p-3">
+                    <span className="text-sm">{cat.name}</span>
+                    <div className="flex items-center gap-3">
+                      <div className="w-32">
+                        <Progress value={(cat.amount / (selectedDept?.spent || 1)) * 100} className="h-2" />
+                      </div>
+                      <span className="text-sm font-medium w-16 text-right">₹{cat.amount}L</span>
+                      <span className="text-[10px] text-muted-foreground w-10 text-right">{Math.round((cat.amount / (selectedDept?.spent || 1)) * 100)}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {(selectedDept?.util || 0) > 100 && (
+                <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
+                  <p className="text-sm text-destructive font-medium">⚠ Budget Overrun Alert</p>
+                  <p className="text-xs text-muted-foreground mt-1">This department has exceeded its allocated budget by ₹{(selectedDept?.spent || 0) - (selectedDept?.allocated || 0)}L. Review recommended.</p>
+                </div>
+              )}
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Exported', description: `${selectedDept?.dept} budget report exported.` })}>
+                <Download className="h-3 w-3" /> Export Department Report
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
