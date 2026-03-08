@@ -146,7 +146,7 @@ export default function HODGrievances() {
                     <p className="text-[10px] text-muted-foreground mt-0.5">By {g.filedBy} • {g.filedAt}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <Badge variant={item?.priority === 'high' ? 'destructive' : 'outline'} className="capitalize text-[10px]">{g.priority}</Badge>
+                    <Badge variant={g.priority === 'high' ? 'destructive' : 'outline'} className="capitalize text-[10px]">{g.priority}</Badge>
                     <Badge variant={statusColors[g.status] as any} className="capitalize text-[10px]">{g.status.replace('_', ' ')}</Badge>
                   </div>
                 </CardContent>
