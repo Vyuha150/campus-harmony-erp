@@ -135,6 +135,15 @@ function AppRoutes() {
       <Route path="/dean/finance" element={<ProtectedRoute><DeanFinance /></ProtectedRoute>} />
       <Route path="/dean/accreditation" element={<ProtectedRoute><DeanAccreditation /></ProtectedRoute>} />
       <Route path="/dean/coordination" element={<ProtectedRoute><DeanCoordination /></ProtectedRoute>} />
+      {/* VC / Pro-VC Portal Routes */}
+      <Route path="/vc/approvals" element={<ProtectedRoute><VCApprovals /></ProtectedRoute>} />
+      <Route path="/vc/policy" element={<ProtectedRoute><VCPolicyPlanning /></ProtectedRoute>} />
+      <Route path="/vc/meetings" element={<ProtectedRoute><VCMeetings /></ProtectedRoute>} />
+      <Route path="/vc/communication" element={<ProtectedRoute><VCCommunication /></ProtectedRoute>} />
+      <Route path="/vc/compliance" element={<ProtectedRoute><VCCompliance /></ProtectedRoute>} />
+      <Route path="/vc/finance" element={<ProtectedRoute><VCFinance /></ProtectedRoute>} />
+      <Route path="/vc/analytics" element={<ProtectedRoute><VCAnalytics /></ProtectedRoute>} />
+      <Route path="/vc/global-access" element={<ProtectedRoute><VCGlobalAccess /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

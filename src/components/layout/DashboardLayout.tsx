@@ -49,6 +49,13 @@ const routeLabels: Record<string, string> = {
   'faculty-hr': 'Faculty HR',
   'student-affairs': 'Student Affairs',
   coordination: 'Coordination',
+  vc: 'VC Portal',
+  approvals: 'Approvals & Decisions',
+  policy: 'Policy & Planning',
+  meetings: 'Meetings & Workflow',
+  compliance: 'Compliance & Accreditation',
+  analytics: 'Analytics & Reports',
+  'global-access': 'Global Access',
 };
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
