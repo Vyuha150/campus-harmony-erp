@@ -122,11 +122,13 @@ const placementMenuItems: MenuItem[] = [
 // Sports Director menu items
 const sportsMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { id: 'athletes', label: 'Athletes', icon: Users, path: '/sports/athletes' },
-  { id: 'teams', label: 'Teams', icon: Trophy, path: '/sports/teams' },
-  { id: 'facilities', label: 'Facilities', icon: Building2, path: '/sports/facilities' },
+  { id: 'athletes', label: 'Athletes Database', icon: Users, path: '/sports/athletes' },
+  { id: 'teams', label: 'Team Management', icon: Trophy, path: '/sports/teams' },
+  { id: 'attendance', label: 'Attendance & Concessions', icon: ClipboardList, path: '/sports/attendance' },
+  { id: 'facilities', label: 'Facility Booking', icon: Building2, path: '/sports/facilities' },
   { id: 'inventory', label: 'Inventory', icon: Package, path: '/sports/inventory' },
-  { id: 'events', label: 'Events', icon: Award, path: '/sports/events' },
+  { id: 'events', label: 'Events & Tournaments', icon: Award, path: '/sports/events' },
+  { id: 'health', label: 'Health & Fitness', icon: Shield, path: '/sports/health' },
 ];
 
 // Alumni Officer menu items

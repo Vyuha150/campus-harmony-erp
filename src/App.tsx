@@ -218,6 +218,14 @@ function AppRoutes() {
       <Route path="/placement/training" element={<ProtectedRoute><PlacementTraining /></ProtectedRoute>} />
       <Route path="/placement/reports" element={<ProtectedRoute><PlacementReports /></ProtectedRoute>} />
       <Route path="/placement/communication" element={<ProtectedRoute><PlacementCommunication /></ProtectedRoute>} />
+      {/* Sports Portal Routes */}
+      <Route path="/sports/athletes" element={<ProtectedRoute><SportsAthletes /></ProtectedRoute>} />
+      <Route path="/sports/teams" element={<ProtectedRoute><SportsTeams /></ProtectedRoute>} />
+      <Route path="/sports/attendance" element={<ProtectedRoute><SportsAttendance /></ProtectedRoute>} />
+      <Route path="/sports/facilities" element={<ProtectedRoute><SportsFacilities /></ProtectedRoute>} />
+      <Route path="/sports/inventory" element={<ProtectedRoute><SportsInventory /></ProtectedRoute>} />
+      <Route path="/sports/events" element={<ProtectedRoute><SportsEvents /></ProtectedRoute>} />
+      <Route path="/sports/health" element={<ProtectedRoute><SportsHealth /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
