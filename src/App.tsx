@@ -90,6 +90,12 @@ import FinanceBudgets from "./components/finance/FinanceBudgets";
 
 // Placement Portal Pages
 import PlacementDashboard from "./components/placement/PlacementDashboard";
+import PlacementStudents from "./components/placement/PlacementStudents";
+import PlacementCompanies from "./components/placement/PlacementCompanies";
+import PlacementDrives from "./components/placement/PlacementDrives";
+import PlacementTraining from "./components/placement/PlacementTraining";
+import PlacementReports from "./components/placement/PlacementReports";
+import PlacementCommunication from "./components/placement/PlacementCommunication";
 
 // Sports Portal Pages
 import SportsDashboard from "./components/sports/SportsDashboard";
@@ -198,6 +204,13 @@ function AppRoutes() {
       <Route path="/finance/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
       <Route path="/finance/reports" element={<ProtectedRoute><FinancialReports /></ProtectedRoute>} />
       <Route path="/finance/budgets" element={<ProtectedRoute><FinanceBudgets /></ProtectedRoute>} />
+      {/* Placement Portal Routes */}
+      <Route path="/placement/students" element={<ProtectedRoute><PlacementStudents /></ProtectedRoute>} />
+      <Route path="/placement/companies" element={<ProtectedRoute><PlacementCompanies /></ProtectedRoute>} />
+      <Route path="/placement/drives" element={<ProtectedRoute><PlacementDrives /></ProtectedRoute>} />
+      <Route path="/placement/training" element={<ProtectedRoute><PlacementTraining /></ProtectedRoute>} />
+      <Route path="/placement/reports" element={<ProtectedRoute><PlacementReports /></ProtectedRoute>} />
+      <Route path="/placement/communication" element={<ProtectedRoute><PlacementCommunication /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

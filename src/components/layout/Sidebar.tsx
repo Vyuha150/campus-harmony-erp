@@ -114,8 +114,8 @@ const placementMenuItems: MenuItem[] = [
   { id: 'students', label: 'Student Profiles', icon: Users, path: '/placement/students' },
   { id: 'companies', label: 'Company Management', icon: Building2, path: '/placement/companies' },
   { id: 'drives', label: 'Placement Drives', icon: Briefcase, path: '/placement/drives' },
-  { id: 'training', label: 'Training Sessions', icon: GraduationCap, path: '/placement/training' },
-  { id: 'reports', label: 'Reports', icon: FileBarChart, path: '/placement/reports' },
+  { id: 'training', label: 'Training & Internships', icon: GraduationCap, path: '/placement/training' },
+  { id: 'reports', label: 'Reports & Analytics', icon: FileBarChart, path: '/placement/reports' },
   { id: 'communication', label: 'Communication', icon: MessageSquare, path: '/placement/communication' },
 ];
 
