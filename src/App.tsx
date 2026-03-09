@@ -99,6 +99,13 @@ import PlacementCommunication from "./components/placement/PlacementCommunicatio
 
 // Sports Portal Pages
 import SportsDashboard from "./components/sports/SportsDashboard";
+import SportsAthletes from "./components/sports/SportsAthletes";
+import SportsTeams from "./components/sports/SportsTeams";
+import SportsAttendance from "./components/sports/SportsAttendance";
+import SportsFacilities from "./components/sports/SportsFacilities";
+import SportsInventory from "./components/sports/SportsInventory";
+import SportsEvents from "./components/sports/SportsEvents";
+import SportsHealth from "./components/sports/SportsHealth";
 
 // Alumni Portal Pages
 import AlumniDashboard from "./components/alumni/AlumniDashboard";
