@@ -78,6 +78,34 @@ import VCCompliance from "./components/vc/VCCompliance";
 import VCFinance from "./components/vc/VCFinance";
 import VCAnalytics from "./components/vc/VCAnalytics";
 import VCGlobalAccess from "./components/vc/VCGlobalAccess";
+
+// Finance Portal Pages
+import FinanceDashboard from "./components/finance/FinanceDashboard";
+import FeeManagement from "./components/finance/FeeManagement";
+import Accounting from "./components/finance/Accounting";
+import Procurement from "./components/finance/Procurement";
+import Payroll from "./components/finance/Payroll";
+import FinancialReports from "./components/finance/FinancialReports";
+import FinanceBudgets from "./components/finance/FinanceBudgets";
+
+// Placement Portal Pages
+import PlacementDashboard from "./components/placement/PlacementDashboard";
+
+// Sports Portal Pages
+import SportsDashboard from "./components/sports/SportsDashboard";
+
+// Alumni Portal Pages
+import AlumniDashboard from "./components/alumni/AlumniDashboard";
+
+// IQAC Portal Pages
+import IQACDashboard from "./components/iqac/IQACDashboard";
+
+// Grievance Portal Pages
+import GrievanceDashboard from "./components/grievance/GrievanceDashboard";
+
+// Security Portal Pages
+import SecurityDashboard from "./components/security/SecurityDashboard";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
@@ -103,7 +131,7 @@ function AppRoutes() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : (user?.role === 'vice_chancellor' || user?.role === 'pro_vc') ? <VCDashboard /> : user?.role === 'registrar' ? <RegistrarDashboard /> : <Dashboard />}
+            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : (user?.role === 'vice_chancellor' || user?.role === 'pro_vc') ? <VCDashboard /> : user?.role === 'registrar' ? <RegistrarDashboard /> : user?.role === 'finance_officer' ? <FinanceDashboard /> : user?.role === 'placement_officer' ? <PlacementDashboard /> : user?.role === 'sports_director' ? <SportsDashboard /> : user?.role === 'alumni_officer' ? <AlumniDashboard /> : user?.role === 'iqac_coordinator' ? <IQACDashboard /> : user?.role === 'grievance_officer' ? <GrievanceDashboard /> : user?.role === 'security_officer' ? <SecurityDashboard /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -163,11 +191,17 @@ function AppRoutes() {
       <Route path="/registrar/hr" element={<ProtectedRoute><RegistrarHR /></ProtectedRoute>} />
       <Route path="/registrar/accreditation" element={<ProtectedRoute><RegistrarAccreditation /></ProtectedRoute>} />
       <Route path="/registrar/queries" element={<ProtectedRoute><RegistrarQueries /></ProtectedRoute>} />
+      {/* Finance Portal Routes */}
+      <Route path="/finance/fees" element={<ProtectedRoute><FeeManagement /></ProtectedRoute>} />
+      <Route path="/finance/accounting" element={<ProtectedRoute><Accounting /></ProtectedRoute>} />
+      <Route path="/finance/procurement" element={<ProtectedRoute><Procurement /></ProtectedRoute>} />
+      <Route path="/finance/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
+      <Route path="/finance/reports" element={<ProtectedRoute><FinancialReports /></ProtectedRoute>} />
+      <Route path="/finance/budgets" element={<ProtectedRoute><FinanceBudgets /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/examinations/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/finance/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/research/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/placements/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/library/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

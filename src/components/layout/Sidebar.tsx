@@ -105,6 +105,7 @@ const financeMenuItems: MenuItem[] = [
   { id: 'procurement', label: 'Procurement & Payments', icon: Package, path: '/finance/procurement' },
   { id: 'payroll', label: 'Payroll Processing', icon: Users, path: '/finance/payroll' },
   { id: 'reports', label: 'Reports & Audits', icon: FileBarChart, path: '/finance/reports' },
+  { id: 'budgets', label: 'Budget Management', icon: BarChart3, path: '/finance/budgets' },
 ];
 
 // Placement Officer menu items
@@ -300,6 +301,20 @@ export function Sidebar() {
     ? vcMenuItems
     : user.role === 'registrar'
     ? registrarMenuItems
+    : user.role === 'finance_officer'
+    ? financeMenuItems
+    : user.role === 'placement_officer'
+    ? placementMenuItems
+    : user.role === 'sports_director'
+    ? sportsMenuItems
+    : user.role === 'alumni_officer'
+    ? alumniMenuItems
+    : user.role === 'iqac_coordinator'
+    ? iqacMenuItems
+    : user.role === 'grievance_officer'
+    ? grievanceMenuItems
+    : user.role === 'security_officer'
+    ? securityMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);
