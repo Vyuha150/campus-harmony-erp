@@ -125,6 +125,14 @@ import IQACDocuments from "./components/iqac/IQACDocuments";
 import IQACFeedback from "./components/iqac/IQACFeedback";
 import IQACReports from "./components/iqac/IQACReports";
 
+// Super Admin Portal Pages
+import SuperAdminDashboard from "./components/admin/SuperAdminDashboard";
+import AdminUserManagement from "./components/admin/AdminUserManagement";
+import AdminSystemConfig from "./components/admin/AdminSystemConfig";
+import AdminModuleManagement from "./components/admin/AdminModuleManagement";
+import AdminAuditLogs from "./components/admin/AdminAuditLogs";
+import AdminNotifications from "./components/admin/AdminNotifications";
+
 // Grievance Portal Pages
 import GrievanceDashboard from "./components/grievance/GrievanceDashboard";
 
@@ -156,7 +164,7 @@ function AppRoutes() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : (user?.role === 'vice_chancellor' || user?.role === 'pro_vc') ? <VCDashboard /> : user?.role === 'registrar' ? <RegistrarDashboard /> : user?.role === 'finance_officer' ? <FinanceDashboard /> : user?.role === 'placement_officer' ? <PlacementDashboard /> : user?.role === 'sports_director' ? <SportsDashboard /> : user?.role === 'alumni_officer' ? <AlumniDashboard /> : user?.role === 'iqac_coordinator' ? <IQACDashboard /> : user?.role === 'grievance_officer' ? <GrievanceDashboard /> : user?.role === 'security_officer' ? <SecurityDashboard /> : <Dashboard />}
+            {user?.role === 'super_admin' ? <SuperAdminDashboard /> : user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : (user?.role === 'vice_chancellor' || user?.role === 'pro_vc') ? <VCDashboard /> : user?.role === 'registrar' ? <RegistrarDashboard /> : user?.role === 'finance_officer' ? <FinanceDashboard /> : user?.role === 'placement_officer' ? <PlacementDashboard /> : user?.role === 'sports_director' ? <SportsDashboard /> : user?.role === 'alumni_officer' ? <AlumniDashboard /> : user?.role === 'iqac_coordinator' ? <IQACDashboard /> : user?.role === 'grievance_officer' ? <GrievanceDashboard /> : user?.role === 'security_officer' ? <SecurityDashboard /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -252,6 +260,12 @@ function AppRoutes() {
       <Route path="/iqac/documents" element={<ProtectedRoute><IQACDocuments /></ProtectedRoute>} />
       <Route path="/iqac/feedback" element={<ProtectedRoute><IQACFeedback /></ProtectedRoute>} />
       <Route path="/iqac/reports" element={<ProtectedRoute><IQACReports /></ProtectedRoute>} />
+      {/* Super Admin Portal Routes */}
+      <Route path="/admin/users" element={<ProtectedRoute><AdminUserManagement /></ProtectedRoute>} />
+      <Route path="/admin/config" element={<ProtectedRoute><AdminSystemConfig /></ProtectedRoute>} />
+      <Route path="/admin/modules" element={<ProtectedRoute><AdminModuleManagement /></ProtectedRoute>} />
+      <Route path="/admin/audit" element={<ProtectedRoute><AdminAuditLogs /></ProtectedRoute>} />
+      <Route path="/admin/notifications" element={<ProtectedRoute><AdminNotifications /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
