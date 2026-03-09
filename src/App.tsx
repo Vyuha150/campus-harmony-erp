@@ -119,6 +119,11 @@ import AlumniJobs from "./components/alumni/AlumniJobs";
 
 // IQAC Portal Pages
 import IQACDashboard from "./components/iqac/IQACDashboard";
+import IQACCriteria from "./components/iqac/IQACCriteria";
+import IQACActions from "./components/iqac/IQACActions";
+import IQACDocuments from "./components/iqac/IQACDocuments";
+import IQACFeedback from "./components/iqac/IQACFeedback";
+import IQACReports from "./components/iqac/IQACReports";
 
 // Grievance Portal Pages
 import GrievanceDashboard from "./components/grievance/GrievanceDashboard";
