@@ -109,6 +109,13 @@ import SportsHealth from "./components/sports/SportsHealth";
 
 // Alumni Portal Pages
 import AlumniDashboard from "./components/alumni/AlumniDashboard";
+import AlumniDirectory from "./components/alumni/AlumniDirectory";
+import AlumniCommunication from "./components/alumni/AlumniCommunication";
+import AlumniEvents from "./components/alumni/AlumniEvents";
+import AlumniMentorship from "./components/alumni/AlumniMentorship";
+import AlumniDonations from "./components/alumni/AlumniDonations";
+import AlumniProgression from "./components/alumni/AlumniProgression";
+import AlumniJobs from "./components/alumni/AlumniJobs";
 
 // IQAC Portal Pages
 import IQACDashboard from "./components/iqac/IQACDashboard";
