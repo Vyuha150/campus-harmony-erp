@@ -260,6 +260,12 @@ function AppRoutes() {
       <Route path="/iqac/documents" element={<ProtectedRoute><IQACDocuments /></ProtectedRoute>} />
       <Route path="/iqac/feedback" element={<ProtectedRoute><IQACFeedback /></ProtectedRoute>} />
       <Route path="/iqac/reports" element={<ProtectedRoute><IQACReports /></ProtectedRoute>} />
+      {/* Super Admin Portal Routes */}
+      <Route path="/admin/users" element={<ProtectedRoute><AdminUserManagement /></ProtectedRoute>} />
+      <Route path="/admin/config" element={<ProtectedRoute><AdminSystemConfig /></ProtectedRoute>} />
+      <Route path="/admin/modules" element={<ProtectedRoute><AdminModuleManagement /></ProtectedRoute>} />
+      <Route path="/admin/audit" element={<ProtectedRoute><AdminAuditLogs /></ProtectedRoute>} />
+      <Route path="/admin/notifications" element={<ProtectedRoute><AdminNotifications /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
