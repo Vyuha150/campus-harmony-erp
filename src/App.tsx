@@ -119,6 +119,11 @@ import AlumniJobs from "./components/alumni/AlumniJobs";
 
 // IQAC Portal Pages
 import IQACDashboard from "./components/iqac/IQACDashboard";
+import IQACCriteria from "./components/iqac/IQACCriteria";
+import IQACActions from "./components/iqac/IQACActions";
+import IQACDocuments from "./components/iqac/IQACDocuments";
+import IQACFeedback from "./components/iqac/IQACFeedback";
+import IQACReports from "./components/iqac/IQACReports";
 
 // Grievance Portal Pages
 import GrievanceDashboard from "./components/grievance/GrievanceDashboard";
@@ -241,6 +246,12 @@ function AppRoutes() {
       <Route path="/alumni/donations" element={<ProtectedRoute><AlumniDonations /></ProtectedRoute>} />
       <Route path="/alumni/progression" element={<ProtectedRoute><AlumniProgression /></ProtectedRoute>} />
       <Route path="/alumni/jobs" element={<ProtectedRoute><AlumniJobs /></ProtectedRoute>} />
+      {/* IQAC Portal Routes */}
+      <Route path="/iqac/criteria" element={<ProtectedRoute><IQACCriteria /></ProtectedRoute>} />
+      <Route path="/iqac/actions" element={<ProtectedRoute><IQACActions /></ProtectedRoute>} />
+      <Route path="/iqac/documents" element={<ProtectedRoute><IQACDocuments /></ProtectedRoute>} />
+      <Route path="/iqac/feedback" element={<ProtectedRoute><IQACFeedback /></ProtectedRoute>} />
+      <Route path="/iqac/reports" element={<ProtectedRoute><IQACReports /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
