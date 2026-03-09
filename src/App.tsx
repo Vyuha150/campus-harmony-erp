@@ -191,11 +191,17 @@ function AppRoutes() {
       <Route path="/registrar/hr" element={<ProtectedRoute><RegistrarHR /></ProtectedRoute>} />
       <Route path="/registrar/accreditation" element={<ProtectedRoute><RegistrarAccreditation /></ProtectedRoute>} />
       <Route path="/registrar/queries" element={<ProtectedRoute><RegistrarQueries /></ProtectedRoute>} />
+      {/* Finance Portal Routes */}
+      <Route path="/finance/fees" element={<ProtectedRoute><FeeManagement /></ProtectedRoute>} />
+      <Route path="/finance/accounting" element={<ProtectedRoute><Accounting /></ProtectedRoute>} />
+      <Route path="/finance/procurement" element={<ProtectedRoute><Procurement /></ProtectedRoute>} />
+      <Route path="/finance/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
+      <Route path="/finance/reports" element={<ProtectedRoute><FinancialReports /></ProtectedRoute>} />
+      <Route path="/finance/budgets" element={<ProtectedRoute><FinanceBudgets /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/examinations/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/finance/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/research/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/placements/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/library/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

@@ -105,6 +105,7 @@ const financeMenuItems: MenuItem[] = [
   { id: 'procurement', label: 'Procurement & Payments', icon: Package, path: '/finance/procurement' },
   { id: 'payroll', label: 'Payroll Processing', icon: Users, path: '/finance/payroll' },
   { id: 'reports', label: 'Reports & Audits', icon: FileBarChart, path: '/finance/reports' },
+  { id: 'budgets', label: 'Budget Management', icon: BarChart3, path: '/finance/budgets' },
 ];
 
 // Placement Officer menu items
