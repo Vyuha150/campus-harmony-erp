@@ -172,6 +172,15 @@ const securityMenuItems: MenuItem[] = [
   { id: 'vigilance', label: 'Vigilance', icon: ShieldCheck, path: '/security/vigilance' },
 ];
 
+// Super Admin menu items
+const superAdminMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'users', label: 'User Management', icon: Users, path: '/admin/users' },
+  { id: 'config', label: 'System Config', icon: Settings, path: '/admin/config' },
+  { id: 'modules', label: 'Module Management', icon: Package, path: '/admin/modules' },
+  { id: 'audit', label: 'Audit & Monitoring', icon: Shield, path: '/admin/audit' },
+  { id: 'notifications', label: 'Notifications', icon: Megaphone, path: '/admin/notifications' },
+];
 
 // Student-specific menu items
 const studentMenuItems: MenuItem[] = [
