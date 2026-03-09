@@ -125,6 +125,14 @@ import IQACDocuments from "./components/iqac/IQACDocuments";
 import IQACFeedback from "./components/iqac/IQACFeedback";
 import IQACReports from "./components/iqac/IQACReports";
 
+// Super Admin Portal Pages
+import SuperAdminDashboard from "./components/admin/SuperAdminDashboard";
+import AdminUserManagement from "./components/admin/AdminUserManagement";
+import AdminSystemConfig from "./components/admin/AdminSystemConfig";
+import AdminModuleManagement from "./components/admin/AdminModuleManagement";
+import AdminAuditLogs from "./components/admin/AdminAuditLogs";
+import AdminNotifications from "./components/admin/AdminNotifications";
+
 // Grievance Portal Pages
 import GrievanceDashboard from "./components/grievance/GrievanceDashboard";
 
