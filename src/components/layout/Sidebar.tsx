@@ -97,7 +97,76 @@ const vcMenuItems: MenuItem[] = [
   { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3, path: '/vc/analytics' },
   { id: 'global-access', label: 'Global Access', icon: Search, path: '/vc/global-access' },
 ];
+// Finance Officer menu items
+const financeMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'fee-management', label: 'Fee Management', icon: Wallet, path: '/finance/fees' },
+  { id: 'accounting', label: 'Accounting & Ledger', icon: BookOpen, path: '/finance/accounting' },
+  { id: 'procurement', label: 'Procurement & Payments', icon: Package, path: '/finance/procurement' },
+  { id: 'payroll', label: 'Payroll Processing', icon: Users, path: '/finance/payroll' },
+  { id: 'reports', label: 'Reports & Audits', icon: FileBarChart, path: '/finance/reports' },
+];
 
+// Placement Officer menu items
+const placementMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'students', label: 'Student Profiles', icon: Users, path: '/placement/students' },
+  { id: 'companies', label: 'Company Management', icon: Building2, path: '/placement/companies' },
+  { id: 'drives', label: 'Placement Drives', icon: Briefcase, path: '/placement/drives' },
+  { id: 'training', label: 'Training Sessions', icon: GraduationCap, path: '/placement/training' },
+  { id: 'reports', label: 'Reports', icon: FileBarChart, path: '/placement/reports' },
+  { id: 'communication', label: 'Communication', icon: MessageSquare, path: '/placement/communication' },
+];
+
+// Sports Director menu items
+const sportsMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'athletes', label: 'Athletes', icon: Users, path: '/sports/athletes' },
+  { id: 'teams', label: 'Teams', icon: Trophy, path: '/sports/teams' },
+  { id: 'facilities', label: 'Facilities', icon: Building2, path: '/sports/facilities' },
+  { id: 'inventory', label: 'Inventory', icon: Package, path: '/sports/inventory' },
+  { id: 'events', label: 'Events', icon: Award, path: '/sports/events' },
+];
+
+// Alumni Officer menu items
+const alumniMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'directory', label: 'Alumni Directory', icon: Users, path: '/alumni/directory' },
+  { id: 'events', label: 'Events & Reunions', icon: Award, path: '/alumni/events' },
+  { id: 'mentorship', label: 'Mentorship', icon: Users2, path: '/alumni/mentorship' },
+  { id: 'donations', label: 'Donations', icon: Wallet, path: '/alumni/donations' },
+  { id: 'progression', label: 'Progression Data', icon: FileBarChart, path: '/alumni/progression' },
+  { id: 'jobs', label: 'Job Board', icon: Briefcase, path: '/alumni/jobs' },
+];
+
+// IQAC Coordinator menu items
+const iqacMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'criteria', label: 'NAAC Criteria', icon: Award, path: '/iqac/criteria' },
+  { id: 'actions', label: 'Action Items', icon: ClipboardList, path: '/iqac/actions' },
+  { id: 'documents', label: 'Document Review', icon: FileText, path: '/iqac/documents' },
+  { id: 'feedback', label: 'Feedback Analysis', icon: MessageSquare, path: '/iqac/feedback' },
+  { id: 'reports', label: 'AQAR & Reports', icon: FileBarChart, path: '/iqac/reports' },
+];
+
+// Grievance Officer menu items
+const grievanceMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'cases', label: 'Case Management', icon: MessageSquare, path: '/grievance/cases' },
+  { id: 'compliance', label: 'Compliance', icon: ShieldCheck, path: '/grievance/compliance' },
+  { id: 'reports', label: 'Reports', icon: FileBarChart, path: '/grievance/reports' },
+];
+
+// Security Officer menu items
+const securityMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'incidents', label: 'Incidents', icon: Shield, path: '/security/incidents' },
+  { id: 'visitors', label: 'Visitor Passes', icon: Users, path: '/security/visitors' },
+  { id: 'ids', label: 'ID Management', icon: ClipboardList, path: '/security/ids' },
+  { id: 'vehicles', label: 'Vehicle Passes', icon: Building2, path: '/security/vehicles' },
+  { id: 'audit', label: 'Audit Logs', icon: FileText, path: '/security/audit' },
+  { id: 'vigilance', label: 'Vigilance', icon: ShieldCheck, path: '/security/vigilance' },
+];
 
 
 // Student-specific menu items
