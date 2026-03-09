@@ -78,6 +78,34 @@ import VCCompliance from "./components/vc/VCCompliance";
 import VCFinance from "./components/vc/VCFinance";
 import VCAnalytics from "./components/vc/VCAnalytics";
 import VCGlobalAccess from "./components/vc/VCGlobalAccess";
+
+// Finance Portal Pages
+import FinanceDashboard from "./components/finance/FinanceDashboard";
+import FeeManagement from "./components/finance/FeeManagement";
+import Accounting from "./components/finance/Accounting";
+import Procurement from "./components/finance/Procurement";
+import Payroll from "./components/finance/Payroll";
+import FinancialReports from "./components/finance/FinancialReports";
+import FinanceBudgets from "./components/finance/FinanceBudgets";
+
+// Placement Portal Pages
+import PlacementDashboard from "./components/placement/PlacementDashboard";
+
+// Sports Portal Pages
+import SportsDashboard from "./components/sports/SportsDashboard";
+
+// Alumni Portal Pages
+import AlumniDashboard from "./components/alumni/AlumniDashboard";
+
+// IQAC Portal Pages
+import IQACDashboard from "./components/iqac/IQACDashboard";
+
+// Grievance Portal Pages
+import GrievanceDashboard from "./components/grievance/GrievanceDashboard";
+
+// Security Portal Pages
+import SecurityDashboard from "./components/security/SecurityDashboard";
+
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
