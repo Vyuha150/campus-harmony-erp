@@ -301,7 +301,9 @@ export function Sidebar() {
   const isActiveRoute = (path: string) => location.pathname.startsWith(path);
 
   // Use role-specific menus
-  const filteredMenuItems = user.role === 'student' 
+  const filteredMenuItems = user.role === 'super_admin'
+    ? superAdminMenuItems
+    : user.role === 'student' 
     ? studentMenuItems 
     : user.role === 'faculty'
     ? facultyMenuItems
