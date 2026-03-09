@@ -90,6 +90,12 @@ import FinanceBudgets from "./components/finance/FinanceBudgets";
 
 // Placement Portal Pages
 import PlacementDashboard from "./components/placement/PlacementDashboard";
+import PlacementStudents from "./components/placement/PlacementStudents";
+import PlacementCompanies from "./components/placement/PlacementCompanies";
+import PlacementDrives from "./components/placement/PlacementDrives";
+import PlacementTraining from "./components/placement/PlacementTraining";
+import PlacementReports from "./components/placement/PlacementReports";
+import PlacementCommunication from "./components/placement/PlacementCommunication";
 
 // Sports Portal Pages
 import SportsDashboard from "./components/sports/SportsDashboard";
