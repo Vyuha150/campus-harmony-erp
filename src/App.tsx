@@ -109,6 +109,13 @@ import SportsHealth from "./components/sports/SportsHealth";
 
 // Alumni Portal Pages
 import AlumniDashboard from "./components/alumni/AlumniDashboard";
+import AlumniDirectory from "./components/alumni/AlumniDirectory";
+import AlumniCommunication from "./components/alumni/AlumniCommunication";
+import AlumniEvents from "./components/alumni/AlumniEvents";
+import AlumniMentorship from "./components/alumni/AlumniMentorship";
+import AlumniDonations from "./components/alumni/AlumniDonations";
+import AlumniProgression from "./components/alumni/AlumniProgression";
+import AlumniJobs from "./components/alumni/AlumniJobs";
 
 // IQAC Portal Pages
 import IQACDashboard from "./components/iqac/IQACDashboard";
@@ -226,6 +233,14 @@ function AppRoutes() {
       <Route path="/sports/inventory" element={<ProtectedRoute><SportsInventory /></ProtectedRoute>} />
       <Route path="/sports/events" element={<ProtectedRoute><SportsEvents /></ProtectedRoute>} />
       <Route path="/sports/health" element={<ProtectedRoute><SportsHealth /></ProtectedRoute>} />
+      {/* Alumni Portal Routes */}
+      <Route path="/alumni/directory" element={<ProtectedRoute><AlumniDirectory /></ProtectedRoute>} />
+      <Route path="/alumni/communication" element={<ProtectedRoute><AlumniCommunication /></ProtectedRoute>} />
+      <Route path="/alumni/events" element={<ProtectedRoute><AlumniEvents /></ProtectedRoute>} />
+      <Route path="/alumni/mentorship" element={<ProtectedRoute><AlumniMentorship /></ProtectedRoute>} />
+      <Route path="/alumni/donations" element={<ProtectedRoute><AlumniDonations /></ProtectedRoute>} />
+      <Route path="/alumni/progression" element={<ProtectedRoute><AlumniProgression /></ProtectedRoute>} />
+      <Route path="/alumni/jobs" element={<ProtectedRoute><AlumniJobs /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

@@ -135,9 +135,10 @@ const sportsMenuItems: MenuItem[] = [
 const alumniMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { id: 'directory', label: 'Alumni Directory', icon: Users, path: '/alumni/directory' },
+  { id: 'communication', label: 'Communication', icon: Megaphone, path: '/alumni/communication' },
   { id: 'events', label: 'Events & Reunions', icon: Award, path: '/alumni/events' },
-  { id: 'mentorship', label: 'Mentorship', icon: Users2, path: '/alumni/mentorship' },
-  { id: 'donations', label: 'Donations', icon: Wallet, path: '/alumni/donations' },
+  { id: 'mentorship', label: 'Mentorship Programs', icon: Users2, path: '/alumni/mentorship' },
+  { id: 'donations', label: 'Fundraising & Donations', icon: Wallet, path: '/alumni/donations' },
   { id: 'progression', label: 'Progression Data', icon: FileBarChart, path: '/alumni/progression' },
   { id: 'jobs', label: 'Job Board', icon: Briefcase, path: '/alumni/jobs' },
 ];
