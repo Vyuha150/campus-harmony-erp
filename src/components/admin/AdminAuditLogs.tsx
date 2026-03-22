@@ -7,16 +7,64 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Search, Filter, Download, Shield, Clock, AlertTriangle, Eye, Activity, LogIn, FileText
+  Search, Filter, Download, Clock, AlertTriangle, Activity, LogIn, FileText
 } from 'lucide-react';
-import { auditLogs, userActivities, backupRecords } from '@/data/adminMockData';
+import { fetchApi } from '@/lib/apiService';
 import { ROLE_INFO } from '@/types/erp';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { safeArray, safeDate, safeString } from '@/lib/normalize';
 
 export default function AdminAuditLogs() {
+  const [auditLogs, setAuditLogs] = useState<any>([]);
+  const [userActivities, setUserActivities] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const normalizeAuditLog = (raw: any) => ({
+    id: safeString(raw?.id),
+    timestamp: safeDate(raw?.timestamp),
+    userName: safeString(raw?.userName, 'System'),
+    role: safeString(raw?.role),
+    action: safeString(raw?.action),
+    module: safeString(raw?.module),
+    details: safeString(raw?.details),
+    ipAddress: safeString(raw?.ipAddress, '0.0.0.0'),
+    severity: safeString(raw?.severity, 'info'),
+    status: 'success'
+  });
+
+  useEffect(() => {
+    fetchApi('/admin/audit-logs').then((d: any) => {
+      const logs = safeArray(d).map(normalizeAuditLog);
+      setAuditLogs(logs);
+      setUserActivities(logs);
+    }).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [actionFilter, setActionFilter] = useState('all');
+
+  const exportLogs = () => {
+    const rows = filteredLogs.map((log) => ({
+      timestamp: log.timestamp.toISOString(),
+      userName: log.userName,
+      role: log.role,
+      action: log.action,
+      module: log.module,
+      details: log.details,
+      ipAddress: log.ipAddress,
+      severity: log.severity
+    }));
+
+    const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const filteredLogs = auditLogs.filter(l => {
     if (severityFilter !== 'all' && l.severity !== severityFilter) return false;
@@ -48,16 +96,15 @@ export default function AdminAuditLogs() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Audit & Monitoring</h1>
-            <p className="text-muted-foreground">System audit logs, user activity, and backup management</p>
+            <p className="text-muted-foreground">System audit logs and user activity</p>
           </div>
-          <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export Logs</Button>
+          <Button variant="outline" size="sm" onClick={exportLogs}><Download className="mr-2 h-4 w-4" />Export Logs</Button>
         </div>
 
         <Tabs defaultValue="audit">
           <TabsList>
             <TabsTrigger value="audit">Audit Logs</TabsTrigger>
             <TabsTrigger value="activity">User Activity</TabsTrigger>
-            <TabsTrigger value="backups">Backups</TabsTrigger>
           </TabsList>
 
           <TabsContent value="audit" className="space-y-4">
@@ -191,56 +238,6 @@ export default function AdminAuditLogs() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="backups" className="space-y-4">
-            <div className="flex justify-end">
-              <Button size="sm"><Shield className="mr-2 h-4 w-4" />Create Backup Now</Button>
-            </div>
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Size</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead>Initiated By</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {backupRecords.map(b => (
-                      <TableRow key={b.id}>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {b.createdDate.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </TableCell>
-                        <TableCell><Badge variant="outline" className="capitalize">{b.type}</Badge></TableCell>
-                        <TableCell className="text-sm text-foreground">{b.size}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{b.duration}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{b.initiatedBy}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{b.location}</TableCell>
-                        <TableCell>
-                          <Badge variant={b.status === 'completed' ? 'default' : b.status === 'in_progress' ? 'secondary' : 'destructive'} className="capitalize">
-                            {b.status.replace('_', ' ')}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {b.status === 'completed' && (
-                            <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
-                              <Button variant="ghost" size="sm"><Eye className="h-4 w-4" /></Button>
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>

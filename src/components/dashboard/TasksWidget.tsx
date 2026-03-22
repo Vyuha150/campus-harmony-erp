@@ -2,6 +2,8 @@ import { CheckCircle2, Clock, AlertTriangle, MoreHorizontal } from 'lucide-react
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { useEffect, useState } from 'react';
+import { fetchApi } from '@/lib/apiService';
 
 interface Task {
   id: string;
@@ -11,45 +13,6 @@ interface Task {
   status: 'pending' | 'in_progress' | 'completed' | 'overdue';
   progress?: number;
 }
-
-const mockTasks: Task[] = [
-  {
-    id: '1',
-    title: 'Submit NAAC SSR Report',
-    dueDate: 'Dec 15, 2024',
-    priority: 'high',
-    status: 'in_progress',
-    progress: 75,
-  },
-  {
-    id: '2',
-    title: 'Review Faculty Leave Applications',
-    dueDate: 'Dec 12, 2024',
-    priority: 'medium',
-    status: 'pending',
-  },
-  {
-    id: '3',
-    title: 'Prepare Budget Report Q4',
-    dueDate: 'Dec 10, 2024',
-    priority: 'high',
-    status: 'overdue',
-  },
-  {
-    id: '4',
-    title: 'Update Course Syllabus for NEP 2020',
-    dueDate: 'Dec 20, 2024',
-    priority: 'medium',
-    status: 'pending',
-  },
-  {
-    id: '5',
-    title: 'Convocation Planning Meeting',
-    dueDate: 'Dec 18, 2024',
-    priority: 'low',
-    status: 'pending',
-  },
-];
 
 const statusConfig = {
   pending: {
@@ -85,9 +48,17 @@ const priorityColors = {
 };
 
 export function TasksWidget() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+
+  useEffect(() => {
+    fetchApi('/dashboard/tasks')
+      .then((data) => setTasks(data))
+      .catch((error) => { console.error('API request failed', error); });
+  }, []);
+
   return (
     <div className="space-y-2">
-      {mockTasks.map((task) => {
+      {tasks.map((task) => {
         const config = statusConfig[task.status];
         const Icon = config.icon;
 

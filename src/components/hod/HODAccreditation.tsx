@@ -11,14 +11,21 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   FileText, Download, Upload, CheckCircle, Clock, AlertTriangle, Award, Edit, Plus
 } from 'lucide-react';
-import { accreditationData as initialData } from '@/data/hodMockData';
-import { useState } from 'react';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { AccreditationDataItem } from '@/types/hod';
 
 export default function HODAccreditation() {
+  const [accreditationData, setAccreditationData] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/hod/accreditationdata').then(d => setAccreditationData(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [data, setData] = useState<AccreditationDataItem[]>(initialData);
+  const [data, setData] = useState<AccreditationDataItem[]>([]);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -26,53 +33,99 @@ export default function HODAccreditation() {
   const [editValue, setEditValue] = useState('');
   const [newMetric, setNewMetric] = useState({ criterion: '', metric: '', value: '', year: '2025-26' });
 
+  useEffect(() => {
+    setData(accreditationData);
+  }, [accreditationData]);
+
   const complete = data.filter(d => d.status === 'complete').length;
   const pending = data.filter(d => d.status === 'pending').length;
   const needsReview = data.filter(d => d.status === 'needs_review').length;
-  const readiness = Math.round((complete / data.length) * 100);
+  const readiness = data.length > 0 ? Math.round((complete / data.length) * 100) : 0;
 
   const criteria = [...new Set(data.map(d => d.criterion))];
 
-  const handleVerify = (id: string) => {
-    setData(prev => prev.map(d => d.id === id ? { ...d, status: 'complete', lastUpdated: '2026-03-08', updatedBy: 'Dr. Vikram Singh (HOD)' } : d));
-    toast({ title: '✅ Data Verified', description: 'Metric verified and marked complete by HOD' });
-  };
-
-  const handleEditSave = () => {
-    if (selectedItem && editValue) {
-      setData(prev => prev.map(d => d.id === selectedItem.id ? { ...d, value: editValue, lastUpdated: '2026-03-08', updatedBy: 'Dr. Vikram Singh (HOD)' } : d));
-      toast({ title: 'Value Updated', description: `${selectedItem.metric} updated to "${editValue}"` });
-      setShowEditDialog(false);
-      setEditValue('');
+  const handleVerify = async (id: string) => {
+    try {
+      const updated = await putApi<any>(`/hod/accreditationdata/${id}`, { status: 'complete' });
+      setData(prev => prev.map(d => d.id === id ? {
+        ...d,
+        status: 'complete',
+        lastUpdated: updated?.lastUpdated ? new Date(updated.lastUpdated).toLocaleDateString('en-IN') : d.lastUpdated,
+        updatedBy: updated?.updatedBy || d.updatedBy,
+      } : d));
+      toast({ title: '✅ Data Verified', description: 'Metric verified and marked complete by HOD' });
+    } catch (error: any) {
+      toast({ title: 'Verification failed', description: error?.message || 'Unable to verify metric', variant: 'destructive' });
     }
   };
 
-  const handleAddMetric = () => {
+  const handleEditSave = async () => {
+    if (selectedItem && editValue) {
+      try {
+        const updated = await putApi<any>(`/hod/accreditationdata/${selectedItem.id}`, { value: editValue });
+        setData(prev => prev.map(d => d.id === selectedItem.id ? {
+          ...d,
+          value: editValue,
+          lastUpdated: updated?.lastUpdated ? new Date(updated.lastUpdated).toLocaleDateString('en-IN') : d.lastUpdated,
+          updatedBy: updated?.updatedBy || d.updatedBy,
+        } : d));
+        toast({ title: 'Value Updated', description: `${selectedItem.metric} updated to "${editValue}"` });
+        setShowEditDialog(false);
+        setEditValue('');
+      } catch (error: any) {
+        toast({ title: 'Update failed', description: error?.message || 'Unable to update metric value', variant: 'destructive' });
+      }
+    }
+  };
+
+  const handleAddMetric = async () => {
     if (newMetric.criterion && newMetric.metric && newMetric.value) {
-      const item: AccreditationDataItem = {
-        id: `ad-${Date.now()}`,
-        criterion: newMetric.criterion,
-        metric: newMetric.metric,
-        value: newMetric.value,
-        year: newMetric.year,
-        status: 'pending',
-        lastUpdated: '2026-03-08',
-        updatedBy: 'Dr. Vikram Singh (HOD)',
-      };
-      setData(prev => [...prev, item]);
-      toast({ title: 'Metric Added', description: `"${newMetric.metric}" added to ${newMetric.criterion}` });
-      setShowAddDialog(false);
-      setNewMetric({ criterion: '', metric: '', value: '', year: '2025-26' });
+      try {
+        const created = await postApi<any>('/hod/accreditationdata', {
+          criterion: newMetric.criterion,
+          metric: newMetric.metric,
+          value: newMetric.value,
+          year: newMetric.year,
+        });
+        const item: AccreditationDataItem = {
+          id: created.id,
+          criterion: created.criterion,
+          metric: created.metric,
+          value: created.value,
+          year: created.year,
+          status: created.status,
+          lastUpdated: created.lastUpdated ? new Date(created.lastUpdated).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN'),
+          updatedBy: created.updatedBy || 'HOD',
+        };
+        setData(prev => [...prev, item]);
+        toast({ title: 'Metric Added', description: `"${newMetric.metric}" added to ${newMetric.criterion}` });
+        setShowAddDialog(false);
+        setNewMetric({ criterion: '', metric: '', value: '', year: '2025-26' });
+      } catch (error: any) {
+        toast({ title: 'Create failed', description: error?.message || 'Unable to add metric', variant: 'destructive' });
+      }
     }
   };
 
   const handleExportSSR = () => {
-    toast({ title: '📥 SSR Exported', description: `Departmental SSR data exported with ${complete} complete metrics` });
+    postApi('/hod/accreditation/export-ssr', { complete })
+      .then(() => {
+        toast({ title: '📥 SSR Exported', description: `Departmental SSR data exported with ${complete} complete metrics` });
+      })
+      .catch((error: any) => {
+        toast({ title: 'Export failed', description: error?.message || 'Unable to export SSR data', variant: 'destructive' });
+      });
   };
 
   const handleUpload = () => {
-    toast({ title: '📎 Document Uploaded', description: 'Supporting document uploaded successfully' });
-    setShowUploadDialog(false);
+    postApi('/hod/accreditation/upload-document', { name: 'supporting-document' })
+      .then(() => {
+        toast({ title: '📎 Document Uploaded', description: 'Supporting document uploaded successfully' });
+        setShowUploadDialog(false);
+      })
+      .catch((error: any) => {
+        toast({ title: 'Upload failed', description: error?.message || 'Unable to upload document', variant: 'destructive' });
+      });
   };
 
   return (

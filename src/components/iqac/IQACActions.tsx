@@ -1,15 +1,54 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { CheckCircle2, Clock, AlertTriangle, Plus, Filter, Search } from 'lucide-react';
-import { iqacActionItems } from '@/data/iqacMockData';
-import { useState } from 'react';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CheckCircle2, Plus, Filter, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { createIQACAction, fetchIQACActions, updateIQACAction } from '@/lib/iqacApi';
+import { useToast } from '@/hooks/use-toast';
 
 export default function IQACActions() {
+  const { toast } = useToast();
+  const [iqacActionItems, setIqacActionItems] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newAction, setNewAction] = useState({
+    title: '',
+    description: '',
+    category: 'governance',
+    priority: 'medium',
+    assignedTo: '',
+    department: '',
+    dueDate: '',
+    impact: ''
+  });
+
+  const loadActions = async () => {
+    try {
+      setApiLoading(true);
+      const actions = await fetchIQACActions();
+      setIqacActionItems(actions);
+    } catch (error: any) {
+      toast({
+        title: 'Unable to load action items',
+        description: error?.message || 'Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setApiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadActions();
+  }, []);
+
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -28,6 +67,71 @@ export default function IQACActions() {
   };
 
   const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+
+  const handleCreateAction = async () => {
+    if (!newAction.title.trim() || !newAction.description.trim() || !newAction.assignedTo.trim() || !newAction.dueDate) {
+      toast({ title: 'Missing details', description: 'Title, description, assignee, and due date are required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await createIQACAction({
+        title: newAction.title.trim(),
+        description: newAction.description.trim(),
+        category: newAction.category,
+        priority: newAction.priority,
+        assignedTo: newAction.assignedTo.trim(),
+        department: newAction.department.trim() || undefined,
+        dueDate: newAction.dueDate,
+        impact: newAction.impact.trim() || undefined
+      });
+
+      await loadActions();
+      setShowCreateDialog(false);
+      setNewAction({
+        title: '',
+        description: '',
+        category: 'governance',
+        priority: 'medium',
+        assignedTo: '',
+        department: '',
+        dueDate: '',
+        impact: ''
+      });
+      toast({ title: 'Action item created', description: 'The new IQAC action has been saved.' });
+    } catch (error: any) {
+      toast({ title: 'Create failed', description: error?.message || 'Unable to create action item.', variant: 'destructive' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateStatus = async (action: any) => {
+    const nextStatus = action.status === 'pending'
+      ? 'in_progress'
+      : action.status === 'in_progress'
+        ? 'completed'
+        : 'pending';
+
+    try {
+      const updated = await updateIQACAction(action.id, { status: nextStatus });
+      setIqacActionItems((prev: any[]) => prev.map((item) => (
+        item.id === action.id
+          ? {
+              ...item,
+              ...updated,
+              dueDate: updated?.dueDate ? new Date(updated.dueDate) : item.dueDate,
+              createdDate: updated?.createdDate ? new Date(updated.createdDate) : item.createdDate,
+              completedDate: updated?.completedDate ? new Date(updated.completedDate) : item.completedDate
+            }
+          : item
+      )));
+      toast({ title: 'Status updated', description: `Action marked as ${nextStatus.replace('_', ' ')}.` });
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Unable to update status.', variant: 'destructive' });
+    }
+  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -54,7 +158,7 @@ export default function IQACActions() {
             <h1 className="text-3xl font-bold text-foreground">IQAC Action Items</h1>
             <p className="text-muted-foreground">Track recommendations and their implementation for continuous improvement</p>
           </div>
-          <Button size="sm"><Plus className="mr-2 h-4 w-4" />New Action Item</Button>
+          <Button size="sm" onClick={() => setShowCreateDialog(true)}><Plus className="mr-2 h-4 w-4" />New Action Item</Button>
         </div>
 
         {/* Stats */}
@@ -104,6 +208,9 @@ export default function IQACActions() {
 
         {/* Action Items List */}
         <div className="space-y-3">
+          {!apiLoading && filtered.length === 0 && (
+            <Card><CardContent className="p-8 text-center text-muted-foreground">No action items match your filters.</CardContent></Card>
+          )}
           {filtered.map((a) => (
             <Card key={a.id}>
               <CardContent className="p-5">
@@ -131,16 +238,81 @@ export default function IQACActions() {
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <Badge variant={getStatusVariant(a.status)} className="capitalize">{a.status.replace('_', ' ')}</Badge>
-                    <Button variant="outline" size="sm">Update Status</Button>
+                    <Button variant="outline" size="sm" onClick={() => handleUpdateStatus(a)}>Update Status</Button>
                   </div>
                 </div>
               </CardContent>
             </Card>
           ))}
-          {filtered.length === 0 && (
-            <Card><CardContent className="p-8 text-center text-muted-foreground">No action items match your filters.</CardContent></Card>
-          )}
         </div>
+
+        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Create IQAC Action Item</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Input
+                placeholder="Action title"
+                value={newAction.title}
+                onChange={(event) => setNewAction((prev) => ({ ...prev, title: event.target.value }))}
+              />
+              <Textarea
+                placeholder="Action description"
+                value={newAction.description}
+                onChange={(event) => setNewAction((prev) => ({ ...prev, description: event.target.value }))}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <Select value={newAction.category} onValueChange={(value) => setNewAction((prev) => ({ ...prev, category: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="curriculum">Curriculum</SelectItem>
+                    <SelectItem value="infrastructure">Infrastructure</SelectItem>
+                    <SelectItem value="faculty">Faculty</SelectItem>
+                    <SelectItem value="student_support">Student Support</SelectItem>
+                    <SelectItem value="governance">Governance</SelectItem>
+                    <SelectItem value="research">Research</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={newAction.priority} onValueChange={(value) => setNewAction((prev) => ({ ...prev, priority: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Input
+                placeholder="Assigned to"
+                value={newAction.assignedTo}
+                onChange={(event) => setNewAction((prev) => ({ ...prev, assignedTo: event.target.value }))}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  placeholder="Department"
+                  value={newAction.department}
+                  onChange={(event) => setNewAction((prev) => ({ ...prev, department: event.target.value }))}
+                />
+                <Input
+                  type="date"
+                  value={newAction.dueDate}
+                  onChange={(event) => setNewAction((prev) => ({ ...prev, dueDate: event.target.value }))}
+                />
+              </div>
+              <Input
+                placeholder="Impact (optional)"
+                value={newAction.impact}
+                onChange={(event) => setNewAction((prev) => ({ ...prev, impact: event.target.value }))}
+              />
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+                <Button onClick={handleCreateAction} disabled={submitting}>{submitting ? 'Saving...' : 'Create Action'}</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

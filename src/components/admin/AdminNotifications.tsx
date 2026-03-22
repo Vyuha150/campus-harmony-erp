@@ -9,11 +9,75 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Bell, Send, Plus, Mail, Eye, Clock } from 'lucide-react';
-import { systemNotifications } from '@/data/adminMockData';
-import { useState } from 'react';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { safeArray, safeDate, safeNumber, safeString } from '@/lib/normalize';
+import { toast } from '@/hooks/use-toast';
+import { useState, useEffect } from 'react';
 
 export default function AdminNotifications() {
+  const [systemNotifications, setSystemNotifications] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const normalizeNotification = (raw: any) => ({
+    id: safeString(raw?.id),
+    title: safeString(raw?.title),
+    message: safeString(raw?.message),
+    type: safeString(raw?.type, 'info'),
+    sentBy: safeString(raw?.sentBy, 'System'),
+    sentDate: safeDate(raw?.sentDate),
+    readCount: safeNumber(raw?.readCount),
+    totalRecipients: safeNumber(raw?.totalRecipients),
+    status: safeString(raw?.status, 'draft'),
+    targetRoles: safeArray(raw?.targetRoles).map((role: any) => safeString(role))
+  });
+
+  useEffect(() => {
+    fetchApi('/admin/notifications').then((d: any) => setSystemNotifications(safeArray(d).map(normalizeNotification))).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const [showCompose, setShowCompose] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    title: '',
+    message: '',
+    type: 'info',
+    audience: 'all'
+  });
+
+  const sendNotification = async (status: 'draft' | 'sent') => {
+    if (!form.title.trim() || !form.message.trim()) {
+      toast({ title: 'Missing details', description: 'Title and message are required.', variant: 'destructive' });
+      return;
+    }
+
+    const targetRoles = form.audience === 'all' ? ['all'] : [form.audience];
+    const totalRecipients = targetRoles.includes('all')
+      ? 0
+      : systemNotifications.length;
+
+    try {
+      setSubmitting(true);
+      const created = await postApi('/admin/notifications', {
+        title: form.title.trim(),
+        message: form.message.trim(),
+        type: form.type,
+        targetRoles,
+        status,
+        totalRecipients,
+        readCount: 0
+      });
+
+      setSystemNotifications((prev: any[]) => [normalizeNotification(created), ...prev]);
+      setShowCompose(false);
+      setForm({ title: '', message: '', type: 'info', audience: 'all' });
+      toast({ title: status === 'sent' ? 'Notification sent' : 'Draft saved', description: 'Notification has been recorded successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: safeString(error?.message, 'Unable to send notification.'), variant: 'destructive' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -30,12 +94,12 @@ export default function AdminNotifications() {
             <DialogContent className="max-w-lg">
               <DialogHeader><DialogTitle>Compose Notification</DialogTitle></DialogHeader>
               <div className="space-y-4">
-                <div><Label>Title</Label><Input placeholder="Notification title" /></div>
-                <div><Label>Message</Label><Textarea placeholder="Write your notification message..." className="min-h-[100px]" /></div>
+                <div><Label>Title</Label><Input placeholder="Notification title" value={form.title} onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))} /></div>
+                <div><Label>Message</Label><Textarea placeholder="Write your notification message..." className="min-h-[100px]" value={form.message} onChange={(event) => setForm((prev) => ({ ...prev, message: event.target.value }))} /></div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Type</Label>
-                    <Select>
+                    <Select value={form.type} onValueChange={(value) => setForm((prev) => ({ ...prev, type: value }))}>
                       <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="info">Info</SelectItem>
@@ -47,7 +111,7 @@ export default function AdminNotifications() {
                   </div>
                   <div>
                     <Label>Target Audience</Label>
-                    <Select>
+                    <Select value={form.audience} onValueChange={(value) => setForm((prev) => ({ ...prev, audience: value }))}>
                       <SelectTrigger><SelectValue placeholder="All users" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Users</SelectItem>
@@ -60,8 +124,8 @@ export default function AdminNotifications() {
                   </div>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setShowCompose(false)}>Save Draft</Button>
-                  <Button><Send className="mr-2 h-4 w-4" />Send Now</Button>
+                  <Button variant="outline" onClick={() => sendNotification('draft')} disabled={submitting}>Save Draft</Button>
+                  <Button onClick={() => sendNotification('sent')} disabled={submitting}><Send className="mr-2 h-4 w-4" />{submitting ? 'Sending...' : 'Send Now'}</Button>
                 </div>
               </div>
             </DialogContent>
@@ -103,7 +167,7 @@ export default function AdminNotifications() {
                         <span className="flex items-center gap-1"><Eye className="h-3 w-3" />{n.readCount.toLocaleString()}/{n.totalRecipients.toLocaleString()} read</span>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {n.targetRoles.slice(0, 4).map(r => (
+                        {n.targetRoles.slice(0, 4).map((r: string) => (
                           <Badge key={r} variant="outline" className="text-xs capitalize">{r.replace('_', ' ')}</Badge>
                         ))}
                         {n.targetRoles.length > 4 && <Badge variant="outline" className="text-xs">+{n.targetRoles.length - 4} more</Badge>}

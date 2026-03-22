@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,7 +11,7 @@ import {
   Award, Search, CheckCircle, Printer, Send, Package,
   Eye, Download, Shield, FileText, GraduationCap
 } from 'lucide-react';
-import { degreeRecords as initialDegrees } from '@/data/registrarMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { DegreeRecord } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
@@ -25,12 +25,24 @@ const statusColors: Record<string, string> = {
 const statusSteps = ['eligible', 'generated', 'printed', 'dispatched', 'collected'];
 
 export default function RegistrarCertificates() {
+  const [degreeRecords, setDegreeRecords] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/registrar/certificates').then(d => setDegreeRecords(d)).catch((error) => { console.error('API request failed', error); });
+    setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [degrees, setDegrees] = useState(initialDegrees);
+  const [degrees, setDegrees] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDegree, setSelectedDegree] = useState<DegreeRecord | null>(null);
   const [verifyInput, setVerifyInput] = useState('');
   const [verifyResult, setVerifyResult] = useState<DegreeRecord | null | 'not_found'>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    setDegrees(degreeRecords || []);
+  }, [degreeRecords]);
 
   const filtered = degrees.filter(d =>
     d.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -38,16 +50,28 @@ export default function RegistrarCertificates() {
     d.certificateNo.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleAdvanceStatus = (id: string) => {
-    setDegrees(prev => prev.map(d => {
-      if (d.id !== id) return d;
-      const idx = statusSteps.indexOf(d.status);
-      if (idx < statusSteps.length - 1) {
-        return { ...d, status: statusSteps[idx + 1] as DegreeRecord['status'], ...(statusSteps[idx + 1] === 'collected' ? { collectedAt: new Date() } : {}) };
+  const handleAdvanceStatus = async (id: string) => {
+    try {
+      setIsUpdating(true);
+      const deg = degrees.find(d => d.id === id);
+      const idx = statusSteps.indexOf(deg?.status || 'eligible');
+      if (idx >= 0 && idx < statusSteps.length - 1) {
+        const newStatus = statusSteps[idx + 1];
+        await putApi(`/registrar/certificates/${id}`, {
+          status: newStatus,
+          ...(newStatus === 'collected' ? { collectedAt: new Date() } : {})
+        });
+        setDegrees(prev => prev.map(d => {
+          if (d.id !== id) return d;
+          return { ...d, status: newStatus as DegreeRecord['status'], ...(newStatus === 'collected' ? { collectedAt: new Date() } : {}) };
+        }));
+        toast({ title: 'Status Updated', description: 'Certificate status advanced.' });
       }
-      return d;
-    }));
-    toast({ title: 'Status Updated', description: 'Certificate status advanced.' });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleVerify = () => {
@@ -121,8 +145,8 @@ export default function RegistrarCertificates() {
                           <td className="py-3 px-4 text-center">{d.verificationCount}</td>
                           <td className="py-3 px-4 text-center">
                             {d.status !== 'collected' && (
-                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAdvanceStatus(d.id)}>
-                                {d.status === 'eligible' ? 'Generate' : d.status === 'generated' ? 'Print' : d.status === 'printed' ? 'Dispatch' : 'Mark Collected'}
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAdvanceStatus(d.id)} disabled={isUpdating}>
+                                {isUpdating ? 'Updating...' : d.status === 'eligible' ? 'Generate' : d.status === 'generated' ? 'Print' : d.status === 'printed' ? 'Dispatch' : 'Mark Collected'}
                               </Button>
                             )}
                           </td>

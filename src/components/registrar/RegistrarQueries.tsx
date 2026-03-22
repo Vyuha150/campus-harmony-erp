@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,7 @@ import {
   Building2, FileText, Mail, Phone, MessageSquare,
   Scale, AlertTriangle, Users
 } from 'lucide-react';
-import { verificationRequests as initialRequests } from '@/data/registrarMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { VerificationRequest } from '@/types/registrar';
 
 const typeLabels: Record<string, string> = {
@@ -47,11 +47,24 @@ const statusColors: Record<string, string> = {
 };
 
 export default function RegistrarQueries() {
+  const [verificationRequests, setVerificationRequests] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/registrar/verifications').then(d => setVerificationRequests(d)).catch((error) => { console.error('API request failed', error); });
+    setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [requests, setRequests] = useState(initialRequests);
+  const [requests, setRequests] = useState<any[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<VerificationRequest | null>(null);
   const [response, setResponse] = useState('');
   const [filterTab, setFilterTab] = useState('all');
+  const [isResponding, setIsResponding] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    setRequests(verificationRequests || []);
+  }, [verificationRequests]);
 
   const filtered = requests.filter(r => {
     if (filterTab === 'pending') return ['pending', 'processing'].includes(r.status);
@@ -59,17 +72,40 @@ export default function RegistrarQueries() {
     return true;
   });
 
-  const handleRespond = () => {
-    if (!selectedRequest || !response) return;
-    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: 'responded' as const, respondedAt: new Date(), response } : r));
-    toast({ title: 'Response Sent', description: `Verification response sent to ${selectedRequest.requesterOrg}.` });
-    setSelectedRequest(null);
-    setResponse('');
+  const handleRespond = async () => {
+    if (!selectedRequest || !response.trim()) {
+      toast({ title: 'Missing fields', description: 'Response text is required.', variant: 'destructive' });
+      return;
+    }
+    try {
+      setIsResponding(true);
+      await putApi(`/registrar/verifications/${selectedRequest.id}`, {
+        status: 'responded',
+        response,
+        respondedAt: new Date()
+      });
+      setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: 'responded' as const, respondedAt: new Date(), response } : r));
+      toast({ title: 'Response Sent', description: `Verification response sent to ${selectedRequest.requesterOrg}.` });
+      setSelectedRequest(null);
+      setResponse('');
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsResponding(false);
+    }
   };
 
-  const handleStartProcessing = (id: string) => {
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'processing' as const } : r));
-    toast({ title: 'Processing Started', description: 'Request marked as being processed.' });
+  const handleStartProcessing = async (id: string) => {
+    try {
+      setIsProcessing(true);
+      await putApi(`/registrar/verifications/${id}`, { status: 'processing' });
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'processing' as const } : r));
+      toast({ title: 'Processing Started', description: 'Request marked as being processed.' });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -149,19 +185,19 @@ export default function RegistrarQueries() {
                           </>
                         )}
                         <span>•</span>
-                        <span>{req.receivedAt.toLocaleDateString('en-IN')}</span>
+                        <span>{req.receivedAt ? new Date(req.receivedAt).toLocaleDateString('en-IN') : 'N/A'}</span>
                       </div>
                       {req.response && (
                         <div className="rounded-lg bg-emerald-50 p-2 mt-2">
                           <p className="text-xs text-emerald-700"><strong>Response:</strong> {req.response}</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">Responded: {req.respondedAt?.toLocaleDateString('en-IN')}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Responded: {req.respondedAt ? new Date(req.respondedAt).toLocaleDateString('en-IN') : 'N/A'}</p>
                         </div>
                       )}
                     </div>
                     <div className="flex flex-col gap-1">
                       {req.status === 'pending' && (
-                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => handleStartProcessing(req.id)}>
-                          <Clock className="h-3 w-3" /> Process
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => handleStartProcessing(req.id)} disabled={isProcessing}>
+                          <Clock className="h-3 w-3" /> {isProcessing ? 'Processing...' : 'Process'}
                         </Button>
                       )}
                       {['pending', 'processing'].includes(req.status) && (
@@ -208,10 +244,10 @@ export default function RegistrarQueries() {
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => { setSelectedRequest(null); setResponse(''); }}>Close</Button>
+              <Button variant="outline" onClick={() => { setSelectedRequest(null); setResponse(''); }} disabled={isResponding}>Close</Button>
               {!selectedRequest?.response && (
-                <Button onClick={handleRespond} disabled={!response} className="gap-1">
-                  <Send className="h-4 w-4" /> Send Response
+                <Button onClick={handleRespond} disabled={!response || isResponding} className="gap-1">
+                  <Send className="h-4 w-4" /> {isResponding ? 'Sending...' : 'Send Response'}
                 </Button>
               )}
             </DialogFooter>

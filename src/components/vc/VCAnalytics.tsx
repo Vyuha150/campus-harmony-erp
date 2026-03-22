@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,11 +11,18 @@ import {
   Search, Users, GraduationCap, Briefcase,
   BarChart3, Eye, FlaskConical, Download, TrendingUp, TrendingDown
 } from 'lucide-react';
-import { departmentPerformance } from '@/data/vcMockData';
+import { fetchApi } from '@/lib/apiService';
 import { DepartmentPerformance } from '@/types/vc';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function VCAnalytics() {
+  const [departmentPerformance, setDepartmentPerformance] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/vc/departmentperformance').then(d => setDepartmentPerformance(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState<DepartmentPerformance | null>(null);
@@ -32,8 +39,12 @@ export default function VCAnalytics() {
     'Satisfaction': d.studentSatisfaction * 20,
   }));
 
-  const avgPassRate = (departmentPerformance.reduce((s, d) => s + d.passRate, 0) / departmentPerformance.length).toFixed(1);
-  const avgPlacement = (departmentPerformance.reduce((s, d) => s + d.placementRate, 0) / departmentPerformance.length).toFixed(1);
+  const avgPassRate = departmentPerformance.length > 0
+    ? (departmentPerformance.reduce((s, d) => s + d.passRate, 0) / departmentPerformance.length).toFixed(1)
+    : '0.0';
+  const avgPlacement = departmentPerformance.length > 0
+    ? (departmentPerformance.reduce((s, d) => s + d.placementRate, 0) / departmentPerformance.length).toFixed(1)
+    : '0.0';
 
   return (
     <DashboardLayout>

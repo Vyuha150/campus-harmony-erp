@@ -1,134 +1,239 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar, CheckCircle, AlertTriangle, FileText, Plus, Download, Award } from 'lucide-react';
+import { Calendar, Plus, RefreshCw } from 'lucide-react';
+import { deleteApi, fetchApi, postApi } from '@/lib/apiService';
+import { toast } from '@/hooks/use-toast';
 
-const concessionRequests = [
-  { id: 'CR001', studentName: 'Rahul Sharma', rollNumber: 'BT23CS045', sport: 'Cricket', event: 'Inter-University Cricket Championship', dates: '10 Mar – 15 Mar 2026', type: 'attendance', status: 'pending' as const, classesAffected: 12 },
-  { id: 'CR002', studentName: 'Priya Menon', rollNumber: 'BT24ECE022', sport: 'Badminton', event: 'All India Inter-University Badminton', dates: '18 Jan – 22 Jan 2026', type: 'attendance', status: 'approved' as const, classesAffected: 8 },
-  { id: 'CR003', studentName: 'Vikas Patel', rollNumber: 'BT23ME067', sport: 'Cricket', event: 'State-Level T20 Tournament', dates: '5 Apr – 8 Apr 2026', type: 'grace_marks', status: 'pending' as const, classesAffected: 6 },
-];
-
-const eventParticipation = [
-  { id: 'EP001', event: 'Inter-University Cricket Championship', startDate: '10 Mar 2026', endDate: '15 Mar 2026', participants: 15, concessionsIssued: 12, status: 'upcoming' },
-  { id: 'EP002', event: 'State Badminton Open', startDate: '25 Feb 2026', endDate: '27 Feb 2026', participants: 4, concessionsIssued: 4, status: 'completed' },
-  { id: 'EP003', event: 'Annual Sports Day 2026', startDate: '25 Mar 2026', endDate: '28 Mar 2026', participants: 120, concessionsIssued: 0, status: 'upcoming' },
-];
+type Team = { id: string; sport: string; category: string };
+type AttendanceRecord = {
+  id: string;
+  teamId: string;
+  date: string;
+  attendees?: unknown;
+  notes?: string | null;
+  sessionType?: string;
+};
 
 export default function SportsAttendance() {
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState('all');
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [form, setForm] = useState({
+    teamId: '',
+    sessionType: 'training',
+    date: new Date().toISOString().slice(0, 10),
+    attendeesCsv: '',
+    notes: ''
+  });
+
+  const formatTeamLabel = (team: Team) => {
+    const category = String(team.category || '').trim();
+    return category ? `${team.sport} (${category})` : team.sport;
+  };
+
+  const loadData = async (teamId?: string) => {
+    try {
+      setIsLoading(true);
+      const [attendanceData, teamData] = await Promise.all([
+        fetchApi<AttendanceRecord[]>(teamId ? `/sports/attendance?teamId=${teamId}` : '/sports/attendance'),
+        fetchApi<Team[]>('/sports/teams')
+      ]);
+      setRecords(attendanceData);
+      setTeams(teamData);
+    } catch (error: any) {
+      toast({ title: 'Failed to load attendance', description: String(error?.message || 'Please retry.'), variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (selectedTeamId === 'all') {
+      loadData();
+      return;
+    }
+    loadData(selectedTeamId);
+  }, [selectedTeamId]);
+
+  const teamMap = useMemo(() => {
+    return new Map(teams.map((team) => [team.id, formatTeamLabel(team)]));
+  }, [teams]);
+
+  const presentCount = records.reduce((sum, record) => {
+    const attendees = Array.isArray(record.attendees) ? record.attendees : [];
+    return sum + attendees.length;
+  }, 0);
+
+  const createAttendanceRecord = async () => {
+    if (!form.teamId) {
+      toast({ title: 'Team is required', description: 'Please select a team.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await postApi('/sports/attendance', {
+        teamId: form.teamId,
+        sessionType: form.sessionType,
+        date: new Date(form.date),
+        attendees: form.attendeesCsv
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+        notes: form.notes.trim() || null
+      });
+
+      setIsCreateOpen(false);
+      setForm({
+        teamId: '',
+        sessionType: 'training',
+        date: new Date().toISOString().slice(0, 10),
+        attendeesCsv: '',
+        notes: ''
+      });
+      await loadData(selectedTeamId === 'all' ? undefined : selectedTeamId);
+      toast({ title: 'Attendance saved', description: 'Attendance session recorded successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Save failed', description: String(error?.message || 'Please retry.'), variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteAttendanceRecord = async (record: AttendanceRecord) => {
+    if (!window.confirm('Delete this attendance record?')) return;
+    try {
+      await deleteApi(`/sports/attendance/${record.id}`);
+      setRecords((prev) => prev.filter((item) => item.id !== record.id));
+      toast({ title: 'Record deleted', description: 'Attendance record removed successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Delete failed', description: String(error?.message || 'Please retry.'), variant: 'destructive' });
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Attendance & Concessions</h1>
-            <p className="text-muted-foreground">Manage sports participation records, attendance concessions, and grace marks</p>
+            <h1 className="text-3xl font-bold text-foreground">Attendance Tracking</h1>
+            <p className="text-muted-foreground">Team-wise attendance sessions aligned with sports API records</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export Records</Button>
-            <Dialog>
-              <DialogTrigger asChild><Button size="sm"><Plus className="mr-2 h-4 w-4" />New Concession Request</Button></DialogTrigger>
+            <Button variant="outline" size="sm" onClick={() => loadData(selectedTeamId === 'all' ? undefined : selectedTeamId)} disabled={isLoading}>
+              <RefreshCw className="mr-2 h-4 w-4" />Refresh
+            </Button>
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm"><Plus className="mr-2 h-4 w-4" />New Session</Button>
+              </DialogTrigger>
               <DialogContent className="max-w-lg">
-                <DialogHeader><DialogTitle>Issue Attendance/Grace Concession</DialogTitle></DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div><Label>Student</Label><Input placeholder="Search student by name or roll number" /></div>
-                  <div><Label>Sport / Event</Label><Input placeholder="Official event name" /></div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>From Date</Label><Input type="date" /></div>
-                    <div><Label>To Date</Label><Input type="date" /></div>
+                <DialogHeader><DialogTitle>Create Attendance Session</DialogTitle></DialogHeader>
+                <div className="grid gap-4 py-2">
+                  <div>
+                    <Label>Team</Label>
+                    <select
+                      className="mt-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      value={form.teamId}
+                      onChange={(event) => setForm((prev) => ({ ...prev, teamId: event.target.value }))}
+                    >
+                      <option value="">Select team</option>
+                      {teams.map((team) => (
+                        <option key={team.id} value={team.id}>{formatTeamLabel(team)}</option>
+                      ))}
+                    </select>
                   </div>
-                  <div><Label>Concession Type</Label>
-                    <Select><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent>
-                      <SelectItem value="attendance">Attendance Concession</SelectItem>
-                      <SelectItem value="grace_marks">Grace Marks</SelectItem>
-                      <SelectItem value="both">Both</SelectItem>
-                    </SelectContent></Select>
+                  <div>
+                    <Label>Session Type</Label>
+                    <Input value={form.sessionType} onChange={(event) => setForm((prev) => ({ ...prev, sessionType: event.target.value }))} />
                   </div>
-                  <div><Label>Justification / Notes</Label><Textarea placeholder="Describe the official participation details..." /></div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox id="official" />
-                    <Label htmlFor="official" className="text-sm">This is an officially sanctioned university representation</Label>
+                  <div>
+                    <Label>Date</Label>
+                    <Input type="date" value={form.date} onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))} />
                   </div>
-                  <Button className="w-full">Submit Concession Request</Button>
+                  <div>
+                    <Label>Attendee IDs (comma separated)</Label>
+                    <Input value={form.attendeesCsv} onChange={(event) => setForm((prev) => ({ ...prev, attendeesCsv: event.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Notes</Label>
+                    <Textarea value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} />
+                  </div>
+                  <Button onClick={createAttendanceRecord} disabled={isLoading}>Save Attendance</Button>
                 </div>
               </DialogContent>
             </Dialog>
           </div>
         </div>
 
-        {/* Summary */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">23</p><p className="text-xs text-muted-foreground">Concessions This Semester</p></CardContent></Card>
-          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-amber-500">3</p><p className="text-xs text-muted-foreground">Pending Approval</p></CardContent></Card>
-          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-green-600">18</p><p className="text-xs text-muted-foreground">Approved</p></CardContent></Card>
-          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">5</p><p className="text-xs text-muted-foreground">Events This Month</p></CardContent></Card>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">{records.length}</p><p className="text-xs text-muted-foreground">Sessions Logged</p></CardContent></Card>
+          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">{teams.length}</p><p className="text-xs text-muted-foreground">Total Teams</p></CardContent></Card>
+          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">{presentCount}</p><p className="text-xs text-muted-foreground">Total Attendee Entries</p></CardContent></Card>
         </div>
 
-        {/* Concession requests table */}
         <Card>
-          <CardHeader><CardTitle>Concession Requests</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Attendance Records</span>
+              <select
+                className="rounded-md border bg-background px-2 py-1 text-sm"
+                value={selectedTeamId}
+                onChange={(event) => setSelectedTeamId(event.target.value)}
+              >
+                <option value="all">All teams</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>{formatTeamLabel(team)}</option>
+                ))}
+              </select>
+            </CardTitle>
+          </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead><tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Student</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Event</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Dates</th>
-                  <th className="px-4 py-3 text-center text-sm font-medium text-muted-foreground">Classes</th>
-                  <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Type</th>
-                  <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Team</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Date</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Type</th>
+                  <th className="px-4 py-3 text-center text-sm font-medium text-muted-foreground">Attendees</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Notes</th>
                   <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Actions</th>
                 </tr></thead>
                 <tbody>
-                  {concessionRequests.map(cr => (
-                    <tr key={cr.id} className="border-b last:border-0 hover:bg-muted/30">
-                      <td className="px-4 py-3"><p className="text-sm font-medium text-foreground">{cr.studentName}</p><p className="text-xs text-muted-foreground">{cr.rollNumber}</p></td>
-                      <td className="px-4 py-3 text-sm text-foreground">{cr.event}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{cr.dates}</td>
-                      <td className="px-4 py-3 text-center text-sm text-foreground">{cr.classesAffected}</td>
-                      <td className="px-4 py-3"><Badge variant="outline" className="capitalize">{cr.type.replace('_', ' ')}</Badge></td>
-                      <td className="px-4 py-3"><Badge variant={cr.status === 'approved' ? 'default' : cr.status === 'pending' ? 'secondary' : 'destructive'} className="capitalize">{cr.status}</Badge></td>
-                      <td className="px-4 py-3">
-                        {cr.status === 'pending' ? (
-                          <div className="flex gap-1">
-                            <Button variant="default" size="sm">Approve</Button>
-                            <Button variant="outline" size="sm">Reject</Button>
-                          </div>
-                        ) : <Button variant="outline" size="sm">View</Button>}
-                      </td>
+                  {records.map((record) => {
+                    const attendees = Array.isArray(record.attendees) ? record.attendees : [];
+                    return (
+                      <tr key={record.id} className="border-b last:border-0 hover:bg-muted/30">
+                        <td className="px-4 py-3 text-sm font-medium text-foreground">{teamMap.get(record.teamId) || record.teamId}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground"><Calendar className="mr-1 inline h-3 w-3" />{new Date(record.date).toLocaleDateString('en-IN')}</td>
+                        <td className="px-4 py-3"><Badge variant="outline" className="capitalize">{record.sessionType || 'training'}</Badge></td>
+                        <td className="px-4 py-3 text-center text-sm text-foreground">{attendees.length}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{record.notes || '-'}</td>
+                        <td className="px-4 py-3"><Button variant="destructive" size="sm" onClick={() => deleteAttendanceRecord(record)}>Delete</Button></td>
+                      </tr>
+                    );
+                  })}
+                  {records.length === 0 && (
+                    <tr>
+                      <td className="px-4 py-8 text-center text-sm text-muted-foreground" colSpan={6}>No attendance records found.</td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Event participation log */}
-        <Card>
-          <CardHeader><CardTitle>Event Participation Log</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {eventParticipation.map(ep => (
-              <div key={ep.id} className="flex items-center justify-between p-3 rounded-lg border">
-                <div>
-                  <p className="text-sm font-medium text-foreground">{ep.event}</p>
-                  <p className="text-xs text-muted-foreground"><Calendar className="inline h-3 w-3 mr-1" />{ep.startDate} – {ep.endDate} • {ep.participants} participants</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={ep.status === 'completed' ? 'default' : 'secondary'} className="capitalize">{ep.status}</Badge>
-                  <span className="text-sm text-muted-foreground">{ep.concessionsIssued} concessions</span>
-                  <Button variant="outline" size="sm"><FileText className="mr-1 h-3 w-3" />Mark Participants</Button>
-                </div>
-              </div>
-            ))}
           </CardContent>
         </Card>
       </div>

@@ -9,12 +9,19 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   BarChart3, Download, TrendingUp, TrendingDown, AlertTriangle, Award, CheckCircle, FileText, Send
 } from 'lucide-react';
-import { courseResults } from '@/data/hodMockData';
-import { useState } from 'react';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { CourseResult } from '@/types/hod';
 
 export default function HODResultsAnalysis() {
+  const [courseResults, setCourseResults] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/hod/courseresults').then(d => setCourseResults(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
   const [verifiedCourses, setVerifiedCourses] = useState<string[]>([]);
   const [showRemedialDialog, setShowRemedialDialog] = useState(false);
@@ -26,20 +33,30 @@ export default function HODResultsAnalysis() {
   const overallAvg = Math.round(courseResults.reduce((s, c) => s + c.avgScore, 0) / courseResults.length * 10) / 10;
   const totalFailed = courseResults.reduce((s, c) => s + c.failed, 0);
 
-  const handleVerify = (code: string) => {
-    setVerifiedCourses(prev => [...prev, code]);
-    toast({ title: '✅ Results Verified', description: `${code} results verified and locked by HOD` });
+  const handleVerify = async (code: string) => {
+    try {
+      await postApi(`/hod/courseresults/${code}/verify`, {});
+      setVerifiedCourses(prev => [...prev, code]);
+      toast({ title: '✅ Results Verified', description: `${code} results verified and locked by HOD` });
+    } catch (error: any) {
+      toast({ title: 'Verification failed', description: error?.message || 'Unable to verify course results', variant: 'destructive' });
+    }
   };
 
   const handleDownload = () => {
     toast({ title: '📥 Report Downloaded', description: 'Department results analysis report exported as PDF' });
   };
 
-  const handleArrangeRemedial = () => {
+  const handleArrangeRemedial = async () => {
     if (selectedCourse) {
-      toast({ title: '📋 Remedial Class Scheduled', description: `Remedial for ${selectedCourse.courseCode} – ${selectedCourse.courseName}. ${remedialNote || 'No additional notes.'}` });
-      setShowRemedialDialog(false);
-      setRemedialNote('');
+      try {
+        await postApi(`/hod/courseresults/${selectedCourse.courseCode}/remedial`, { note: remedialNote });
+        toast({ title: '📋 Remedial Class Scheduled', description: `Remedial for ${selectedCourse.courseCode} – ${selectedCourse.courseName}. ${remedialNote || 'No additional notes.'}` });
+        setShowRemedialDialog(false);
+        setRemedialNote('');
+      } catch (error: any) {
+        toast({ title: 'Action failed', description: error?.message || 'Unable to schedule remedial class', variant: 'destructive' });
+      }
     }
   };
 
@@ -52,7 +69,14 @@ export default function HODResultsAnalysis() {
             <p className="text-muted-foreground">Semester-wise performance analysis • Even Semester 2025-26</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => toast({ title: 'All Results Verified', description: 'Forwarded to CoE for publication' })}
+            <Button variant="outline" size="sm" onClick={async () => {
+              try {
+                await postApi('/hod/courseresults/forward-coe', {});
+                toast({ title: 'All Results Verified', description: 'Forwarded to CoE for publication' });
+              } catch (error: any) {
+                toast({ title: 'Action failed', description: error?.message || 'Unable to forward results to CoE', variant: 'destructive' });
+              }
+            }}
               disabled={verifiedCourses.length < courseResults.length}>
               <Send className="mr-1 h-4 w-4" />Forward to CoE
             </Button>

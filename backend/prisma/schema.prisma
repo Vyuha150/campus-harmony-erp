@@ -1,0 +1,1553 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// User model to handle authentication and base information
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  password     String
+  name         String
+  role         String
+  avatar       String?
+  departmentId String?
+  designation  String?
+  campus       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department     Department?     @relation(fields: [departmentId], references: [id])
+  studentProfile StudentProfile?
+  facultyProfile FacultyProfile?
+  notifications  Notification[]
+  alumniProfile  AlumniProfile?
+}
+
+// Profile for Students
+model StudentProfile {
+  id            String @id @default(uuid())
+  userId        String @unique
+  rollNumber    String @unique
+  program       String
+  branch        String
+  semester      Int
+  section       String
+  batch         String
+  admissionYear Int
+  cgpa          Float  @default(0)
+  totalCredits  Int    @default(0)
+  earnedCredits Int    @default(0)
+
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enrollments  Enrollment[]
+  classEnrollments ClassEnrollment[]
+  submissions  Submission[]
+  attendance   Attendance[]
+  feeRecords   FeeRecord[]
+  gatePasses   GatePass[]
+  applications StudentApplication[]
+  libraryBooks LibraryBook[]
+  certificates CertificateRequest[]
+  hostel       HostelAllocation?
+}
+
+// Profile for Faculty
+model FacultyProfile {
+  id             String  @id @default(uuid())
+  userId         String  @unique
+  employeeId     String  @unique
+  qualification  String?
+  specialization String?
+  experience     Int     @default(0)
+
+  user                   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coursesTaught          Course[]
+  classesAssigned        CourseClass[]
+  attendanceSessions     AttendanceSession[]
+  publications           Publication[]
+  researchProjects       ResearchProject[]
+  leaveRequests          LeaveRequest[]
+  promotionRequests      PromotionRequest[]  @relation("PromotionRequests")
+  retirementRequests     RetirementRequest[] @relation("RetirementRequests")
+}
+
+// Academic Structure
+model Department {
+  id          String               @id @default(uuid())
+  name        String               @unique
+  code        String               @unique
+  users       User[]
+  courses     Course[]
+  budgets     DepartmentBudget[]
+  recruitment FacultyRecruitment[]
+}
+
+model Course {
+  id           String  @id @default(uuid())
+  code         String  @unique
+  name         String
+  credits      Int
+  semester     Int
+  departmentId String
+  facultyId    String?
+
+  department Department      @relation(fields: [departmentId], references: [id])
+  faculty    FacultyProfile? @relation(fields: [facultyId], references: [id])
+
+  classes            CourseClass[]
+  enrollments        Enrollment[]
+  examinations       Examination[]
+  schedules          CourseSchedule[]
+  attendanceSessions AttendanceSession[]
+  feedbacks          FeedbackForm[]
+}
+
+model CourseClass {
+  id        String @id @default(uuid())
+  courseId  String
+  facultyId String
+  section   String
+  batch     String?
+  name      String?
+
+  course      Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  faculty     FacultyProfile     @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+  students    ClassEnrollment[]
+  assignments Assignment[]
+
+  @@index([courseId])
+  @@index([facultyId])
+  @@unique([courseId, facultyId, section, batch])
+}
+
+model ClassEnrollment {
+  id               String @id @default(uuid())
+  classId          String
+  studentProfileId String
+  enrolledAt       DateTime @default(now())
+
+  class   CourseClass    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, studentProfileId])
+  @@index([studentProfileId])
+}
+
+model CourseSchedule {
+  id        String @id @default(uuid())
+  courseId  String
+  day       String
+  startTime String
+  endTime   String
+  room      String
+  type      String
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+// Student Enrollment
+model Enrollment {
+  id               String  @id @default(uuid())
+  studentProfileId String
+  courseId         String
+  semester         Int
+  grade            String?
+
+  student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  course  Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([studentProfileId, courseId])
+}
+
+// Assignments
+model Assignment {
+  id          String   @id @default(uuid())
+  classId     String
+  title       String
+  description String
+  dueDate     DateTime
+  maxMarks    Int
+  status      String   @default("published")
+
+  class       CourseClass  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+}
+
+model Submission {
+  id               String   @id @default(uuid())
+  assignmentId     String
+  studentProfileId String
+  submittedAt      DateTime @default(now())
+  status           String
+  obtainedMarks    Int?
+  feedback         String?
+  fileUrl          String?
+
+  assignment Assignment     @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student    StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, studentProfileId])
+}
+
+// Examination & Attendance
+model Examination {
+  id        String   @id @default(uuid())
+  courseId  String
+  type      String
+  date      DateTime
+  startTime String
+  endTime   String
+  venue     String
+  maxMarks  Int
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model AttendanceSession {
+  id        String   @id @default(uuid())
+  courseId  String
+  facultyId String
+  date      DateTime
+  startTime String
+  endTime   String
+  type      String
+
+  course  Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  faculty FacultyProfile @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+  records Attendance[]
+}
+
+model Attendance {
+  id                  String @id @default(uuid())
+  attendanceSessionId String
+  studentProfileId    String
+  status              String
+
+  session AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+  student StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([attendanceSessionId, studentProfileId])
+}
+
+// Finance & Infrastucture
+model FeeRecord {
+  id               String    @id @default(uuid())
+  studentProfileId String
+  type             String
+  description      String
+  amount           Float
+  dueDate          DateTime
+  paidDate         DateTime?
+  status           String
+  transactionId    String?
+  academicYear     String
+
+  student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+}
+
+model GatePass {
+  id               String   @id @default(uuid())
+  studentProfileId String
+  type             String
+  fromDate         DateTime
+  toDate           DateTime
+  reason           String
+  destination      String
+  status           String   @default("pending")
+
+  student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+}
+
+// Research
+model Publication {
+  id               String @id @default(uuid())
+  facultyProfileId String
+  title            String
+  journal          String
+  year             Int
+  status           String
+
+  faculty FacultyProfile @relation(fields: [facultyProfileId], references: [id], onDelete: Cascade)
+}
+
+model ResearchProject {
+  id               String @id @default(uuid())
+  facultyProfileId String
+  title            String
+  fundingAgency    String
+  amount           Float
+  status           String
+  amountSpent      Float  @default(0)
+
+  faculty FacultyProfile @relation(fields: [facultyProfileId], references: [id], onDelete: Cascade)
+}
+
+// Placements
+model Company {
+  id              String           @id @default(uuid())
+  name            String           @unique
+  industry        String
+  email           String
+  website         String?
+  totalHires      Int              @default(0)
+  placementDrives PlacementDrive[]
+}
+
+model PlacementDrive {
+  id                   String   @id @default(uuid())
+  companyId            String
+  role                 String
+  package              String
+  driveDate            DateTime
+  registrationDeadline DateTime
+  status               String
+  location             String
+  jobDescription       String
+
+  company      Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  applications StudentApplication[]
+}
+
+model StudentApplication {
+  id               String   @id @default(uuid())
+  placementDriveId String
+  studentProfileId String
+  status           String   @default("applied") // 'applied', 'shortlisted', 'selected', 'rejected'
+  appliedAt        DateTime @default(now())
+
+  drive   PlacementDrive @relation(fields: [placementDriveId], references: [id], onDelete: Cascade)
+  student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([placementDriveId, studentProfileId])
+}
+
+// HOD & Dean Specifics
+model FacultyRecruitment {
+  id             String @id @default(uuid())
+  departmentId   String
+  position       String
+  specialization String
+  applicants     Int    @default(0)
+  shortlisted    Int    @default(0)
+  status         String @default("requested")
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+}
+
+model DepartmentBudget {
+  id           String @id @default(uuid())
+  departmentId String
+  allocated    Float
+  spent        Float  @default(0)
+  year         String
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([departmentId, year])
+}
+
+// Generic Approvals Workflow (used by HOD, Dean, VC)
+model ApprovalItem {
+  id          String   @id @default(uuid())
+  type        String
+  title       String
+  details     String
+  requestedBy String // reference to user ID 
+  requestedAt DateTime @default(now())
+  amount      Float?
+  priority    String
+  status      String   @default("pending") // 'pending', 'approved', 'rejected', 'forwarded'
+}
+
+// General Administration (Registrar, VC, IQAC)
+model QualityMetric {
+  id           String @id @default(uuid())
+  category     String // 'naac', 'nirf', 'internal'
+  metric       String
+  currentValue String
+  target       String
+  trend        String
+  status       String @default("on_track")
+}
+
+model InstitutionKPI {
+  id       String @id @default(uuid())
+  category String
+  label    String
+  value    String
+  target   String
+  trend    String
+  status   String
+}
+
+// Alumni
+model AlumniProfile {
+  id             String  @id @default(uuid())
+  userId         String  @unique
+  graduationYear Int
+  currentCompany String?
+  currentRole    String?
+  linkedIn       String?
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  donations Donation[]
+}
+
+model Donation {
+  id              String   @id @default(uuid())
+  alumniProfileId String
+  amount          Float
+  purpose         String
+  date            DateTime @default(now())
+  status          String   @default("completed")
+
+  alumni AlumniProfile @relation(fields: [alumniProfileId], references: [id], onDelete: Cascade)
+}
+
+// Sports
+model Facility {
+  id       String @id @default(uuid())
+  name     String
+  type     String
+  capacity Int
+  status   String @default("available")
+}
+
+model Team {
+  id          String @id @default(uuid())
+  sport       String
+  gender      String
+  matchesWon  Int    @default(0)
+  matchesLost Int    @default(0)
+}
+
+// Security
+model VisitorPass {
+  id           String    @id @default(uuid())
+  visitorName  String
+  purpose      String
+  hostName     String
+  checkInTime  DateTime  @default(now())
+  checkOutTime DateTime?
+  status       String    @default("active")
+}
+
+model IncidentReport {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  location    String
+  severity    String
+  status      String   @default("pending")
+  reportedAt  DateTime @default(now())
+}
+
+// Phase 1 Additional Models //
+
+// Library
+model LibraryBook {
+  id               String    @id @default(uuid())
+  isbn             String    @unique
+  title            String
+  author           String
+  category         String
+  issuedDate       DateTime?
+  dueDate          DateTime?
+  returnedDate     DateTime?
+  fine             Float     @default(0)
+  renewalCount     Int       @default(0)
+  maxRenewals      Int       @default(2)
+  status           String    @default("available") // available, issued, returned
+  studentProfileId String?
+
+  student StudentProfile? @relation(fields: [studentProfileId], references: [id])
+}
+
+// Hostel
+model Hostel {
+  id          String             @id @default(uuid())
+  name        String
+  block       String
+  wardenName  String
+  wardenPhone String
+  allocations HostelAllocation[]
+}
+
+model HostelAllocation {
+  id               String   @id @default(uuid())
+  studentProfileId String   @unique
+  hostelId         String
+  roomNumber       String
+  roomType         String
+  checkInDate      DateTime @default(now())
+
+  student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  hostel  Hostel         @relation(fields: [hostelId], references: [id])
+}
+
+// Certificates
+model CertificateRequest {
+  id               String    @id @default(uuid())
+  studentProfileId String
+  type             String // bonafide, transcript, migration
+  purpose          String
+  copies           Int       @default(1)
+  fee              Float     @default(0)
+  status           String    @default("processing") // processing, ready, dispatched
+  requestedAt      DateTime  @default(now())
+  collectionDate   DateTime?
+
+  student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+}
+
+// Feedback
+model FeedbackForm {
+  id       String   @id @default(uuid())
+  courseId String
+  title    String
+  status   String   @default("open")
+  deadline DateTime
+
+  course    Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  responses FeedbackResponse[]
+}
+
+model FeedbackResponse {
+  id             String   @id @default(uuid())
+  feedbackFormId String
+  studentId      String // anonymized, typically mapped differently but keeping basic for now
+  responses      Json // Store dynamic JSON structure of answers
+  submittedAt    DateTime @default(now())
+
+  form FeedbackForm @relation(fields: [feedbackFormId], references: [id], onDelete: Cascade)
+}
+
+// Central Notifications
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String // info, warning, success, error
+  category  String // academic, fee, placement, general
+  read      Boolean  @default(false)
+  timestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Faculty Leave
+model LeaveRequest {
+  id               String   @id @default(uuid())
+  facultyProfileId String
+  type             String // casual, medical, duty
+  fromDate         DateTime
+  toDate           DateTime
+  reason           String
+  status           String   @default("pending") // pending, approved, rejected
+  appliedAt        DateTime @default(now())
+  approvedBy       String?
+
+  faculty FacultyProfile @relation(fields: [facultyProfileId], references: [id], onDelete: Cascade)
+}
+
+// Faculty — Promotions
+model PromotionRequest {
+  id               String   @id @default(uuid())
+  facultyProfileId String
+  currentDesignation String
+  newDesignation   String
+  reason           String?
+  status           String   @default("pending") // pending, approved, rejected, completed
+  appliedAt        DateTime @default(now())
+  approvedAt       DateTime?
+  approvedBy       String?
+  documents        Json?
+
+  faculty FacultyProfile @relation("PromotionRequests", fields: [facultyProfileId], references: [id], onDelete: Cascade)
+}
+
+// Faculty — Retirements
+model RetirementRequest {
+  id               String   @id @default(uuid())
+  facultyProfileId String
+  currentDesignation String
+  yearsOfService   Int
+  lastDate         DateTime
+  status           String   @default("pending") // pending, approved, completed
+  appliedAt        DateTime @default(now())
+  approvedAt       DateTime?
+  approvedBy       String?
+  remarks          String?
+
+  faculty FacultyProfile @relation("RetirementRequests", fields: [facultyProfileId], references: [id], onDelete: Cascade)
+}
+
+// ─── Phase 2: Full Backend Coverage ───
+
+// Faculty — Committees
+model Committee {
+  id               String    @id @default(uuid())
+  name             String
+  role             String
+  tenure           String
+  meetingsAttended Int       @default(0)
+  totalMeetings    Int       @default(0)
+  nextMeeting      DateTime?
+  facultyId        String
+
+  @@index([facultyId])
+}
+
+// Faculty — Class Messages
+model ClassMessage {
+  id         String   @id @default(uuid())
+  courseId   String
+  courseCode String
+  subject    String
+  message    String
+  sentAt     DateTime @default(now())
+  recipients Int      @default(0)
+  readCount  Int      @default(0)
+  facultyId  String
+
+  @@index([facultyId])
+  @@index([courseId])
+}
+
+// Faculty — Mentee Assignments
+model MenteeAssignment {
+  id          String    @id @default(uuid())
+  facultyId   String
+  studentId   String
+  lastMeeting DateTime?
+  notes       Json?
+
+  @@unique([facultyId, studentId])
+}
+
+// Faculty — Counseling Notes
+model CounselingNote {
+  id             String    @id @default(uuid())
+  menteeAssignId String
+  date           DateTime  @default(now())
+  topic          String
+  notes          String
+  followUpDate   DateTime?
+  status         String    @default("open")
+
+  @@index([menteeAssignId])
+}
+
+// HOD — Lab Inventory
+model LabInventoryItem {
+  id               String    @id @default(uuid())
+  name             String
+  lab              String
+  category         String
+  quantity         Int
+  workingCondition Int       @default(100)
+  lastMaintenance  DateTime?
+  purchaseDate     DateTime?
+  warrantyExpiry   DateTime?
+  status           String    @default("working")
+  departmentId     String
+
+  @@index([departmentId])
+}
+
+// HOD — Purchase Requests (lab equipment)
+model PurchaseRequest {
+  id            String   @id @default(uuid())
+  itemName      String
+  lab           String
+  requestedBy   String
+  quantity      Int
+  estimatedCost Float
+  justification String
+  status        String   @default("pending")
+  requestDate   DateTime @default(now())
+  departmentId  String
+
+  @@index([departmentId])
+}
+
+// HOD — Timetable Slots
+model TimetableSlot {
+  id           String @id @default(uuid())
+  day          String
+  startTime    String
+  endTime      String
+  courseCode   String
+  courseName   String
+  faculty      String
+  room         String
+  section      String
+  type         String
+  departmentId String
+
+  @@index([departmentId])
+}
+
+// HOD — Accreditation Data
+model AccreditationData {
+  id           String   @id @default(uuid())
+  criterion    String
+  metric       String
+  value        String
+  year         String
+  status       String   @default("pending")
+  lastUpdated  DateTime @default(now())
+  updatedBy    String
+  departmentId String
+
+  @@index([departmentId])
+}
+
+// Dean — Curriculum Proposals
+model CurriculumProposal {
+  id           String   @id @default(uuid())
+  departmentId String
+  proposedBy   String
+  type         String
+  title        String
+  description  String
+  submittedAt  DateTime @default(now())
+  bosApproved  Boolean  @default(false)
+  status       String   @default("pending_dean")
+
+  @@index([departmentId])
+}
+
+// Dean — Disciplinary Cases
+model DisciplinaryCase {
+  id           String   @id @default(uuid())
+  studentName  String
+  rollNumber   String
+  departmentId String
+  type         String
+  description  String
+  reportedBy   String
+  reportedAt   DateTime @default(now())
+  status       String   @default("escalated")
+  severity     String   @default("minor")
+
+  @@index([departmentId])
+}
+
+// Dean — Inter-Departmental Events
+model InterDeptEvent {
+  id           String   @id @default(uuid())
+  title        String
+  type         String
+  date         DateTime
+  departments  Json
+  coordinator  String
+  budget       Float    @default(0)
+  participants Int      @default(0)
+  status       String   @default("planned")
+}
+
+// VC — Meetings & Agenda
+model Meeting {
+  id          String   @id @default(uuid())
+  meetingType String
+  title       String
+  date        DateTime
+  time        String
+  venue       String
+  status      String   @default("upcoming")
+  agendaItems Json?
+  attendees   Json?
+  documents   Json?
+  minutes     String?
+  createdBy   String
+
+  @@index([meetingType])
+}
+
+// VC — Broadcast Messages
+model BroadcastMessage {
+  id         String   @id @default(uuid())
+  subject    String
+  content    String
+  sender     String
+  sentAt     DateTime @default(now())
+  recipients String
+  type       String   @default("announcement")
+  pinned     Boolean  @default(false)
+}
+
+// VC — Compliance Reports
+model ComplianceReport {
+  id          String   @id @default(uuid())
+  framework   String
+  title       String
+  status      String   @default("draft")
+  score       Float?
+  maxScore    Float    @default(100)
+  lastUpdated DateTime @default(now())
+  criteria    Json?
+}
+
+// VC — Policy Scenarios
+model PolicyScenario {
+  id               String   @id @default(uuid())
+  title            String
+  description      String
+  category         String
+  parameters       Json?
+  projectedOutcome String?
+  impact           String   @default("neutral")
+  createdBy        String
+  createdAt        DateTime @default(now())
+}
+
+// Registrar — Transfer Requests
+model TransferRequest {
+  id              String   @id @default(uuid())
+  studentId       String
+  studentName     String
+  type            String
+  fromInstitution String
+  toInstitution   String
+  program         String
+  reason          String
+  status          String   @default("pending")
+  requestedAt     DateTime @default(now())
+  documents       Json?
+}
+
+// Registrar — Degree Records
+model DegreeRecord {
+  id                String    @id @default(uuid())
+  studentName       String
+  rollNo            String
+  program           String
+  department        String
+  graduationYear    Int
+  certificateNo     String    @unique
+  status            String    @default("eligible")
+  convocationDate   DateTime?
+  collectedAt       DateTime?
+  verificationCount Int       @default(0)
+}
+
+// Registrar — Admin Documents
+model AdminDocument {
+  id             String   @id @default(uuid())
+  title          String
+  category       String
+  uploadedBy     String
+  uploadedAt     DateTime @default(now())
+  filePath       String?
+  fileUrl        String?
+  fileName       String?
+  mimeType       String?
+  fileSize       String   @default("0 KB")
+  tags           Json?
+  isConfidential Boolean  @default(false)
+  accessRoles    Json?
+}
+
+// Registrar — Vacancies
+model Vacancy {
+  id         String    @id @default(uuid())
+  position   String
+  department String
+  type       String
+  sanctioned Int
+  filled     Int       @default(0)
+  status     String    @default("advertised")
+  postedAt   DateTime  @default(now())
+  lastDate   DateTime?
+  applicants Int       @default(0)
+}
+
+// Registrar — Accreditation Checklist
+model AccreditationChecklist {
+  id                String   @id @default(uuid())
+  framework         String
+  criterion         String
+  description       String
+  responsibleOffice String
+  status            String   @default("not_started")
+  documents         Json?
+  deadline          DateTime
+  remarks           String?
+}
+
+// Registrar — Verification Requests
+model VerificationRequest {
+  id            String    @id @default(uuid())
+  type          String
+  requesterName String
+  requesterOrg  String
+  studentName   String
+  studentId     String
+  details       String
+  status        String    @default("pending")
+  receivedAt    DateTime  @default(now())
+  respondedAt   DateTime?
+  response      String?
+}
+
+// Registrar — Record Change Requests
+model RecordChangeRequest {
+  id          String   @id @default(uuid())
+  studentId   String
+  studentName String
+  field       String
+  oldValue    String
+  newValue    String
+  reason      String
+  requestedBy String
+  requestedAt DateTime @default(now())
+  status      String   @default("pending")
+  approvedBy  String?
+  documents   Json?
+}
+
+// Registrar — Exam Progress
+model ExamProgress {
+  id               String   @id @default(uuid())
+  examName         String
+  semester         String
+  program          String
+  totalStudents    Int
+  marksEntered     Int      @default(0)
+  resultsPublished Boolean  @default(false)
+  status           String   @default("scheduling")
+  startDate        DateTime
+  endDate          DateTime
+  coordinator      String
+}
+
+// Finance — Fee Structures
+model FeeStructure {
+  id             String   @id @default(uuid())
+  academicYear   String
+  semester       String
+  program        String
+  feeComponents  Json
+  totalAmount    Float
+  dueDate        DateTime
+  lateFeePenalty Float    @default(0)
+  active         Boolean  @default(true)
+}
+
+// Finance — Journal Entries
+model JournalEntry {
+  id          String   @id @default(uuid())
+  entryNumber String   @unique
+  date        DateTime @default(now())
+  description String
+  reference   String?
+  totalDebit  Float
+  totalCredit Float
+  status      String   @default("draft")
+  createdBy   String
+  approvedBy  String?
+  accounts    Json
+}
+
+// Finance — Purchase Orders
+model PurchaseOrder {
+  id               String    @id @default(uuid())
+  poNumber         String    @unique
+  department       String
+  vendorId         String
+  orderDate        DateTime  @default(now())
+  expectedDelivery DateTime
+  totalAmount      Float
+  status           String    @default("pending")
+  items            Json
+  approvedBy       String?
+  deliveredDate    DateTime?
+  invoiceNumber    String?
+  paymentDate      DateTime?
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+}
+
+// Finance — Vendors
+model Vendor {
+  id            String  @id @default(uuid())
+  name          String
+  contactPerson String
+  email         String
+  phone         String
+  address       String
+  gstNumber     String?
+  panNumber     String?
+  paymentTerms  String  @default("Net 30")
+  status        String  @default("active")
+
+  purchaseOrders PurchaseOrder[]
+}
+
+// Finance — Payroll Records
+model PayrollRecord {
+  id            String    @id @default(uuid())
+  employeeId    String
+  employeeName  String
+  department    String
+  designation   String
+  month         String
+  year          Int
+  basicSalary   Float
+  allowances    Json?
+  deductions    Json?
+  grossSalary   Float
+  netSalary     Float
+  status        String    @default("draft")
+  paymentDate   DateTime?
+  paymentMethod String    @default("bank_transfer")
+
+  @@unique([employeeId, month, year])
+}
+
+// Finance — Budget Allocations
+model BudgetAllocation {
+  id                    String   @id @default(uuid())
+  department            String
+  category              String
+  budgetYear            String
+  allocatedAmount       Float
+  spentAmount           Float    @default(0)
+  availableAmount       Float
+  utilizationPercentage Float    @default(0)
+  lastUpdated           DateTime @default(now())
+
+  @@unique([department, category, budgetYear])
+}
+
+// Placement — Training Sessions
+model TrainingSession {
+  id              String   @id @default(uuid())
+  title           String
+  type            String
+  instructor      String
+  date            DateTime
+  duration        Int
+  venue           String
+  maxCapacity     Int
+  registeredCount Int      @default(0)
+  status          String   @default("scheduled")
+  description     String?
+  materials       Json?
+}
+
+// Placement — Job Offers
+model JobOffer {
+  id          String   @id @default(uuid())
+  studentId   String
+  studentName String
+  companyName String
+  jobRole     String
+  package     Float
+  offerDate   DateTime @default(now())
+  joiningDate DateTime
+  status      String   @default("pending")
+  documents   Json?
+}
+
+// Placement — Communication
+model PlacementMessage {
+  id          String   @id @default(uuid())
+  title       String
+  content     String
+  type        String   @default("announcement")
+  sentBy      String
+  sentAt      DateTime @default(now())
+  targetGroup String?
+}
+
+// Sports — Athletes
+model SportsAthlete {
+  id               String  @id @default(uuid())
+  studentId        String  @unique
+  studentName      String
+  rollNumber       String
+  program          String
+  year             Int
+  email            String
+  phone            String
+  sports           Json?
+  achievements     Json?
+  medicalClearance Boolean @default(false)
+  emergencyContact Json?
+  status           String  @default("active")
+}
+
+// Sports — Teams (enhanced from existing Team model)
+model SportsTeam {
+  id               String  @id @default(uuid())
+  sport            String
+  category         String
+  level            String  @default("university")
+  coach            String
+  captain          String?
+  members          Json?
+  practiceSchedule Json?
+  upcomingMatches  Json?
+  season           String
+  status           String  @default("active")
+}
+
+// Sports — Facilities (enhanced from existing Facility model)
+model SportsFacility {
+  id                  String @id @default(uuid())
+  name                String
+  type                String
+  sports              Json?
+  capacity            Int
+  amenities           Json?
+  maintenanceSchedule Json?
+  status              String @default("available")
+}
+
+// Sports — Inventory
+model SportsInventoryItem {
+  id                String    @id @default(uuid())
+  itemName          String
+  category          String
+  sport             String
+  brand             String?
+  quantity          Int
+  availableQuantity Int
+  unitPrice         Float
+  totalValue        Float
+  condition         String    @default("good")
+  purchaseDate      DateTime?
+  lastMaintenance   DateTime?
+  location          String
+}
+
+// Sports — Events
+model SportsEvent {
+  id           String   @id @default(uuid())
+  name         String
+  type         String
+  sports       Json?
+  startDate    DateTime
+  endDate      DateTime
+  venue        String
+  organizer    String
+  participants Json?
+  results      Json?
+  status       String   @default("planning")
+}
+
+// Sports — Fitness Records
+model FitnessRecord {
+  id              String    @id @default(uuid())
+  studentId       String
+  testDate        DateTime  @default(now())
+  testType        String
+  results         Json?
+  overallGrade    String?
+  recommendations String?
+  restrictions    String?
+  nextTestDate    DateTime?
+  conductedBy     String
+
+  @@index([studentId])
+}
+
+// Sports — Attendance
+model SportsAttendance {
+  id          String   @id @default(uuid())
+  teamId      String
+  date        DateTime @default(now())
+  attendees   Json?
+  notes       String?
+  sessionType String   @default("training")
+
+  @@index([teamId])
+}
+
+// Alumni — Events
+model AlumniEvent {
+  id                   String    @id @default(uuid())
+  title                String
+  description          String
+  type                 String
+  date                 DateTime
+  endDate              DateTime?
+  venue                String
+  isVirtual            Boolean   @default(false)
+  virtualLink          String?
+  maxCapacity          Int?
+  registrationDeadline DateTime
+  organizer            String
+  targetAudience       Json?
+  registrations        Json?
+  status               String    @default("draft")
+  images               Json?
+  documents            Json?
+}
+
+// Alumni — Mentorship Programs
+model MentorshipProgram {
+  id          String    @id @default(uuid())
+  title       String
+  description String
+  type        String
+  duration    String
+  maxMentees  Int
+  startDate   DateTime
+  endDate     DateTime?
+  status      String    @default("active")
+  mentors     Json?
+  mentees     Json?
+  matches     Json?
+}
+
+// Alumni — Communications
+model AlumniCommunicationRecord {
+  id             String    @id @default(uuid())
+  title          String
+  content        String
+  type           String    @default("newsletter")
+  targetAudience Json?
+  sentDate       DateTime?
+  scheduledDate  DateTime?
+  status         String    @default("draft")
+  recipientCount Int?
+  openRate       Float?
+  clickRate      Float?
+}
+
+// Alumni — Job Postings
+model AlumniJobPosting {
+  id                  String   @id @default(uuid())
+  postedBy            String
+  companyName         String
+  jobTitle            String
+  description         String
+  requirements        Json?
+  location            String
+  salaryRange         String?
+  jobType             String   @default("full_time")
+  applicationDeadline DateTime
+  contactEmail        String
+  status              String   @default("active")
+  postedDate          DateTime @default(now())
+  views               Int      @default(0)
+  applications        Int      @default(0)
+}
+
+// Alumni — Progression Surveys
+model ProgressionSurvey {
+  id             String   @id @default(uuid())
+  title          String
+  graduationYear Int
+  program        String?
+  surveyPeriod   String
+  questions      Json?
+  responses      Json?
+  status         String   @default("draft")
+  startDate      DateTime
+  endDate        DateTime
+}
+
+// IQAC — Action Items
+model IQACActionItem {
+  id                   String    @id @default(uuid())
+  title                String
+  description          String
+  category             String
+  priority             String    @default("medium")
+  assignedTo           String
+  department           String?
+  dueDate              DateTime
+  status               String    @default("pending")
+  implementationStatus String?
+  evidence             Json?
+  createdDate          DateTime  @default(now())
+  completedDate        DateTime?
+  impact               String?
+}
+
+// IQAC — Quality Documents
+model QualityDocument {
+  id             String    @id @default(uuid())
+  title          String
+  criteriaNumber Int
+  documentType   String
+  uploadedBy     String
+  uploadDate     DateTime  @default(now())
+  filePath       String?
+  version        String    @default("1.0")
+  status         String    @default("pending_review")
+  reviewComments String?
+  reviewedBy     String?
+  reviewDate     DateTime?
+  tags           Json?
+}
+
+// IQAC — Meetings
+model IQACMeeting {
+  id              String    @id @default(uuid())
+  title           String
+  date            DateTime
+  venue           String
+  agenda          Json?
+  attendees       Json?
+  chairperson     String
+  minutes         String?
+  decisions       Json?
+  actionItems     Json?
+  nextMeetingDate DateTime?
+  status          String    @default("scheduled")
+  documentsShared Json?
+}
+
+// IQAC — AQAR Data
+model AQARRecord {
+  id                  String    @id @default(uuid())
+  academicYear        String    @unique
+  institutionDetails  Json?
+  criteria            Json?
+  keyIndicators       Json?
+  bestPractices       Json?
+  distinctiveFeatures Json?
+  status              String    @default("draft")
+  submissionDate      DateTime?
+  generatedBy         String
+}
+
+// Grievance — Enhanced Cases
+model GrievanceCase {
+  id                     String    @id @default(uuid())
+  grievanceNumber        String    @unique
+  complainantId          String?
+  complainantName        String
+  complainantType        String
+  category               String
+  subcategory            String?
+  subject                String
+  description            String
+  severity               String    @default("medium")
+  status                 String    @default("received")
+  submissionDate         DateTime  @default(now())
+  lastUpdated            DateTime  @default(now())
+  assignedTo             String?
+  department             String?
+  expectedResolutionDate DateTime?
+  actualResolutionDate   DateTime?
+  isAnonymous            Boolean   @default(false)
+  evidenceFiles          Json?
+  timeline               Json?
+  resolution             String?
+  satisfactionRating     Int?
+}
+
+// Grievance — Compliance Items
+model ComplianceItem {
+  id                 String    @id @default(uuid())
+  title              String
+  type               String
+  description        String
+  applicableTo       String
+  dueDate            DateTime?
+  renewalPeriod      String?
+  completionTracking Json?
+  documents          Json?
+  status             String    @default("active")
+}
+
+// Grievance — Anti-Ragging Affidavits
+model AntiRaggingAffidavit {
+  id               String   @id @default(uuid())
+  studentId        String
+  studentName      String
+  program          String
+  submissionDate   DateTime @default(now())
+  parentAffidavit  Boolean  @default(false)
+  studentAffidavit Boolean  @default(false)
+  status           String   @default("pending")
+  academicYear     String
+}
+
+// Security — ID Card Requests
+model IDCardRequest {
+  id             String    @id @default(uuid())
+  requestNumber  String    @unique
+  applicantId    String
+  applicantName  String
+  applicantType  String
+  requestType    String    @default("new")
+  reason         String?
+  requestDate    DateTime  @default(now())
+  approvedBy     String?
+  approvalDate   DateTime?
+  cardIssuedDate DateTime?
+  status         String    @default("pending")
+  feesPaid       Boolean   @default(false)
+  documents      Json?
+}
+
+// Security — Vehicle Passes
+model VehiclePass {
+  id            String   @id @default(uuid())
+  passNumber    String   @unique
+  ownerName     String
+  ownerType     String
+  ownerIdNumber String
+  vehicleType   String
+  vehicleNumber String
+  vehicleModel  String?
+  validFrom     DateTime
+  validUntil    DateTime
+  parkingZone   String
+  status        String   @default("active")
+  feesPaid      Boolean  @default(false)
+  documents     Json?
+}
+
+// Security — Patrol Logs
+model PatrolLog {
+  id          String    @id @default(uuid())
+  officerId   String
+  officerName String
+  shift       String
+  patrolRoute String
+  startTime   DateTime
+  endTime     DateTime?
+  checkpoints Json?
+  status      String    @default("on_duty")
+  location    String?
+  lastUpdate  DateTime  @default(now())
+}
+
+// Security — Hostel Access Logs
+model HostelAccessLog {
+  id               String    @id @default(uuid())
+  studentId        String
+  studentName      String
+  hostelBlock      String
+  roomNumber       String
+  outTime          DateTime?
+  inTime           DateTime?
+  purpose          String?
+  expectedReturn   DateTime?
+  latePassApproved Boolean   @default(false)
+  approvedBy       String?
+  status           String    @default("inside")
+}
+
+// Security — Vigilance Cases
+model VigilanceCase {
+  id                   String    @id @default(uuid())
+  caseNumber           String    @unique
+  type                 String
+  subject              String
+  description          String
+  complainantType      String
+  dateReported         DateTime  @default(now())
+  status               String    @default("under_investigation")
+  investigatingOfficer String
+  documentsCollected   Json?
+  peopleInterviewed    Json?
+  findings             String?
+  actionTaken          String?
+  closeDate            DateTime?
+  confidentialityLevel String    @default("medium")
+}
+
+// Security — Support Tickets
+model SupportTicket {
+  id                 String    @id @default(uuid())
+  ticketNumber       String    @unique
+  reportedBy         String
+  reporterType       String
+  contactInfo        String
+  category           String
+  priority           String    @default("medium")
+  subject            String
+  description        String
+  attachments        Json?
+  assignedTo         String?
+  status             String    @default("open")
+  createdDate        DateTime  @default(now())
+  lastUpdate         DateTime  @default(now())
+  resolutionDate     DateTime?
+  resolutionNotes    String?
+  satisfactionRating Int?
+}
+
+// Admin — Audit Logs (system-wide)
+model SystemAuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  userName  String
+  role      String
+  action    String
+  module    String
+  resource  String
+  details   String
+  ipAddress String   @default("0.0.0.0")
+  userAgent String?
+  timestamp DateTime @default(now())
+  severity  String   @default("info")
+}
+
+// Admin — System Notifications
+model SystemNotificationRecord {
+  id                String    @id @default(uuid())
+  title             String
+  message           String
+  type              String    @default("info")
+  targetRoles       Json?
+  targetDepartments Json?
+  sentBy            String
+  sentDate          DateTime  @default(now())
+  readCount         Int       @default(0)
+  totalRecipients   Int       @default(0)
+  status            String    @default("draft")
+  scheduledDate     DateTime?
+}
+
+// Admin — Module Configuration
+model ModuleConfig {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String
+  icon        String   @default("Box")
+  enabled     Boolean  @default(true)
+  roles       Json?
+  subModules  Json?
+  lastUpdated DateTime @default(now())
+}
+
+// Admin — Academic Year
+model AcademicYear {
+  id        String   @id @default(uuid())
+  year      String   @unique
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean  @default(false)
+  semesters Json?
+  status    String   @default("upcoming")
+}
+
+// Admin — Backup Records
+model BackupRecord {
+  id          String   @id @default(uuid())
+  type        String
+  size        String
+  createdDate DateTime @default(now())
+  status      String   @default("in_progress")
+  duration    String?
+  initiatedBy String
+  location    String
+}

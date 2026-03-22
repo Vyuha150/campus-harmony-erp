@@ -9,20 +9,38 @@ import {
   CheckCircle, XCircle, Clock, ArrowRight, Bell, TrendingUp,
   FileText, ShoppingCart, UserX, Megaphone, BarChart3, Forward
 } from 'lucide-react';
-import { departmentFaculty, departmentStudents, hodApprovals as initialApprovals, departmentCalendar } from '@/data/hodMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HODApprovalItem } from '@/types/hod';
 
 export default function HODDashboard() {
+  const [departmentFaculty, setDepartmentFaculty] = useState<any>([]);
+  const [departmentStudents, setDepartmentStudents] = useState<any>([]);
+  const [hodApprovals, setHodApprovals] = useState<any>([]);
+  const [departmentCalendar, setDepartmentCalendar] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    Promise.allSettled([
+      fetchApi('/hod/departmentfaculty').then(d => setDepartmentFaculty(d)),
+      fetchApi('/hod/departmentstudents').then(d => setDepartmentStudents(d)),
+      fetchApi('/hod/hodapprovals').then(d => setHodApprovals(d)),
+      fetchApi('/hod/departmentcalendar').then(d => setDepartmentCalendar(d)),
+    ]).finally(() => _setApiLoading(false));
+  }, []);
+
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [approvals, setApprovals] = useState<HODApprovalItem[]>(initialApprovals);
+  const [approvals, setApprovals] = useState<HODApprovalItem[]>([]);
   const [selectedApproval, setSelectedApproval] = useState<HODApprovalItem | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+
+  useEffect(() => {
+    setApprovals(Array.isArray(hodApprovals) ? hodApprovals : []);
+  }, [hodApprovals]);
 
   const permanentFaculty = departmentFaculty.filter(f => f.type === 'permanent').length;
   const adjunctFaculty = departmentFaculty.filter(f => f.type !== 'permanent').length;
@@ -46,24 +64,39 @@ export default function HODDashboard() {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 5);
 
-  const handleApprove = (item: HODApprovalItem) => {
-    setApprovals(prev => prev.map(a => a.id === item.id ? { ...a, status: 'approved' } : a));
-    toast({ title: '✅ Approved', description: item.title });
-  };
-
-  const handleReject = () => {
-    if (selectedApproval) {
-      setApprovals(prev => prev.map(a => a.id === selectedApproval.id ? { ...a, status: 'rejected' } : a));
-      toast({ title: '❌ Rejected', description: `${selectedApproval.title}${rejectReason ? ` — Reason: ${rejectReason}` : ''}` });
-      setShowRejectDialog(false);
-      setRejectReason('');
-      setSelectedApproval(null);
+  const handleApprove = async (item: HODApprovalItem) => {
+    try {
+      await putApi(`/hod/hodapprovals/${item.id}/status`, { status: 'approved' });
+      setApprovals(prev => prev.map(a => a.id === item.id ? { ...a, status: 'approved' } : a));
+      toast({ title: '✅ Approved', description: item.title });
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error?.message || 'Unable to approve item', variant: 'destructive' });
     }
   };
 
-  const handleForward = (item: HODApprovalItem) => {
-    setApprovals(prev => prev.map(a => a.id === item.id ? { ...a, status: 'forwarded' } : a));
-    toast({ title: '📤 Forwarded to Dean', description: item.title });
+  const handleReject = async () => {
+    if (selectedApproval) {
+      try {
+        await putApi(`/hod/hodapprovals/${selectedApproval.id}/status`, { status: 'rejected', reason: rejectReason });
+        setApprovals(prev => prev.map(a => a.id === selectedApproval.id ? { ...a, status: 'rejected' } : a));
+        toast({ title: '❌ Rejected', description: `${selectedApproval.title}${rejectReason ? ` — Reason: ${rejectReason}` : ''}` });
+        setShowRejectDialog(false);
+        setRejectReason('');
+        setSelectedApproval(null);
+      } catch (error: any) {
+        toast({ title: 'Action failed', description: error?.message || 'Unable to reject item', variant: 'destructive' });
+      }
+    }
+  };
+
+  const handleForward = async (item: HODApprovalItem) => {
+    try {
+      await putApi(`/hod/hodapprovals/${item.id}/status`, { status: 'forwarded' });
+      setApprovals(prev => prev.map(a => a.id === item.id ? { ...a, status: 'forwarded' } : a));
+      toast({ title: '📤 Forwarded to Dean', description: item.title });
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error?.message || 'Unable to forward item', variant: 'destructive' });
+    }
   };
 
   return (

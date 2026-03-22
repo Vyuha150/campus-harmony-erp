@@ -94,6 +94,10 @@ export interface AdminDocument {
   category: 'government_order' | 'ugc_communication' | 'circular' | 'minutes' | 'policy' | 'notification' | 'audit_report';
   uploadedBy: string;
   uploadedAt: Date;
+  filePath?: string;
+  fileUrl?: string;
+  fileName?: string;
+  mimeType?: string;
   fileSize: string;
   tags: string[];
   isConfidential: boolean;

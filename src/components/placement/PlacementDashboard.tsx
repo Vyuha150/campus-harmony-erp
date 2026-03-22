@@ -8,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Briefcase, TrendingUp, Users, Building2, Search, Calendar, ArrowUpRight, Target, GraduationCap, BarChart3, MessageSquare, Award, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { placementMetrics, placementDrives, recentOffers, companies, trainingSessions } from '@/data/placementMockData';
+import { useState, useEffect } from 'react';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { useToast } from '@/hooks/use-toast';
 
 const COLORS = ['hsl(var(--primary))', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
 
@@ -18,16 +20,82 @@ const formatPackage = (amount: number) => {
   return `₹${amount.toLocaleString('en-IN')}`;
 };
 
+const formatDate = (value: unknown) => {
+  if (!value) return '-';
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleDateString('en-IN');
+};
+
 export default function PlacementDashboard() {
+  const { toast } = useToast();
+  const [placementMetrics, setPlacementMetrics] = useState<any>({
+    placementPercentage: 0,
+    placedStudents: 0,
+    eligibleStudents: 0,
+    companiesVisited: 0,
+    highestPackage: 0,
+    averagePackage: 0,
+  });
+  const [placementDrives, setPlacementDrives] = useState<any>([]);
+  const [recentOffers, setRecentOffers] = useState<any>([]);
+  const [companies, setCompanies] = useState<any>([]);
+  const [trainingSessions, setTrainingSessions] = useState<any>([]);
+  const [deptData, setDeptData] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const loadDashboard = async () => {
+    const [metrics, drives, offers, companyList, sessions, dept] = await Promise.all([
+      fetchApi('/placements/dashboard'),
+      fetchApi('/placements/drives'),
+      fetchApi('/placements/offers/recent'),
+      fetchApi('/placements/companies'),
+      fetchApi('/placements/training'),
+      fetchApi('/placements/analytics/department-wise')
+    ]);
+
+    setPlacementMetrics(metrics || {});
+    setPlacementDrives(Array.isArray(drives) ? drives : []);
+    setRecentOffers(Array.isArray(offers) ? offers : []);
+    setCompanies(Array.isArray(companyList) ? companyList : []);
+    setTrainingSessions(Array.isArray(sessions) ? sessions : []);
+    setDeptData(Array.isArray(dept) ? dept : []);
+  };
+
+  useEffect(() => {
+    loadDashboard().catch((error) => {
+      console.error('API request failed', error);
+      toast({ title: 'Unable to load placement dashboard', description: error?.message || 'Please retry', variant: 'destructive' });
+    });
+    _setApiLoading(false);
+  }, []);
+
+  const handleBulkNotify = async () => {
+    try {
+      await postApi('/placements/messages', {
+        subject: 'Placement update',
+        message: 'Latest placement updates are available on the dashboard.',
+        channel: 'email',
+        targetAudience: 'eligible'
+      });
+      toast({ title: 'Notification sent', description: 'Bulk placement update has been sent.' });
+    } catch (error: any) {
+      toast({ title: 'Send failed', description: error?.message || 'Unable to send notification.', variant: 'destructive' });
+    }
+  };
+
+  const handleManageDrive = async (drive: any) => {
+    try {
+      const apps = await fetchApi<any[]>(`/placements/drives/${drive.id}/applications`);
+      toast({
+        title: 'Drive details loaded',
+        description: `${Array.isArray(apps) ? apps.length : 0} application(s) found for ${drive.company?.name || drive.companyName || 'this drive'}.`
+      });
+    } catch (error: any) {
+      toast({ title: 'Unable to open drive', description: error?.message || 'Try again.', variant: 'destructive' });
+    }
+  };
+
   const m = placementMetrics;
-  const deptData = [
-    { dept: 'CSE', placed: 92, total: 180 },
-    { dept: 'ECE', placed: 78, total: 150 },
-    { dept: 'ME', placed: 65, total: 120 },
-    { dept: 'EE', placed: 55, total: 100 },
-    { dept: 'IT', placed: 88, total: 140 },
-    { dept: 'MBA', placed: 120, total: 160 },
-  ];
 
   return (
     <DashboardLayout>
@@ -38,8 +106,8 @@ export default function PlacementDashboard() {
             <p className="text-muted-foreground">Academic Year 2025-26 • Batch 2026</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />NIRF Report</Button>
-            <Button size="sm"><MessageSquare className="mr-2 h-4 w-4" />Bulk Notify</Button>
+            <Button variant="outline" size="sm" onClick={() => window.print()}><Download className="mr-2 h-4 w-4" />NIRF Report</Button>
+            <Button size="sm" onClick={handleBulkNotify}><MessageSquare className="mr-2 h-4 w-4" />Bulk Notify</Button>
           </div>
         </div>
 
@@ -69,23 +137,23 @@ export default function PlacementDashboard() {
                     <div className="flex items-start gap-4">
                       <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10"><Building2 className="h-6 w-6 text-primary" /></div>
                       <div>
-                        <h3 className="text-lg font-semibold text-foreground">{drive.company.name}</h3>
-                        <p className="text-sm text-muted-foreground">{drive.jobRole} • {drive.jobType.replace('_', ' ')}</p>
+                        <h3 className="text-lg font-semibold text-foreground">{drive.company?.name || drive.companyName || 'Company'}</h3>
+                        <p className="text-sm text-muted-foreground">{drive.jobRole || drive.role || 'Role'}{drive.jobType ? ` • ${String(drive.jobType).replace('_', ' ')}` : ''}</p>
                         <div className="mt-2 flex flex-wrap gap-2">
-                          <Badge variant="outline">CTC: {formatPackage(drive.package.ctc)}</Badge>
-                          <Badge variant="outline">Min CGPA: {drive.eligibilityCriteria.minCGPA}</Badge>
-                          <Badge variant="outline">{drive.registeredStudents} registered</Badge>
+                          <Badge variant="outline">CTC: {formatPackage(Number(drive.package?.ctc || 0))}</Badge>
+                          <Badge variant="outline">Min CGPA: {drive.eligibilityCriteria?.minCGPA ?? 'N/A'}</Badge>
+                          <Badge variant="outline">{Number(drive.registeredStudents || drive.registrations || 0)} registered</Badge>
                         </div>
                         <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
-                          <span><Calendar className="mr-1 inline h-3 w-3" />{drive.driveDate.toLocaleDateString('en-IN')}</span>
-                          <span>Venue: {drive.venue}</span>
-                          <span>Rounds: {drive.rounds.length}</span>
+                          <span><Calendar className="mr-1 inline h-3 w-3" />{formatDate(drive.driveDate)}</span>
+                          <span>Venue: {drive.venue || drive.location}</span>
+                          <span>Rounds: {Array.isArray(drive.rounds) ? drive.rounds.length : 0}</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <Badge variant={drive.status === 'upcoming' ? 'default' : 'secondary'} className="capitalize">{drive.status}</Badge>
-                      <Button size="sm">Manage Drive</Button>
+                      <Button size="sm" onClick={() => handleManageDrive(drive)}>Manage Drive</Button>
                     </div>
                   </div>
                 </CardContent>
@@ -108,7 +176,7 @@ export default function PlacementDashboard() {
                   <td className="px-4 py-3 text-sm text-foreground">{o.companyName}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{o.jobRole}</td>
                   <td className="px-4 py-3 text-right text-sm font-semibold text-foreground">{formatPackage(o.package)}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{o.offerDate.toLocaleDateString('en-IN')}</td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">{formatDate(o.offerDate)}</td>
                   <td className="px-4 py-3"><Badge variant={o.status === 'accepted' ? 'default' : 'secondary'} className="capitalize">{o.status}</Badge></td>
                 </tr>
               ))}
@@ -130,7 +198,7 @@ export default function PlacementDashboard() {
                   <td className="px-4 py-3 text-sm text-muted-foreground">{c.industry}</td>
                   <td className="px-4 py-3"><p className="text-sm text-foreground">{c.contactPerson}</p><p className="text-xs text-muted-foreground">{c.email}</p></td>
                   <td className="px-4 py-3 text-right text-sm font-semibold text-foreground">{c.totalHires}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{c.lastVisit?.toLocaleDateString('en-IN') || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">{formatDate(c.lastVisit)}</td>
                   <td className="px-4 py-3"><Badge variant="default" className="capitalize">{c.status}</Badge></td>
                 </tr>
               ))}
@@ -145,7 +213,7 @@ export default function PlacementDashboard() {
                   <div>
                     <p className="font-medium text-foreground">{ts.title}</p>
                     <p className="text-sm text-muted-foreground">{ts.instructor} • {ts.venue}</p>
-                    <p className="text-xs text-muted-foreground">{ts.date.toLocaleDateString('en-IN')} • {ts.duration} min</p>
+                    <p className="text-xs text-muted-foreground">{formatDate(ts.date)} • {ts.duration} min</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

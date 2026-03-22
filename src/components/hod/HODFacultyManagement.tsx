@@ -12,8 +12,8 @@ import {
   Users, Search, Mail, Phone, BookOpen, Award, UserCheck,
   UserX, Edit, Eye, MoreHorizontal, Plus, Send, Clock
 } from 'lucide-react';
-import { departmentFaculty as initialFaculty } from '@/data/hodMockData';
-import { useState } from 'react';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { DepartmentFaculty } from '@/types/hod';
 import {
@@ -31,9 +31,16 @@ const availableRoles = [
 ];
 
 export default function HODFacultyManagement() {
+  const [departmentFaculty, setDepartmentFaculty] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/hod/departmentfaculty').then(d => setDepartmentFaculty(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const [search, setSearch] = useState('');
   const [selectedFaculty, setSelectedFaculty] = useState<string | null>(null);
-  const [faculty, setFaculty] = useState<DepartmentFaculty[]>(initialFaculty);
+  const [faculty, setFaculty] = useState<DepartmentFaculty[]>([]);
   const [showRoleDialog, setShowRoleDialog] = useState(false);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showPromoDialog, setShowPromoDialog] = useState(false);
@@ -42,6 +49,10 @@ export default function HODFacultyManagement() {
   const [promoReason, setPromoReason] = useState('');
   const { toast } = useToast();
 
+  useEffect(() => {
+    setFaculty(Array.isArray(departmentFaculty) ? departmentFaculty : []);
+  }, [departmentFaculty]);
+
   const filtered = faculty.filter(f =>
     f.name.toLowerCase().includes(search.toLowerCase()) ||
     f.specialization.toLowerCase().includes(search.toLowerCase())
@@ -49,45 +60,74 @@ export default function HODFacultyManagement() {
 
   const currentFaculty = faculty.find(f => f.id === selectedFaculty);
 
-  const handleAssignRole = () => {
+  const handleAssignRole = async () => {
     if (roleTarget && newRole) {
-      setFaculty(prev => prev.map(f =>
-        f.id === roleTarget.id ? { ...f, roles: [...f.roles, newRole] } : f
-      ));
-      toast({ title: 'Role Assigned', description: `"${newRole}" assigned to ${roleTarget.name}` });
-      setShowRoleDialog(false);
-      setNewRole('');
+      try {
+        const updatedRoles = [...roleTarget.roles, newRole];
+        await putApi(`/hod/faculty/${roleTarget.id}/roles`, { roles: updatedRoles });
+        setFaculty(prev => prev.map(f =>
+          f.id === roleTarget.id ? { ...f, roles: updatedRoles } : f
+        ));
+        toast({ title: 'Role Assigned', description: `"${newRole}" assigned to ${roleTarget.name}` });
+        setShowRoleDialog(false);
+        setNewRole('');
+      } catch (error: any) {
+        toast({ title: 'Update failed', description: error?.message || 'Unable to assign role', variant: 'destructive' });
+      }
     }
   };
 
-  const handleRemoveRole = (fId: string, role: string) => {
-    setFaculty(prev => prev.map(f =>
-      f.id === fId ? { ...f, roles: f.roles.filter(r => r !== role) } : f
-    ));
-    toast({ title: 'Role Removed', description: `"${role}" removed` });
+  const handleRemoveRole = async (fId: string, role: string) => {
+    try {
+      const target = faculty.find((f) => f.id === fId);
+      if (!target) return;
+      const updatedRoles = target.roles.filter((r) => r !== role);
+      await putApi(`/hod/faculty/${fId}/roles`, { roles: updatedRoles });
+      setFaculty(prev => prev.map(f =>
+        f.id === fId ? { ...f, roles: updatedRoles } : f
+      ));
+      toast({ title: 'Role Removed', description: `"${role}" removed` });
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Unable to remove role', variant: 'destructive' });
+    }
   };
 
-  const handleApproveLeave = (f: DepartmentFaculty) => {
-    setFaculty(prev => prev.map(fac =>
-      fac.id === f.id ? { ...fac, isOnLeave: true, leaveType: 'Approved Leave' } : fac
-    ));
-    toast({ title: 'Leave Approved', description: `Leave approved for ${f.name}` });
-    setShowLeaveDialog(false);
+  const handleApproveLeave = async (f: DepartmentFaculty) => {
+    try {
+      await putApi(`/hod/faculty/${f.id}/leave`, { action: 'approve' });
+      setFaculty(prev => prev.map(fac =>
+        fac.id === f.id ? { ...fac, isOnLeave: true, leaveType: 'Approved Leave' } : fac
+      ));
+      toast({ title: 'Leave Approved', description: `Leave approved for ${f.name}` });
+      setShowLeaveDialog(false);
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Unable to approve leave', variant: 'destructive' });
+    }
   };
 
-  const handleRejectLeave = (f: DepartmentFaculty) => {
-    setFaculty(prev => prev.map(fac =>
-      fac.id === f.id ? { ...fac, isOnLeave: false, leaveType: undefined } : fac
-    ));
-    toast({ title: 'Leave Rejected', description: `Leave rejected for ${f.name}` });
-    setShowLeaveDialog(false);
+  const handleRejectLeave = async (f: DepartmentFaculty) => {
+    try {
+      await putApi(`/hod/faculty/${f.id}/leave`, { action: 'reject' });
+      setFaculty(prev => prev.map(fac =>
+        fac.id === f.id ? { ...fac, isOnLeave: false, leaveType: undefined } : fac
+      ));
+      toast({ title: 'Leave Rejected', description: `Leave rejected for ${f.name}` });
+      setShowLeaveDialog(false);
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Unable to reject leave', variant: 'destructive' });
+    }
   };
 
-  const handlePromote = () => {
+  const handlePromote = async () => {
     if (roleTarget) {
-      toast({ title: '📤 Promotion Recommended', description: `Recommendation for ${roleTarget.name} forwarded to Dean. Reason: ${promoReason || 'N/A'}` });
-      setShowPromoDialog(false);
-      setPromoReason('');
+      try {
+        await postApi(`/hod/faculty/${roleTarget.id}/promotion-recommendation`, { reason: promoReason });
+        toast({ title: '📤 Promotion Recommended', description: `Recommendation for ${roleTarget.name} forwarded to Dean. Reason: ${promoReason || 'N/A'}` });
+        setShowPromoDialog(false);
+        setPromoReason('');
+      } catch (error: any) {
+        toast({ title: 'Action failed', description: error?.message || 'Unable to submit recommendation', variant: 'destructive' });
+      }
     }
   };
 

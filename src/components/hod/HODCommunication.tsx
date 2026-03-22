@@ -11,8 +11,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   Send, Users, GraduationCap, Megaphone, Plus, Eye, Trash2
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { deleteApi, fetchApi, postApi } from '@/lib/apiService';
 
 interface Message {
   id: string;
@@ -20,89 +21,67 @@ interface Message {
   message: string;
   sentAt: string;
   recipients: string;
+  to?: string;
   recipientCount: number;
   readCount: number;
   viaEmail: boolean;
   viaWhatsApp: boolean;
 }
 
-const initialMessages: Message[] = [
-  {
-    id: 'hm-1', subject: 'Department Faculty Meeting – Monday 3 PM',
-    message: 'All faculty members are requested to attend the monthly department meeting on Monday, 10 March at 3 PM in Conference Room 2. Agenda: Exam preparation, NIRF data review.',
-    sentAt: '2026-03-07', recipients: 'All Faculty', recipientCount: 7, readCount: 5, viaEmail: true, viaWhatsApp: false,
-  },
-  {
-    id: 'hm-2', subject: 'Placement Training Session for Final Year',
-    message: 'A mandatory placement aptitude training session is scheduled for all 4th year CSE students on 12 March from 2–4 PM in LH-401. Attendance is compulsory.',
-    sentAt: '2026-03-06', recipients: '4th Year Students', recipientCount: 58, readCount: 42, viaEmail: true, viaWhatsApp: true,
-  },
-  {
-    id: 'hm-3', subject: 'Mid-Semester Exam Schedule Finalized',
-    message: 'The mid-semester exam timetable has been finalized and published. Please check the exam portal for your schedule. Any conflicts must be reported by 15 March.',
-    sentAt: '2026-03-05', recipients: 'All Students', recipientCount: 245, readCount: 180, viaEmail: true, viaWhatsApp: false,
-  },
-  {
-    id: 'hm-4', subject: 'Submit Question Papers by 15 March',
-    message: 'All course instructors are reminded to submit their end-semester question papers to the Exam Cell by 15 March 2026. Please follow the question paper template.',
-    sentAt: '2026-03-03', recipients: 'All Faculty', recipientCount: 7, readCount: 7, viaEmail: true, viaWhatsApp: false,
-  },
-];
-
-const recipientOptions = [
-  { value: 'all_faculty', label: 'All Department Faculty', count: 7 },
-  { value: 'all_students', label: 'All Department Students', count: 245 },
-  { value: 'year1', label: '1st Year Students', count: 80 },
-  { value: 'year2', label: '2nd Year Students', count: 70 },
-  { value: 'year3', label: '3rd Year Students', count: 65 },
-  { value: 'year4', label: '4th Year Students', count: 58 },
-  { value: 'pg', label: 'PG Students', count: 15 },
-  { value: 'everyone', label: 'Everyone (Faculty + Students)', count: 252 },
-];
-
 export default function HODCommunication() {
   const { toast } = useToast();
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [recipientOptions, setRecipientOptions] = useState<any[]>([]);
   const [showCompose, setShowCompose] = useState(false);
   const [showDetail, setShowDetail] = useState<Message | null>(null);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
-  const [recipients, setRecipients] = useState('');
+  const [to, setTo] = useState('');
   const [viaEmail, setViaEmail] = useState(true);
   const [viaWhatsApp, setViaWhatsApp] = useState(false);
 
-  const handleSend = () => {
-    if (!subject || !body || !recipients) {
+  useEffect(() => {
+    fetchApi('/hod/communication/messages').then((data) => setMessages(data)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/hod/communication/recipient-options').then((data) => setRecipientOptions(data)).catch((error) => { console.error('API request failed', error); });
+  }, []);
+
+  const handleSend = async () => {
+    if (!subject || !body || !to) {
       toast({ title: 'Missing Fields', description: 'Please fill subject, message, and select recipients', variant: 'destructive' });
       return;
     }
-    const rec = recipientOptions.find(r => r.value === recipients);
-    const msg: Message = {
-      id: `hm-${Date.now()}`,
-      subject,
-      message: body,
-      sentAt: '2026-03-08',
-      recipients: rec?.label || recipients,
-      recipientCount: rec?.count || 0,
-      readCount: 0,
-      viaEmail,
-      viaWhatsApp,
-    };
-    setMessages(prev => [msg, ...prev]);
-    toast({ title: '✅ Message Sent', description: `Delivered to ${rec?.count || 0} recipients${viaEmail ? ' via Email' : ''}${viaWhatsApp ? ' + WhatsApp' : ''}` });
-    setShowCompose(false);
-    setSubject('');
-    setBody('');
-    setRecipients('');
+    try {
+      const rec = recipientOptions.find(r => r.value === to);
+      const msg = await postApi<Message>('/hod/communication/messages', {
+        subject,
+        message: body,
+        to,
+        viaEmail,
+        viaWhatsApp,
+      });
+      setMessages(prev => [msg, ...prev]);
+      toast({ title: '✅ Message Sent', description: `Delivered to ${rec?.count || 0} recipients${viaEmail ? ' via Email' : ''}${viaWhatsApp ? ' + WhatsApp' : ''}` });
+      setShowCompose(false);
+      setSubject('');
+      setBody('');
+      setTo('');
+    } catch (error: any) {
+      toast({ title: 'Send failed', description: error?.message || 'Unable to send message', variant: 'destructive' });
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setMessages(prev => prev.filter(m => m.id !== id));
-    toast({ title: 'Message Deleted' });
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteApi(`/hod/communication/messages/${id}`);
+      setMessages(prev => prev.filter(m => m.id !== id));
+      toast({ title: 'Message Deleted' });
+    } catch (error: any) {
+      toast({ title: 'Delete failed', description: error?.message || 'Unable to delete message', variant: 'destructive' });
+    }
   };
 
   const handleQuickMessage = (target: string) => {
-    setRecipients(target);
+    setTo(target);
     setShowCompose(true);
   };
 
@@ -122,9 +101,9 @@ export default function HODCommunication() {
         {/* Quick Targets */}
         <div className="grid gap-3 sm:grid-cols-3">
           {[
-            { label: 'Message All Faculty', icon: Users, count: 7, target: 'all_faculty' },
-            { label: 'Message All Students', icon: GraduationCap, count: 245, target: 'all_students' },
-            { label: 'Post Notice to All', icon: Megaphone, count: 252, target: 'everyone' },
+            { label: 'Message All Faculty', icon: Users, count: recipientOptions.find((r) => r.value === 'faculties')?.count ?? 0, target: 'faculties' },
+            { label: 'Message All Students', icon: GraduationCap, count: recipientOptions.find((r) => r.value === 'students')?.count ?? 0, target: 'students' },
+            { label: 'Post Notice to All', icon: Megaphone, count: recipientOptions.find((r) => r.value === 'all')?.count ?? 0, target: 'all' },
           ].map(t => (
             <Button key={t.label} variant="outline" className="h-auto flex-col gap-1 py-4 text-xs"
               onClick={() => handleQuickMessage(t.target)}>
@@ -173,7 +152,7 @@ export default function HODCommunication() {
           <div className="space-y-4">
             <div>
               <Label>Recipients</Label>
-              <Select value={recipients} onValueChange={setRecipients}>
+              <Select value={to} onValueChange={setTo}>
                 <SelectTrigger><SelectValue placeholder="Select recipients" /></SelectTrigger>
                 <SelectContent>
                   {recipientOptions.map(r => (
@@ -200,7 +179,7 @@ export default function HODCommunication() {
                 <label htmlFor="whatsapp" className="text-sm">Send via WhatsApp</label>
               </div>
             </div>
-            <Button className="w-full" onClick={handleSend} disabled={!subject || !body || !recipients}>
+            <Button className="w-full" onClick={handleSend} disabled={!subject || !body || !to}>
               <Send className="mr-1 h-4 w-4" />Send Message
             </Button>
           </div>
@@ -214,7 +193,7 @@ export default function HODCommunication() {
           {showDetail && (
             <div className="space-y-3">
               <div className="flex gap-2">
-                <Badge variant="outline">{showDetail.recipients}</Badge>
+                <Badge variant="outline">{showDetail.to || showDetail.recipients}</Badge>
                 <Badge variant="secondary">{showDetail.sentAt}</Badge>
               </div>
               <div className="text-sm text-muted-foreground">
@@ -222,7 +201,7 @@ export default function HODCommunication() {
                 <p>Channels: {showDetail.viaEmail ? 'Email' : ''} {showDetail.viaWhatsApp ? 'WhatsApp' : ''}</p>
               </div>
               <p className="text-sm">{showDetail.message}</p>
-              <Button variant="outline" className="w-full" onClick={() => { setShowDetail(null); setRecipients(''); setSubject(`Re: ${showDetail.subject}`); setShowCompose(true); }}>
+              <Button variant="outline" className="w-full" onClick={() => { setShowDetail(null); setTo(''); setSubject(`Re: ${showDetail.subject}`); setShowCompose(true); }}>
                 <Send className="mr-1 h-4 w-4" />Resend / Forward
               </Button>
             </div>

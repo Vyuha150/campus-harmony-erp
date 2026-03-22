@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,42 +10,37 @@ import { useToast } from '@/hooks/use-toast';
 import {
   TrendingUp, Download, PieChart, Wallet, Receipt, Eye
 } from 'lucide-react';
-import { financialOverview } from '@/data/vcMockData';
+import { fetchApi } from '@/lib/apiService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface DeptBudget { dept: string; allocated: number; spent: number; util: number; categories: { name: string; amount: number }[]; }
 
-const deptBudgets: DeptBudget[] = [
-  { dept: 'Computer Science', allocated: 450, spent: 380, util: 84, categories: [{ name: 'Faculty Salaries', amount: 220 }, { name: 'Lab Equipment', amount: 85 }, { name: 'Research', amount: 45 }, { name: 'Events', amount: 30 }] },
-  { dept: 'Electronics', allocated: 380, spent: 340, util: 89, categories: [{ name: 'Faculty Salaries', amount: 190 }, { name: 'Lab Equipment', amount: 90 }, { name: 'Research', amount: 35 }, { name: 'Events', amount: 25 }] },
-  { dept: 'Mechanical', allocated: 420, spent: 390, util: 93, categories: [{ name: 'Faculty Salaries', amount: 200 }, { name: 'Workshop/Lab', amount: 120 }, { name: 'Research', amount: 40 }, { name: 'Maintenance', amount: 30 }] },
-  { dept: 'Civil Engineering', allocated: 350, spent: 395, util: 113, categories: [{ name: 'Faculty Salaries', amount: 180 }, { name: 'Lab Equipment', amount: 100 }, { name: 'Field Trips', amount: 65 }, { name: 'Research', amount: 50 }] },
-  { dept: 'Business Admin', allocated: 280, spent: 245, util: 88, categories: [{ name: 'Faculty Salaries', amount: 150 }, { name: 'Case Licenses', amount: 45 }, { name: 'Industry Events', amount: 30 }, { name: 'Research', amount: 20 }] },
-  { dept: 'Physics', allocated: 200, spent: 175, util: 88, categories: [{ name: 'Faculty Salaries', amount: 100 }, { name: 'Lab Equipment', amount: 50 }, { name: 'Research', amount: 25 }] },
-  { dept: 'Chemistry', allocated: 220, spent: 195, util: 89, categories: [{ name: 'Faculty Salaries', amount: 95 }, { name: 'Lab Consumables', amount: 60 }, { name: 'Research', amount: 40 }] },
-];
-
-const revenueStreams = [
-  { source: 'Tuition Fees', amount: 9500, percentage: 60, trend: '+5%' },
-  { source: 'Government Grants', amount: 2500, percentage: 16, trend: '0%' },
-  { source: 'Research Grants', amount: 1000, percentage: 6, trend: '+22%' },
-  { source: 'Self-Financed Courses', amount: 1800, percentage: 11, trend: '+12%' },
-  { source: 'Consultancy & Services', amount: 500, percentage: 3, trend: '+8%' },
-  { source: 'Other Income', amount: 600, percentage: 4, trend: '+3%' },
-];
-
 export default function VCFinance() {
+  const [financialOverview, setFinancialOverview] = useState<any>({ totalRevenue: 0, pendingDues: 0, totalBudget: 0, totalSpent: 0 });
+  const [deptBudgets, setDeptBudgets] = useState<DeptBudget[]>([]);
+  const [revenueStreams, setRevenueStreams] = useState<any>([]);
+  const [financeSummary, setFinanceSummary] = useState<any[]>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/vc/financialoverview').then(d => setFinancialOverview(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/department-budgets').then(d => setDeptBudgets(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/revenue-streams').then(d => setRevenueStreams(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/finance-summary').then(d => setFinanceSummary(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
   const [selectedDept, setSelectedDept] = useState<DeptBudget | null>(null);
 
-  const totalBudget = financialOverview.reduce((sum, f) => sum + f.budget, 0);
-  const totalActual = financialOverview.reduce((sum, f) => sum + f.actual, 0);
-  const utilizationPct = Math.round((totalActual / totalBudget) * 100);
+  const totalBudget = Number(financialOverview.totalBudget || 0);
+  const totalActual = Number(financialOverview.totalSpent || 0);
+  const revenueYtd = Number(financialOverview.totalRevenue || 0);
+  const utilizationPct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
 
-  const chartData = financialOverview.map(f => ({
-    name: f.category.length > 12 ? f.category.slice(0, 12) + '…' : f.category,
-    Budget: f.budget,
-    Actual: f.actual,
+  const chartData = financeSummary.map(row => ({
+    name: row.department?.length > 12 ? row.department.slice(0, 12) + '…' : row.department,
+    Budget: row.allocated || 0,
+    Actual: row.spent || 0,
   }));
 
   return (
@@ -67,7 +62,7 @@ export default function VCFinance() {
             { label: 'Total Budget', value: `₹${(totalBudget / 100).toFixed(0)} Cr`, icon: Wallet, color: 'text-primary' },
             { label: 'Actual Spend', value: `₹${(totalActual / 100).toFixed(0)} Cr`, icon: Receipt, color: 'text-amber-600' },
             { label: 'Utilization', value: `${utilizationPct}%`, icon: PieChart, color: 'text-emerald-600' },
-            { label: 'Revenue YTD', value: '₹142 Cr', icon: TrendingUp, color: 'text-blue-600' },
+            { label: 'Revenue YTD', value: `₹${(revenueYtd / 100).toFixed(0)} Cr`, icon: TrendingUp, color: 'text-blue-600' },
           ].map(s => (
             <Card key={s.label}>
               <CardContent className="flex items-center gap-3 p-4">
@@ -108,24 +103,27 @@ export default function VCFinance() {
               </CardContent>
             </Card>
             <div className="grid gap-3 mt-4">
-              {financialOverview.map(item => (
-                <div key={item.category} className="flex items-center gap-4 rounded-lg border p-3">
+              {financeSummary.map(item => {
+                const variance = (item.spent || 0) - (item.allocated || 0);
+                const spendPct = (item.allocated || 0) > 0 ? Math.round(((item.spent || 0) / item.allocated) * 100) : 0;
+                return (
+                <div key={item.department} className="flex items-center gap-4 rounded-lg border p-3">
                   <div className="flex-1">
-                    <p className="text-sm font-medium">{item.category}</p>
+                    <p className="text-sm font-medium">{item.department}</p>
                     <div className="flex items-center gap-2 mt-1">
-                      <Progress value={(item.actual / item.budget) * 100} className="h-2 flex-1" />
-                      <span className="text-xs font-medium">{Math.round((item.actual / item.budget) * 100)}%</span>
+                      <Progress value={Math.min(spendPct, 100)} className="h-2 flex-1" />
+                      <span className="text-xs font-medium">{spendPct}%</span>
                     </div>
                   </div>
                   <div className="text-right text-sm">
-                    <p className="font-medium">₹{item.actual} L</p>
-                    <p className="text-xs text-muted-foreground">of ₹{item.budget} L</p>
+                    <p className="font-medium">₹{item.spent} L</p>
+                    <p className="text-xs text-muted-foreground">of ₹{item.allocated} L</p>
                   </div>
-                  <Badge variant={item.variance <= 0 ? 'default' : 'destructive'} className="text-[10px]">
-                    {item.variance <= 0 ? 'Under' : 'Over'} ₹{Math.abs(item.variance)} L
+                  <Badge variant={variance <= 0 ? 'default' : 'destructive'} className="text-[10px]">
+                    {variance <= 0 ? 'Under' : 'Over'} ₹{Math.abs(variance)} L
                   </Badge>
                 </div>
-              ))}
+              )})}
             </div>
           </TabsContent>
 

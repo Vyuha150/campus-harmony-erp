@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,12 +9,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { UploadField } from '@/components/ui/upload-field';
 import { useToast } from '@/hooks/use-toast';
 import {
   Search, FileText, Upload, Download, Eye, Lock, Unlock,
   Tag, Folder, Calendar, Plus, Filter
 } from 'lucide-react';
-import { adminDocuments as initialDocs } from '@/data/registrarMockData';
+import { fetchApi, postApi, uploadApi } from '@/lib/apiService';
 import { AdminDocument } from '@/types/registrar';
 
 const categoryLabels: Record<string, string> = {
@@ -38,8 +39,15 @@ const categoryColors: Record<string, string> = {
 };
 
 export default function RegistrarDocuments() {
+  const [adminDocuments, setAdminDocuments] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/registrar/documents').then(d => setAdminDocuments(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [documents, setDocuments] = useState(initialDocs);
+  const [documents, setDocuments] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -47,6 +55,31 @@ export default function RegistrarDocuments() {
   const [newCategory, setNewCategory] = useState('circular');
   const [newTags, setNewTags] = useState('');
   const [isConfidential, setIsConfidential] = useState(false);
+  const [newFile, setNewFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const normalizeDocument = (raw: any) => ({
+    ...raw,
+    uploadedAt: new Date(raw?.uploadedAt ?? Date.now()),
+    tags: Array.isArray(raw?.tags) ? raw.tags : [],
+    accessRoles: Array.isArray(raw?.accessRoles) ? raw.accessRoles : [],
+  });
+
+  const formatBytes = (size: number): string => {
+    if (!Number.isFinite(size) || size <= 0) return '0 KB';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = size;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  };
+
+  useEffect(() => {
+    setDocuments((adminDocuments || []).map(normalizeDocument));
+  }, [adminDocuments]);
 
   const filtered = documents.filter(d => {
     const matchSearch = d.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -55,24 +88,39 @@ export default function RegistrarDocuments() {
     return matchSearch && matchCategory;
   });
 
-  const handleUpload = () => {
-    if (!newTitle) return;
-    const newDoc: AdminDocument = {
-      id: `ad${documents.length + 1}`,
-      title: newTitle,
-      category: newCategory as any,
-      uploadedBy: 'Registrar Office',
-      uploadedAt: new Date(),
-      fileSize: '1.2 MB',
-      tags: newTags.split(',').map(t => t.trim()).filter(Boolean),
-      isConfidential,
-      accessRoles: isConfidential ? ['registrar', 'vice_chancellor'] : ['all'],
-    };
-    setDocuments(prev => [newDoc, ...prev]);
-    setShowUploadDialog(false);
-    setNewTitle('');
-    setNewTags('');
-    toast({ title: 'Document Uploaded', description: `"${newTitle}" added to repository.` });
+  const handleUpload = async () => {
+    if (!newTitle.trim() || !newFile) {
+      toast({ title: 'Missing details', description: 'Title and file are required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const uploadResult: any = await uploadApi(newFile, 'registrar-documents');
+      const created = await postApi('/registrar/documents', {
+        title: newTitle.trim(),
+        category: newCategory,
+        tags: newTags.split(',').map(t => t.trim()).filter(Boolean),
+        isConfidential,
+        accessRoles: isConfidential ? ['registrar', 'vice_chancellor'] : ['all'],
+        fileSize: formatBytes(newFile.size),
+        filePath: uploadResult?.storagePath,
+        fileUrl: uploadResult?.url,
+        fileName: uploadResult?.fileName,
+        mimeType: uploadResult?.mimeType,
+      });
+      setDocuments(prev => [normalizeDocument(created), ...prev]);
+      setShowUploadDialog(false);
+      setNewTitle('');
+      setNewTags('');
+      setNewFile(null);
+      setIsConfidential(false);
+      toast({ title: 'Document uploaded', description: `"${newTitle}" added to repository.` });
+    } catch (error: any) {
+      toast({ title: 'Upload failed', description: error?.message || 'Unable to upload document.', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -129,7 +177,7 @@ export default function RegistrarDocuments() {
                     <span>•</span>
                     <span>{doc.uploadedBy}</span>
                     <span>•</span>
-                    <span>{doc.uploadedAt.toLocaleDateString('en-IN')}</span>
+                    <span>{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString('en-IN') : 'N/A'}</span>
                     <span>•</span>
                     <span>{doc.fileSize}</span>
                   </div>
@@ -140,10 +188,20 @@ export default function RegistrarDocuments() {
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => toast({ title: 'Viewing', description: `Opening "${doc.title}"...` })}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={() => doc.fileUrl ? window.open(doc.fileUrl, '_blank', 'noopener,noreferrer') : toast({ title: 'No file available', variant: 'destructive' })}
+                  >
                     <Eye className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => toast({ title: 'Downloaded', description: `"${doc.title}" downloaded.` })}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={() => doc.fileUrl ? window.open(doc.fileUrl, '_blank', 'noopener,noreferrer') : toast({ title: 'No file available', variant: 'destructive' })}
+                  >
                     <Download className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -179,13 +237,19 @@ export default function RegistrarDocuments() {
               </div>
               <div className="rounded-lg border-2 border-dashed p-6 text-center text-muted-foreground">
                 <Upload className="h-8 w-8 mx-auto mb-2" />
-                <p className="text-sm">Click to upload or drag & drop</p>
+                <p className="text-sm">Select file to upload</p>
                 <p className="text-xs">PDF, DOCX, XLSX up to 50MB</p>
+                <UploadField
+                  className="mt-3 text-left"
+                  file={newFile}
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                  onFileSelect={setNewFile}
+                />
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowUploadDialog(false)}>Cancel</Button>
-              <Button onClick={handleUpload} className="gap-2"><Upload className="h-4 w-4" /> Upload</Button>
+              <Button onClick={handleUpload} className="gap-2" disabled={uploading}><Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

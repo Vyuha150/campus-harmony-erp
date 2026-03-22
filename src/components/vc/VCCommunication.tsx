@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,7 @@ import {
   Megaphone, Send, Pin, PinOff, Users, Eye, Plus, Search,
   Mail, Bell, MessageSquare, Globe
 } from 'lucide-react';
-import { broadcastMessages } from '@/data/vcMockData';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { BroadcastMessage } from '@/types/vc';
 
 const typeIcons: Record<string, React.ElementType> = {
@@ -32,8 +32,15 @@ const typeColors: Record<string, string> = {
 };
 
 export default function VCCommunication() {
+  const [broadcastMessages, setBroadcastMessages] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/vc/broadcastmessages').then(d => setBroadcastMessages(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [messages, setMessages] = useState(broadcastMessages);
+  const [messages, setMessages] = useState<any[]>([]);
   const [showComposeDialog, setShowComposeDialog] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<BroadcastMessage | null>(null);
   const [subject, setSubject] = useState('');
@@ -42,29 +49,49 @@ export default function VCCommunication() {
   const [msgType, setMsgType] = useState<string>('announcement');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const handleSendBroadcast = () => {
-    if (!subject || !content) return;
-    const newMsg: BroadcastMessage = {
-      id: `bm${messages.length + 1}`,
-      subject,
-      content,
-      sender: 'Vice Chancellor',
-      sentAt: new Date(),
-      recipients: recipients || 'All University',
-      type: msgType as any,
-      pinned: false,
-    };
-    setMessages(prev => [newMsg, ...prev]);
-    setShowComposeDialog(false);
-    setSubject('');
-    setContent('');
-    setRecipients('');
-    toast({ title: 'Message Sent', description: `Broadcast "${subject}" sent to ${recipients || 'All University'}.` });
+  const toDate = (value: any) => {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
   };
 
-  const handleTogglePin = (id: string) => {
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, pinned: !m.pinned } : m));
-    toast({ title: 'Updated', description: 'Pin status changed.' });
+  useEffect(() => {
+    setMessages((broadcastMessages || []).map((message: any) => ({
+      ...message,
+      sentAt: toDate(message.sentAt),
+    })));
+  }, [broadcastMessages]);
+
+  const handleSendBroadcast = async () => {
+    if (!subject || !content) return;
+    try {
+      const created = await postApi<BroadcastMessage>('/vc/messages', {
+        subject,
+        content,
+        recipients: recipients || 'All University',
+        type: msgType,
+      });
+      const normalized = { ...created, sentAt: toDate(created.sentAt) };
+      setMessages(prev => [normalized, ...prev]);
+      setShowComposeDialog(false);
+      setSubject('');
+      setContent('');
+      setRecipients('');
+      toast({ title: 'Message Sent', description: `Broadcast "${subject}" sent to ${recipients || 'All University'}.` });
+    } catch (error: any) {
+      toast({ title: 'Send failed', description: error.message || 'Could not send message.', variant: 'destructive' });
+    }
+  };
+
+  const handleTogglePin = async (id: string) => {
+    const existing = messages.find((message) => message.id === id);
+    if (!existing) return;
+    try {
+      const updated = await putApi<BroadcastMessage>(`/vc/messages/${id}`, { pinned: !existing.pinned });
+      setMessages(prev => prev.map(message => message.id === id ? { ...updated, sentAt: toDate(updated.sentAt) } : message));
+      toast({ title: 'Updated', description: 'Pin status changed.' });
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error.message || 'Could not update message.', variant: 'destructive' });
+    }
   };
 
   const filtered = messages.filter(m =>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,7 @@ import {
   ChevronRight, Eye, Forward, IndianRupee, Users, BookOpen,
   Building2, Handshake, FlaskConical, Scale
 } from 'lucide-react';
-import { executiveApprovals } from '@/data/vcMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { ExecutiveApproval } from '@/types/vc';
 
 const typeIcons: Record<string, React.ElementType> = {
@@ -26,27 +26,57 @@ const typeIcons: Record<string, React.ElementType> = {
 };
 
 export default function VCApprovals() {
+  const [executiveApprovals, setExecutiveApprovals] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/vc/executiveapprovals').then(d => setExecutiveApprovals(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
   const [approvals, setApprovals] = useState(executiveApprovals);
+    const toDate = (value: any) => {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    };
+
+    useEffect(() => {
+      setApprovals((executiveApprovals || []).map((item: any) => ({
+        ...item,
+        requestedAt: toDate(item.requestedAt),
+        documents: Array.isArray(item.documents) ? item.documents : [],
+      })));
+    }, [executiveApprovals]);
+
   const [selectedApproval, setSelectedApproval] = useState<ExecutiveApproval | null>(null);
   const [actionType, setActionType] = useState<'approve' | 'reject' | 'forward' | null>(null);
   const [comment, setComment] = useState('');
   const [filterTab, setFilterTab] = useState('pending');
 
   const filtered = approvals.filter(a => {
-    if (filterTab === 'pending') return a.status === 'pending';
+    if (filterTab === 'pending') return ['pending', 'forwarded'].includes(a.status);
     if (filterTab === 'approved') return a.status === 'approved';
     if (filterTab === 'rejected') return a.status === 'rejected';
     return true;
   });
 
-  const handleAction = () => {
+  const handleAction = async () => {
     if (!selectedApproval || !actionType) return;
-    if (actionType === 'forward') {
-      toast({ title: 'Forwarded', description: `"${selectedApproval.title}" forwarded to Board of Management for review.` });
-    } else {
-      setApprovals(prev => prev.map(a => a.id === selectedApproval.id ? { ...a, status: actionType === 'approve' ? 'approved' as const : 'rejected' as const } : a));
-      toast({ title: actionType === 'approve' ? 'Approved' : 'Rejected', description: `"${selectedApproval.title}" has been ${actionType === 'approve' ? 'approved' : 'rejected'}.` });
+    try {
+      const payload = actionType === 'forward'
+        ? { status: 'pending', forwardedFrom: 'Vice Chancellor', notes: comment }
+        : { status: actionType === 'approve' ? 'approved' : 'rejected', notes: comment };
+
+      const updated = await putApi<any>(`/vc/approvals/${selectedApproval.id}`, payload);
+      setApprovals(prev => prev.map((item: any) => item.id === updated.id ? { ...updated, requestedAt: toDate(updated.requestedAt), documents: Array.isArray(updated.documents) ? updated.documents : [] } : item));
+
+      if (actionType === 'forward') {
+        toast({ title: 'Forwarded', description: `"${selectedApproval.title}" forwarded to Board of Management for review.` });
+      } else {
+        toast({ title: actionType === 'approve' ? 'Approved' : 'Rejected', description: `"${selectedApproval.title}" has been ${actionType === 'approve' ? 'approved' : 'rejected'}.` });
+      }
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error.message || 'Could not update approval.', variant: 'destructive' });
     }
     setSelectedApproval(null);
     setActionType(null);
@@ -126,7 +156,7 @@ export default function VCApprovals() {
                         </div>
                       )}
                     </div>
-                    {item.status === 'pending' && (
+                    {['pending', 'forwarded'].includes(item.status) && (
                       <div className="flex flex-col gap-1.5">
                         <Button size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedApproval(item); setActionType('approve'); }}>
                           <CheckCircle className="h-3 w-3" /> Approve

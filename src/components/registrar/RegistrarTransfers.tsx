@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,35 +11,65 @@ import {
   ArrowLeftRight, ArrowRight, ArrowLeft, CheckCircle, XCircle,
   FileText, Clock, Building2, GraduationCap, Send
 } from 'lucide-react';
-import { transferRequests as initialTransfers } from '@/data/registrarMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { TransferRequest } from '@/types/registrar';
 
 const statusSteps = ['pending', 'noc_issued', 'migration_issued', 'completed'];
 
 export default function RegistrarTransfers() {
+  const [transferRequests, setTransferRequests] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/registrar/transfers').then(d => setTransferRequests(d)).catch((error) => { console.error('API request failed', error); });
+    setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [transfers, setTransfers] = useState(initialTransfers);
+  const [transfers, setTransfers] = useState<any[]>([]);
   const [selectedTransfer, setSelectedTransfer] = useState<TransferRequest | null>(null);
   const [remarks, setRemarks] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  const handleAdvanceStatus = (id: string) => {
-    setTransfers(prev => prev.map(t => {
-      if (t.id !== id) return t;
-      const idx = statusSteps.indexOf(t.status);
+  useEffect(() => {
+    setTransfers(transferRequests || []);
+  }, [transferRequests]);
+
+  const handleAdvanceStatus = async (id: string) => {
+    try {
+      setIsUpdating(true);
+      const transfer = transfers.find(t => t.id === id);
+      const idx = statusSteps.indexOf(transfer?.status);
       if (idx < statusSteps.length - 1) {
-        const next = statusSteps[idx + 1] as TransferRequest['status'];
-        return { ...t, status: next };
+        const newStatus = statusSteps[idx + 1];
+        await putApi(`/registrar/transfers/${id}`, { status: newStatus, remarks });
+        setTransfers(prev => prev.map(t => {
+          if (t.id !== id) return t;
+          return { ...t, status: newStatus as TransferRequest['status'] };
+        }));
+        toast({ title: 'Status Updated', description: 'Transfer request advanced to next stage.' });
+        setSelectedTransfer(null);
+        setRemarks('');
       }
-      return t;
-    }));
-    toast({ title: 'Status Updated', description: 'Transfer request advanced to next stage.' });
-    setSelectedTransfer(null);
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const handleReject = (id: string) => {
-    setTransfers(prev => prev.map(t => t.id === id ? { ...t, status: 'rejected' as const } : t));
-    toast({ title: 'Rejected', description: 'Transfer request has been rejected.' });
-    setSelectedTransfer(null);
+  const handleReject = async (id: string) => {
+    try {
+      setIsUpdating(true);
+      await putApi(`/registrar/transfers/${id}`, { status: 'rejected', remarks });
+      setTransfers(prev => prev.map(t => t.id === id ? { ...t, status: 'rejected' as const } : t));
+      toast({ title: 'Rejected', description: 'Transfer request has been rejected.' });
+      setSelectedTransfer(null);
+      setRemarks('');
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   return (
@@ -118,11 +148,11 @@ export default function RegistrarTransfers() {
                       </div>
                       {!['completed', 'rejected'].includes(transfer.status) && (
                         <div className="flex flex-col gap-1">
-                          <Button size="sm" className="h-7 text-xs gap-1" onClick={() => handleAdvanceStatus(transfer.id)}>
-                            <Send className="h-3 w-3" /> {transfer.status === 'pending' ? 'Issue NOC' : transfer.status === 'noc_issued' ? 'Issue Migration' : 'Complete'}
+                          <Button size="sm" className="h-7 text-xs gap-1" onClick={() => handleAdvanceStatus(transfer.id)} disabled={isUpdating}>
+                            <Send className="h-3 w-3" /> {isUpdating ? 'Updating...' : transfer.status === 'pending' ? 'Issue NOC' : transfer.status === 'noc_issued' ? 'Issue Migration' : 'Complete'}
                           </Button>
-                          <Button size="sm" variant="destructive" className="h-7 text-xs gap-1" onClick={() => handleReject(transfer.id)}>
-                            <XCircle className="h-3 w-3" /> Reject
+                          <Button size="sm" variant="destructive" className="h-7 text-xs gap-1" onClick={() => handleReject(transfer.id)} disabled={isUpdating}>
+                            <XCircle className="h-3 w-3" /> {isUpdating ? 'Rejecting...' : 'Reject'}
                           </Button>
                         </div>
                       )}

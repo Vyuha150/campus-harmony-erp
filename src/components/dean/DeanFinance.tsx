@@ -4,16 +4,22 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
-  Wallet, Download, IndianRupee, PieChart, Target
+  Wallet, IndianRupee, PieChart, Target
 } from 'lucide-react';
-import { departmentBudgets } from '@/data/deanMockData';
-import { useToast } from '@/hooks/use-toast';
+import { useState, useEffect } from 'react';
+import { fetchApi } from '@/lib/apiService';
 
 export default function DeanFinance() {
-  const { toast } = useToast();
+  const [departmentBudgets, setDepartmentBudgets] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/dean/finance').then(d => setDepartmentBudgets(Array.isArray(d) ? d : [])).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const totalAllocated = departmentBudgets.reduce((s, d) => s + d.allocated, 0);
   const totalSpent = departmentBudgets.reduce((s, d) => s + d.spent, 0);
-  const utilization = Math.round((totalSpent / totalAllocated) * 100);
+  const utilization = totalAllocated > 0 ? Math.round((totalSpent / totalAllocated) * 100) : 0;
 
   const fmt = (n: number) => `₹${(n / 100000).toFixed(1)}L`;
 
@@ -25,9 +31,6 @@ export default function DeanFinance() {
             <h1 className="text-2xl font-bold text-foreground">Finance Overview</h1>
             <p className="text-muted-foreground">Budget allocation and utilization across departments</p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => toast({ title: 'Export Started', description: 'Finance report CSV downloading...' })}>
-            <Download className="mr-1 h-4 w-4" />Export Report
-          </Button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-4">

@@ -72,6 +72,7 @@ export interface DepartmentBudget {
 }
 
 export interface ResultSummary {
+  departmentId?: string;
   department: string;
   program: string;
   semester: number;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,15 +9,44 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { MapPin, Calendar, Clock, Users, CheckCircle, XCircle, Wrench, Plus } from 'lucide-react';
-import { sportsFacilities } from '@/data/sportsMockData';
-
-const bookingRequests = [
-  { id: 'BR001', facility: 'Main Cricket Ground', requestedBy: 'Cultural Club', purpose: 'Annual Cultural Fest Setup', date: '22 Mar 2026', time: '08:00 – 18:00', status: 'pending' as const },
-  { id: 'BR002', facility: 'Indoor Sports Complex', requestedBy: 'CSE Department', purpose: 'Department Sports Day', date: '18 Mar 2026', time: '09:00 – 17:00', status: 'approved' as const },
-  { id: 'BR003', facility: 'Athletic Track', requestedBy: 'NSS Unit', purpose: 'Marathon Event', date: '30 Mar 2026', time: '06:00 – 10:00', status: 'pending' as const },
-];
+import { fetchApi, putApi } from '@/lib/apiService';
+import { toast } from '@/hooks/use-toast';
 
 export default function SportsFacilities() {
+  const [sportsFacilities, setSportsFacilities] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const loadFacilities = async () => {
+    try {
+      const data = await fetchApi('/sports/facilities');
+      setSportsFacilities(data);
+    } catch (error) {
+      console.error('API request failed', error);
+      toast({ title: 'Failed to load facilities', description: String((error as any)?.message || 'Please retry.'), variant: 'destructive' });
+    } finally {
+      _setApiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFacilities();
+  }, []);
+
+  const toggleFacilityBooking = async (facility: any) => {
+    try {
+      const nextStatus = facility.status === 'booked' ? 'available' : 'booked';
+      if (nextStatus === 'booked') {
+        await putApi(`/sports/facilities/${facility.id}/book`, {});
+      } else {
+        await putApi(`/sports/facilities/${facility.id}`, { status: 'available' });
+      }
+      toast({ title: nextStatus === 'booked' ? 'Facility booked' : 'Facility unbooked', description: `Facility marked as ${nextStatus}.` });
+      await loadFacilities();
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: String(error?.message || 'Please retry.'), variant: 'destructive' });
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -27,18 +56,14 @@ export default function SportsFacilities() {
             <p className="text-muted-foreground">Manage sports facilities, bookings, and maintenance schedules</p>
           </div>
           <Dialog>
-            <DialogTrigger asChild><Button size="sm"><Plus className="mr-2 h-4 w-4" />Add Facility</Button></DialogTrigger>
+            <DialogTrigger asChild><Button size="sm"><Plus className="mr-2 h-4 w-4" />Booking Notes</Button></DialogTrigger>
             <DialogContent>
-              <DialogHeader><DialogTitle>Add New Facility</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>Facility Booking Guidance</DialogTitle></DialogHeader>
               <div className="grid gap-4 py-4">
-                <div><Label>Facility Name</Label><Input placeholder="e.g. Basketball Court" /></div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div><Label>Type</Label><Select><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="indoor">Indoor</SelectItem><SelectItem value="outdoor">Outdoor</SelectItem></SelectContent></Select></div>
-                  <div><Label>Capacity</Label><Input type="number" placeholder="e.g. 200" /></div>
-                </div>
-                <div><Label>Sports Supported</Label><Input placeholder="Comma separated" /></div>
-                <div><Label>Amenities</Label><Textarea placeholder="List amenities" /></div>
-                <Button className="w-full">Add Facility</Button>
+                <p className="text-sm text-muted-foreground">
+                  Facilities are managed centrally. From this screen you can directly book available facilities through the Book button.
+                </p>
+                <Button className="w-full" onClick={loadFacilities}>Refresh Facilities</Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -61,57 +86,27 @@ export default function SportsFacilities() {
                   </div>
                   <Badge variant={f.status === 'available' ? 'default' : f.status === 'maintenance' ? 'destructive' : 'secondary'} className="capitalize">{f.status}</Badge>
                 </div>
-                <p className="text-sm text-muted-foreground mb-2">Sports: {f.sports.join(', ')}</p>
+                <p className="text-sm text-muted-foreground mb-2">Sports: {(Array.isArray(f.sports) ? f.sports : []).filter(Boolean).join(', ') || '-'}</p>
                 <div className="flex flex-wrap gap-1 mb-3">
-                  {f.amenities.slice(0, 4).map((a, i) => <Badge key={i} variant="outline" className="text-xs">{a}</Badge>)}
-                  {f.amenities.length > 4 && <Badge variant="secondary" className="text-xs">+{f.amenities.length - 4}</Badge>}
+                  {(Array.isArray(f.amenities) ? f.amenities : []).slice(0, 4).map((a, i) => <Badge key={i} variant="outline" className="text-xs">{a}</Badge>)}
+                  {(Array.isArray(f.amenities) ? f.amenities.length : 0) > 4 && <Badge variant="secondary" className="text-xs">+{(Array.isArray(f.amenities) ? f.amenities.length : 0) - 4}</Badge>}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="flex-1">Schedule</Button>
-                  <Button variant="outline" size="sm" className="flex-1">Maintenance</Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => toggleFacilityBooking(f)}
+                    disabled={f.status === 'maintenance'}
+                  >
+                    {f.status === 'booked' ? 'Unbook' : 'Book'}
+                  </Button>
+                  <Button variant="outline" size="sm" className="flex-1" onClick={loadFacilities}>Refresh</Button>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
-
-        {/* Booking requests */}
-        <Card>
-          <CardHeader><CardTitle>Booking Requests</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead><tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Facility</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Requested By</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Purpose</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Date & Time</th>
-                  <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Actions</th>
-                </tr></thead>
-                <tbody>
-                  {bookingRequests.map(br => (
-                    <tr key={br.id} className="border-b last:border-0 hover:bg-muted/30">
-                      <td className="px-4 py-3 text-sm font-medium text-foreground">{br.facility}</td>
-                      <td className="px-4 py-3 text-sm text-foreground">{br.requestedBy}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{br.purpose}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground"><Calendar className="inline h-3 w-3 mr-1" />{br.date} <Clock className="inline h-3 w-3 ml-2 mr-1" />{br.time}</td>
-                      <td className="px-4 py-3"><Badge variant={br.status === 'approved' ? 'default' : 'secondary'} className="capitalize">{br.status}</Badge></td>
-                      <td className="px-4 py-3">
-                        {br.status === 'pending' ? (
-                          <div className="flex gap-1">
-                            <Button variant="default" size="sm">Approve</Button>
-                            <Button variant="outline" size="sm">Reject</Button>
-                          </div>
-                        ) : <Button variant="outline" size="sm">View</Button>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </DashboardLayout>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -14,9 +14,7 @@ import {
   CheckCircle, Info, XCircle, MapPin, Building2, BarChart3, Activity,
   Clock, ChevronRight, Briefcase, BookOpen, FlaskConical, Eye, EyeOff, X
 } from 'lucide-react';
-import {
-  campusSummaries, institutionKPIs, liveUpdates as initialLiveUpdates, executiveApprovals, departmentPerformance
-} from '@/data/vcMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { useAuth } from '@/context/AuthContext';
 import { ExecutiveApproval } from '@/types/vc';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend } from 'recharts';
@@ -41,20 +39,50 @@ const statusColors = {
 };
 
 export default function VCDashboard() {
+  const [campusSummaries, setCampusSummaries] = useState<any>([]);
+  const [institutionKPIs, setInstitutionKPIs] = useState<any>([]);
+  const [liveUpdates, setLiveUpdates] = useState<any>([]);
+  const [executiveApprovals, setExecutiveApprovals] = useState<any>([]);
+  const [departmentPerformance, setDepartmentPerformance] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/vc/campussummaries').then(d => setCampusSummaries(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/institutionkpis').then(d => setInstitutionKPIs(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/liveupdates').then(d => setLiveUpdates(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/executiveapprovals').then(d => setExecutiveApprovals(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/departmentperformance').then(d => setDepartmentPerformance(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [approvals, setApprovals] = useState(executiveApprovals);
-  const [liveUpdates, setLiveUpdates] = useState(initialLiveUpdates);
+  const [approvals, setApprovals] = useState<any[]>([]);
   const [selectedApproval, setSelectedApproval] = useState<ExecutiveApproval | null>(null);
   const [actionType, setActionType] = useState<'approve' | 'reject' | null>(null);
   const [comment, setComment] = useState('');
+  useEffect(() => {
+    setApprovals(executiveApprovals || []);
+  }, [executiveApprovals]);
   const pendingApprovals = approvals.filter(a => a.status === 'pending');
 
-  const handleApprovalAction = () => {
+  const toDate = (value: any) => {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
+
+  const handleApprovalAction = async () => {
     if (!selectedApproval || !actionType) return;
-    setApprovals(prev => prev.map(a => a.id === selectedApproval.id ? { ...a, status: actionType === 'approve' ? 'approved' as const : 'rejected' as const } : a));
-    toast({ title: actionType === 'approve' ? 'Approved' : 'Rejected', description: `"${selectedApproval.title}" has been ${actionType === 'approve' ? 'approved' : 'rejected'}.` });
+    try {
+      const updated = await putApi<any>(`/vc/approvals/${selectedApproval.id}`, {
+        status: actionType === 'approve' ? 'approved' : 'rejected',
+        notes: comment,
+      });
+      setApprovals(prev => prev.map((approval) => approval.id === updated.id ? { ...updated, requestedAt: toDate(updated.requestedAt), documents: Array.isArray(updated.documents) ? updated.documents : [] } : approval));
+      toast({ title: actionType === 'approve' ? 'Approved' : 'Rejected', description: `"${selectedApproval.title}" has been ${actionType === 'approve' ? 'approved' : 'rejected'}.` });
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error.message || 'Could not update approval.', variant: 'destructive' });
+    }
     setSelectedApproval(null);
     setActionType(null);
     setComment('');
@@ -215,7 +243,7 @@ export default function VCDashboard() {
                         <Badge variant="outline" className="text-[10px]">{update.module}</Badge>
                         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {update.timestamp.toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                          {toDate(update.timestamp).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
                     </div>
@@ -249,7 +277,7 @@ export default function VCDashboard() {
                   <div key={item.id} className="flex items-center justify-between rounded-lg border p-3">
                     <div className="flex-1 min-w-0 mr-3">
                       <p className="text-sm font-medium truncate">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.requestedBy} • {item.requestedAt.toLocaleDateString('en-IN')}</p>
+                      <p className="text-xs text-muted-foreground">{item.requestedBy} • {toDate(item.requestedAt).toLocaleDateString('en-IN')}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant={item.priority === 'critical' ? 'destructive' : item.priority === 'high' ? 'default' : 'secondary'} className="text-[10px]">

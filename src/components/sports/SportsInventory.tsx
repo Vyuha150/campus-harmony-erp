@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,13 +8,42 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Package, Plus, Search, Download, AlertTriangle, IndianRupee, Filter } from 'lucide-react';
-import { sportsInventory } from '@/data/sportsMockData';
+import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { toast } from '@/hooks/use-toast';
 
 export default function SportsInventory() {
+  const [sportsInventory, setSportsInventory] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  const [form, setForm] = useState({
+    itemName: '',
+    category: 'equipment',
+    sport: '',
+    quantity: '1',
+    unitPrice: '0',
+    condition: 'good',
+    location: ''
+  });
+
+  const loadInventory = async () => {
+    try {
+      const data = await fetchApi('/sports/inventory');
+      setSportsInventory(data);
+    } catch (error) {
+      console.error('API request failed', error);
+      toast({ title: 'Failed to load inventory', description: String((error as any)?.message || 'Please retry.'), variant: 'destructive' });
+    } finally {
+      _setApiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInventory();
+  }, []);
+
   const [search, setSearch] = useState('');
   const [sportFilter, setSportFilter] = useState('all');
 
-  const totalValue = sportsInventory.reduce((s, i) => s + i.totalValue, 0);
+  const totalValue = sportsInventory.reduce((s, i) => s + Number(i.totalValue || 0), 0);
   const lowStock = sportsInventory.filter(i => i.availableQuantity < i.quantity * 0.3);
   const damaged = sportsInventory.filter(i => i.condition === 'poor' || i.condition === 'damaged');
 
@@ -23,6 +52,98 @@ export default function SportsInventory() {
     const matchSport = sportFilter === 'all' || i.sport.toLowerCase() === sportFilter.toLowerCase();
     return matchSearch && matchSport;
   });
+
+  const addItem = async () => {
+    if (!form.itemName.trim() || !form.sport.trim() || !form.location.trim()) {
+      toast({ title: 'Missing fields', description: 'Item name, sport, and location are required.', variant: 'destructive' });
+      return;
+    }
+    const quantity = Number(form.quantity);
+    const unitPrice = Number(form.unitPrice);
+    try {
+      await postApi('/sports/inventory', {
+        itemName: form.itemName.trim(),
+        category: form.category,
+        sport: form.sport.trim(),
+        quantity,
+        availableQuantity: quantity,
+        unitPrice,
+        totalValue: quantity * unitPrice,
+        condition: form.condition,
+        location: form.location.trim()
+      });
+      setForm({ itemName: '', category: 'equipment', sport: '', quantity: '1', unitPrice: '0', condition: 'good', location: '' });
+      await loadInventory();
+      toast({ title: 'Item added', description: 'Inventory item created successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Add failed', description: String(error?.message || 'Please retry.'), variant: 'destructive' });
+    }
+  };
+
+  const issueItem = async (item: any) => {
+    if (Number(item.availableQuantity || 0) <= 0) return;
+    try {
+      const nextAvailable = Number(item.availableQuantity) - 1;
+      await putApi(`/sports/inventory/${item.id}`, {
+        itemName: item.itemName,
+        category: item.category,
+        sport: item.sport,
+        brand: item.brand || null,
+        quantity: Number(item.quantity),
+        availableQuantity: nextAvailable,
+        unitPrice: Number(item.unitPrice),
+        totalValue: Number(item.totalValue),
+        condition: item.condition,
+        purchaseDate: item.purchaseDate || null,
+        lastMaintenance: item.lastMaintenance || null,
+        location: item.location
+      });
+      await loadInventory();
+      toast({ title: 'Item issued', description: `${item.itemName} issued successfully.` });
+    } catch (error: any) {
+      toast({ title: 'Issue failed', description: String(error?.message || 'Please retry.'), variant: 'destructive' });
+    }
+  };
+
+  const exportInventory = () => {
+    const rows = filtered.map((item: any) => ({
+      itemName: item.itemName,
+      sport: item.sport,
+      category: item.category,
+      quantity: item.quantity,
+      availableQuantity: item.availableQuantity,
+      condition: item.condition,
+      location: item.location,
+      totalValue: item.totalValue
+    }));
+    const header = ['itemName', 'sport', 'category', 'quantity', 'availableQuantity', 'condition', 'location', 'totalValue'];
+    const csv = [
+      header.join(','),
+      ...rows.map((row) => header.map((key) => JSON.stringify((row as any)[key] ?? '')).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `sports-inventory-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Export complete', description: 'Inventory data exported as CSV.' });
+  };
+
+  const deleteItem = async (item: any) => {
+    if (!window.confirm(`Delete inventory item ${item.itemName}?`)) return;
+    try {
+      await deleteApi(`/sports/inventory/${item.id}`);
+      setSportsInventory((prev: any[]) => prev.filter((entry) => entry.id !== item.id));
+      toast({ title: 'Item deleted', description: 'Inventory item removed.' });
+    } catch (error: any) {
+      toast({ title: 'Delete failed', description: String(error?.message || 'Please retry.'), variant: 'destructive' });
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -33,24 +154,24 @@ export default function SportsInventory() {
             <p className="text-muted-foreground">Track equipment, uniforms, and supplies issued to teams</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export</Button>
+            <Button variant="outline" size="sm" onClick={exportInventory}><Download className="mr-2 h-4 w-4" />Export</Button>
             <Dialog>
               <DialogTrigger asChild><Button size="sm"><Plus className="mr-2 h-4 w-4" />Add Item</Button></DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Add Inventory Item</DialogTitle></DialogHeader>
                 <div className="grid gap-4 py-4">
-                  <div><Label>Item Name</Label><Input placeholder="e.g. Cricket Bat (SG)" /></div>
+                  <div><Label>Item Name</Label><Input placeholder="e.g. Cricket Bat (SG)" value={form.itemName} onChange={(e) => setForm((prev) => ({ ...prev, itemName: e.target.value }))} /></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Category</Label><Select><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="equipment">Equipment</SelectItem><SelectItem value="uniform">Uniform</SelectItem><SelectItem value="accessory">Accessory</SelectItem><SelectItem value="safety">Safety Gear</SelectItem></SelectContent></Select></div>
-                    <div><Label>Sport</Label><Input placeholder="e.g. Cricket" /></div>
+                    <div><Label>Category</Label><Select value={form.category} onValueChange={(value) => setForm((prev) => ({ ...prev, category: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="equipment">Equipment</SelectItem><SelectItem value="uniform">Uniform</SelectItem><SelectItem value="accessory">Accessory</SelectItem><SelectItem value="safety">Safety Gear</SelectItem></SelectContent></Select></div>
+                    <div><Label>Sport</Label><Input placeholder="e.g. Cricket" value={form.sport} onChange={(e) => setForm((prev) => ({ ...prev, sport: e.target.value }))} /></div>
                   </div>
                   <div className="grid grid-cols-3 gap-4">
-                    <div><Label>Quantity</Label><Input type="number" /></div>
-                    <div><Label>Unit Price (₹)</Label><Input type="number" /></div>
-                    <div><Label>Condition</Label><Select><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="excellent">Excellent</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem></SelectContent></Select></div>
+                    <div><Label>Quantity</Label><Input type="number" value={form.quantity} onChange={(e) => setForm((prev) => ({ ...prev, quantity: e.target.value }))} /></div>
+                    <div><Label>Unit Price (₹)</Label><Input type="number" value={form.unitPrice} onChange={(e) => setForm((prev) => ({ ...prev, unitPrice: e.target.value }))} /></div>
+                    <div><Label>Condition</Label><Select value={form.condition} onValueChange={(value) => setForm((prev) => ({ ...prev, condition: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="excellent">Excellent</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem></SelectContent></Select></div>
                   </div>
-                  <div><Label>Storage Location</Label><Input placeholder="e.g. Sports Store Room" /></div>
-                  <Button className="w-full">Add Item</Button>
+                  <div><Label>Storage Location</Label><Input placeholder="e.g. Sports Store Room" value={form.location} onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))} /></div>
+                  <Button className="w-full" onClick={addItem}>Add Item</Button>
                 </div>
               </DialogContent>
             </Dialog>
@@ -117,8 +238,9 @@ export default function SportsInventory() {
                       <td className="px-4 py-3 text-right text-sm font-medium text-foreground">₹{si.totalValue.toLocaleString('en-IN')}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
-                          <Button variant="outline" size="sm">Issue</Button>
-                          <Button variant="outline" size="sm">Edit</Button>
+                          <Button variant="outline" size="sm" onClick={() => issueItem(si)} disabled={Number(si.availableQuantity || 0) <= 0}>Issue</Button>
+                          <Button variant="outline" size="sm" onClick={loadInventory}>Refresh</Button>
+                          <Button variant="destructive" size="sm" onClick={() => deleteItem(si)}>Delete</Button>
                         </div>
                       </td>
                     </tr>

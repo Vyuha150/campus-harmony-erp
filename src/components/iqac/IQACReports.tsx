@@ -5,52 +5,203 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar, FileText, Users, Download, Plus, Clock, MapPin, CheckCircle2, Send } from 'lucide-react';
-import { useState } from 'react';
-
-// Mock IQAC meetings data
-const iqacMeetings = [
-  {
-    id: 'M001', title: 'IQAC Meeting – Q3 Review', date: new Date('2026-03-15'), venue: 'Conference Hall A',
-    status: 'scheduled' as const, chairperson: 'Dr. S. Krishnamurthy (IQAC Director)',
-    agenda: ['Review Criterion 3 & 5 data gaps', 'FDP completion status', 'Student feedback analysis', 'AQAR timeline discussion'],
-    attendees: [
-      { name: 'Dr. S. Krishnamurthy', designation: 'IQAC Director', attended: true, role: 'chairperson' as const },
-      { name: 'Dr. Rajesh Kumar', designation: 'CS HOD', attended: true, role: 'member' as const },
-      { name: 'Prof. Meena Sharma', designation: 'Dean Academics', attended: true, role: 'member' as const },
-    ],
-    decisions: [], actionItems: [],
-  },
-  {
-    id: 'M002', title: 'IQAC Meeting – Q2 Review', date: new Date('2025-12-20'), venue: 'Board Room',
-    status: 'completed' as const, chairperson: 'Dr. S. Krishnamurthy (IQAC Director)',
-    agenda: ['Mid-year quality audit results', 'Alumni survey outcomes', 'Best practices documentation'],
-    attendees: [
-      { name: 'Dr. S. Krishnamurthy', designation: 'IQAC Director', attended: true, role: 'chairperson' as const },
-      { name: 'Dr. Anand Gupta', designation: 'Registrar', attended: true, role: 'member' as const },
-      { name: 'Prof. Priya Nair', designation: 'NAAC Coordinator', attended: true, role: 'member' as const },
-    ],
-    decisions: ['Approved new quality benchmarks for research output', 'Established mentorship tracking system'],
-    actionItems: ['Departments to submit updated faculty CVs by Jan 15', 'Research cell to verify publication data'],
-  },
-];
-
-const aqarSections = [
-  { section: 'Part A – Institutional Data', status: 'completed', progress: 100 },
-  { section: 'Criterion 1 – Curricular Aspects', status: 'completed', progress: 95 },
-  { section: 'Criterion 2 – Teaching-Learning', status: 'in_progress', progress: 80 },
-  { section: 'Criterion 3 – Research & Extension', status: 'in_progress', progress: 72 },
-  { section: 'Criterion 4 – Infrastructure', status: 'completed', progress: 98 },
-  { section: 'Criterion 5 – Student Support', status: 'needs_attention', progress: 60 },
-  { section: 'Criterion 6 – Governance', status: 'in_progress', progress: 85 },
-  { section: 'Criterion 7 – Best Practices', status: 'in_progress', progress: 88 },
-  { section: 'Part B – Best Practices & Institutional Distinctiveness', status: 'not_started', progress: 20 },
-];
+import { Calendar, FileText, Users, Download, Plus, MapPin, CheckCircle2, Send } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { fetchApi } from '@/lib/apiService';
+import { createIQACMeeting, fetchAQARReports, fetchIQACCriteriaProgress, fetchIQACMeetings, generateAQAR, updateAQAR, updateIQACMeeting } from '@/lib/iqacApi';
+import { useToast } from '@/hooks/use-toast';
 
 export default function IQACReports() {
+  const { toast } = useToast();
+  const [iqacMeetings, setIqacMeetings] = useState<any>([]);
+  const [aqarSections, setAqarSections] = useState<any>([]);
+  const [reportMetrics, setReportMetrics] = useState<any>([]);
+  const [activeAqar, setActiveAqar] = useState<any>(null);
   const [qualitativeNotes, setQualitativeNotes] = useState('');
 
-  const overallAQAR = Math.round(aqarSections.reduce((a, b) => a + b.progress, 0) / aqarSections.length);
+  const loadData = async () => {
+    try {
+      const [meetings, reports, criteriaProgress, dashboard] = await Promise.all([
+        fetchIQACMeetings(),
+        fetchAQARReports(),
+        fetchIQACCriteriaProgress(),
+        fetchApi<any>('/iqac/dashboard')
+      ]);
+
+      setIqacMeetings(meetings);
+      setAqarSections(criteriaProgress.map((item) => ({
+        section: item.title,
+        progress: item.dataProgress,
+        status: item.status
+      })));
+
+      const latestReport = Array.isArray(reports) && reports.length > 0 ? reports[0] : null;
+      setActiveAqar(latestReport);
+      if (latestReport?.bestPractices) {
+        const notes = Array.isArray(latestReport.bestPractices)
+          ? latestReport.bestPractices.join('\n')
+          : '';
+        setQualitativeNotes(notes);
+      }
+
+      setReportMetrics(Array.isArray(dashboard?.stats)
+        ? dashboard.stats.map((stat: any) => ({ label: stat.label, value: stat.value }))
+        : []);
+    } catch (error: any) {
+      toast({ title: 'Unable to load reports', description: error?.message || 'Please try again.', variant: 'destructive' });
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const overallAQAR = aqarSections.length > 0
+    ? Math.round(aqarSections.reduce((a, b) => a + b.progress, 0) / aqarSections.length)
+    : 0;
+
+  const handleScheduleMeeting = async () => {
+    const title = window.prompt('Meeting title', 'IQAC Review Meeting');
+    if (!title) return;
+    const date = window.prompt('Meeting date (YYYY-MM-DD)', new Date().toISOString().slice(0, 10));
+    if (!date) return;
+    const venue = window.prompt('Venue', 'Board Room');
+    if (!venue) return;
+
+    try {
+      await createIQACMeeting({
+        title,
+        date: new Date(date).toISOString(),
+        venue,
+        agenda: ['AQAR progress review']
+      });
+      toast({ title: 'Meeting scheduled', description: 'IQAC meeting has been created.' });
+      await loadData();
+    } catch (error: any) {
+      toast({ title: 'Schedule failed', description: error?.message || 'Unable to schedule meeting.', variant: 'destructive' });
+    }
+  };
+
+  const handleGenerateAQAR = async () => {
+    try {
+      const now = new Date();
+      const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+      const academicYear = `${year}-${String(year + 1).slice(-2)}`;
+      await generateAQAR(academicYear);
+      toast({ title: 'AQAR generated', description: `Draft created for ${academicYear}.` });
+      await loadData();
+    } catch (error: any) {
+      toast({ title: 'Generation failed', description: error?.message || 'Unable to generate AQAR.', variant: 'destructive' });
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (!activeAqar?.id) return;
+    try {
+      await updateAQAR(activeAqar.id, {
+        status: 'draft',
+        bestPractices: qualitativeNotes.split('\n').map((line) => line.trim()).filter(Boolean)
+      });
+      toast({ title: 'Draft saved', description: 'AQAR notes were saved as draft.' });
+      await loadData();
+    } catch (error: any) {
+      toast({ title: 'Save failed', description: error?.message || 'Unable to save draft.', variant: 'destructive' });
+    }
+  };
+
+  const handleSubmitForReview = async () => {
+    if (!activeAqar?.id) return;
+    try {
+      await updateAQAR(activeAqar.id, {
+        status: 'under_review',
+        submissionDate: new Date().toISOString(),
+        bestPractices: qualitativeNotes.split('\n').map((line) => line.trim()).filter(Boolean)
+      });
+      toast({ title: 'Submitted for review', description: 'AQAR has been submitted for review.' });
+      await loadData();
+    } catch (error: any) {
+      toast({ title: 'Submit failed', description: error?.message || 'Unable to submit AQAR.', variant: 'destructive' });
+    }
+  };
+
+  const handleEditSection = async (section: any) => {
+    if (!activeAqar?.id) return;
+    try {
+      const existing = activeAqar.criteria && typeof activeAqar.criteria === 'object' ? activeAqar.criteria : {};
+      await updateAQAR(activeAqar.id, {
+        criteria: {
+          ...existing,
+          [section.section]: {
+            progress: section.progress,
+            status: section.status,
+            updatedAt: new Date().toISOString()
+          }
+        }
+      });
+      toast({ title: 'Section updated', description: `${section.section} was synced into AQAR criteria.` });
+      await loadData();
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Unable to update section.', variant: 'destructive' });
+    }
+  };
+
+  const handleEditAgenda = async (meeting: any) => {
+    const value = window.prompt('Edit agenda (comma separated)', Array.isArray(meeting.agenda) ? meeting.agenda.join(', ') : '');
+    if (value === null) return;
+    const agenda = value.split(',').map((item) => item.trim()).filter(Boolean);
+    try {
+      await updateIQACMeeting(meeting.id, { agenda });
+      toast({ title: 'Agenda updated', description: 'Meeting agenda has been updated.' });
+      await loadData();
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Unable to update agenda.', variant: 'destructive' });
+    }
+  };
+
+  const handleSendInvites = async (meeting: any) => {
+    try {
+      await updateIQACMeeting(meeting.id, { status: 'scheduled' });
+      toast({ title: 'Invites sent', description: 'Meeting invite status has been recorded.' });
+    } catch (error: any) {
+      toast({ title: 'Invite failed', description: error?.message || 'Unable to send invites.', variant: 'destructive' });
+    }
+  };
+
+  const handleViewMinutes = async (meeting: any) => {
+    try {
+      if (!meeting.minutes) {
+        await updateIQACMeeting(meeting.id, {
+          minutes: `Minutes generated on ${new Date().toLocaleString('en-IN')}`
+        });
+        await loadData();
+      }
+      toast({ title: 'Minutes ready', description: 'Meeting minutes are available for review.' });
+    } catch (error: any) {
+      toast({ title: 'Minutes failed', description: error?.message || 'Unable to load minutes.', variant: 'destructive' });
+    }
+  };
+
+  const handleDownloadMeeting = (meeting: any) => {
+    const lines = [
+      `Title: ${meeting.title}`,
+      `Date: ${new Date(meeting.date).toLocaleString('en-IN')}`,
+      `Venue: ${meeting.venue}`,
+      `Status: ${meeting.status}`,
+      '',
+      'Agenda:',
+      ...(Array.isArray(meeting.agenda) ? meeting.agenda : []).map((item: string, index: number) => `${index + 1}. ${item}`),
+      '',
+      'Minutes:',
+      meeting.minutes || 'Not yet available'
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${meeting.title.replace(/\s+/g, '-').toLowerCase()}-minutes.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <DashboardLayout>
@@ -61,8 +212,8 @@ export default function IQACReports() {
             <p className="text-muted-foreground">Meeting management and Annual Quality Assurance Report generation</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm"><Plus className="mr-2 h-4 w-4" />Schedule Meeting</Button>
-            <Button size="sm"><Download className="mr-2 h-4 w-4" />Generate AQAR</Button>
+            <Button variant="outline" size="sm" onClick={handleScheduleMeeting}><Plus className="mr-2 h-4 w-4" />Schedule Meeting</Button>
+            <Button size="sm" onClick={handleGenerateAQAR}><Download className="mr-2 h-4 w-4" />Generate AQAR</Button>
           </div>
         </div>
 
@@ -115,7 +266,7 @@ export default function IQACReports() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">Edit Section</Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleEditSection(s)}>Edit Section</Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -135,8 +286,8 @@ export default function IQACReports() {
                   className="min-h-[120px] mb-3"
                 />
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" size="sm">Save Draft</Button>
-                  <Button size="sm"><Send className="mr-2 h-4 w-4" />Submit for Review</Button>
+                  <Button variant="outline" size="sm" onClick={handleSaveDraft}>Save Draft</Button>
+                  <Button size="sm" onClick={handleSubmitForReview}><Send className="mr-2 h-4 w-4" />Submit for Review</Button>
                 </div>
               </CardContent>
             </Card>
@@ -146,38 +297,12 @@ export default function IQACReports() {
               <CardHeader><CardTitle className="text-base">Auto-Computed Metrics from ERP Data</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-2xl font-bold text-primary">42</p>
-                    <p className="text-xs text-muted-foreground">Seminars Conducted</p>
-                  </div>
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-2xl font-bold text-primary">18</p>
-                    <p className="text-xs text-muted-foreground">Value-Added Courses</p>
-                  </div>
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-2xl font-bold text-primary">156</p>
-                    <p className="text-xs text-muted-foreground">Research Publications</p>
-                  </div>
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-2xl font-bold text-primary">₹2.4Cr</p>
-                    <p className="text-xs text-muted-foreground">Research Funding</p>
-                  </div>
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-2xl font-bold text-primary">89%</p>
-                    <p className="text-xs text-muted-foreground">Placement Rate</p>
-                  </div>
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-2xl font-bold text-primary">12</p>
-                    <p className="text-xs text-muted-foreground">FDPs Conducted</p>
-                  </div>
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-2xl font-bold text-primary">28</p>
-                    <p className="text-xs text-muted-foreground">Active MOUs</p>
-                  </div>
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-2xl font-bold text-primary">4.1/5</p>
-                    <p className="text-xs text-muted-foreground">Student Satisfaction</p>
-                  </div>
+                  {reportMetrics.map((metric: any) => (
+                    <div key={metric.label} className="rounded-lg border p-3 text-center">
+                      <p className="text-2xl font-bold text-primary">{metric.value}</p>
+                      <p className="text-xs text-muted-foreground">{metric.label}</p>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -234,13 +359,13 @@ export default function IQACReports() {
                   <div className="mt-4 flex gap-2">
                     {m.status === 'completed' ? (
                       <>
-                        <Button variant="outline" size="sm"><FileText className="mr-1 h-4 w-4" />View Minutes</Button>
-                        <Button variant="outline" size="sm"><Download className="mr-1 h-4 w-4" />Download</Button>
+                        <Button variant="outline" size="sm" onClick={() => handleViewMinutes(m)}><FileText className="mr-1 h-4 w-4" />View Minutes</Button>
+                        <Button variant="outline" size="sm" onClick={() => handleDownloadMeeting(m)}><Download className="mr-1 h-4 w-4" />Download</Button>
                       </>
                     ) : (
                       <>
-                        <Button variant="outline" size="sm">Edit Agenda</Button>
-                        <Button size="sm"><Send className="mr-1 h-4 w-4" />Send Invites</Button>
+                        <Button variant="outline" size="sm" onClick={() => handleEditAgenda(m)}>Edit Agenda</Button>
+                        <Button size="sm" onClick={() => handleSendInvites(m)}><Send className="mr-1 h-4 w-4" />Send Invites</Button>
                       </>
                     )}
                   </div>

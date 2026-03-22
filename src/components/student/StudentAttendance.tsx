@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { 
-  CheckCircle, XCircle, Clock, Calendar, Filter, 
+import { useState, useEffect } from 'react';
+import {
+  CheckCircle, XCircle, Clock, Calendar, Filter,
   TrendingUp, AlertCircle, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -9,21 +9,179 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { mockCourses } from '@/data/studentMockData';
+import { fetchApi } from '@/lib/apiService';
 import { cn } from '@/lib/utils';
+import { safeArray, safeDate, safeNumber, safeString } from '@/lib/normalize';
+
+type AttendanceRecord = {
+  date: string | Date;
+  status: 'present' | 'absent' | 'late' | 'holiday' | 'exam' | string;
+  type?: string;
+};
+
+type AttendanceCourse = {
+  courseId: string;
+  courseCode: string;
+  courseName: string;
+  semester: number;
+  attendance: number;
+  faculty: string;
+  records: AttendanceRecord[];
+};
+
+type AttendanceSummary = {
+  courseId: string;
+  percentage: number;
+  records: AttendanceRecord[];
+};
+
+function normalizeCourses(raw: any): AttendanceCourse[] {
+  if (!Array.isArray(raw)) return [];
+
+  return safeArray(raw).map((course: any) => {
+    const facultyName =
+      course?.faculty?.user?.name ??
+      course?.faculty?.user?.email ??
+      course?.faculty?.name ??
+      'Unassigned';
+
+    return {
+      courseId: safeString(course?.id),
+      courseCode: safeString(course?.code, '-'),
+      courseName: safeString(course?.name, 'Course'),
+      semester: safeNumber(course?.semester, 1),
+      attendance: safeNumber(course?.attendance),
+      faculty: safeString(facultyName),
+      records: safeArray(course?.records).map((r: any) => ({
+        date: safeDate(r?.date),
+        status: safeString(r?.status, 'present') as any,
+        type: safeString(r?.type),
+      })),
+    };
+  });
+}
+
+function normalizeAttendanceSummaries(raw: any): AttendanceSummary[] {
+  if (!Array.isArray(raw)) return [];
+
+  return safeArray(raw).map((item: any) => ({
+    courseId: safeString(item?.courseId),
+    percentage: safeNumber(item?.percentage),
+    records: safeArray(item?.records).map((record: any) => ({
+      date: safeDate(record?.date),
+      status: safeString(record?.status, 'present') as any,
+      type: safeString(record?.type),
+    })),
+  }));
+}
+
+function buildCalendar(records: AttendanceRecord[], monthDate: Date): Array<{ date: number; status: string }> {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const statusMap = new Map<number, string>();
+
+  records.forEach((r) => {
+    const d = new Date(r.date);
+    if (Number.isNaN(d.getTime())) return;
+    if (d.getFullYear() !== year || d.getMonth() !== month) return;
+    statusMap.set(d.getDate(), r.status);
+  });
+
+  return Array.from({ length: daysInMonth }, (_, i) => ({
+    date: i + 1,
+    status: statusMap.get(i + 1) ?? 'holiday'
+  }));
+}
 
 export default function StudentAttendance() {
+  const [courses, setCourses] = useState<AttendanceCourse[]>([]);
+  const [attendanceCalendar, setAttendanceCalendar] = useState<Array<{ date: number; status: string }>>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [selectedSemester, setSelectedSemester] = useState<string>('');
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      fetchApi('/students/current-semester'),
+      fetchApi('/students/profile')
+    ])
+      .then(([currentSemesterData, profile]) => {
+        const current = Number((currentSemesterData as any)?.currentSemester);
+        if (Number.isFinite(current)) {
+          setSelectedSemester(String(current));
+        } else {
+          setSelectedSemester(String((profile as any)?.semester || ''));
+        }
+      })
+      .catch((error) => { console.error('API request failed', error); });
+
+    Promise.all([
+      fetchApi('/students/courses'),
+      fetchApi('/students/attendance')
+    ])
+      .then(([coursesData, attendanceData]) => {
+        const normalizedCourses = normalizeCourses(coursesData);
+        const summaries = normalizeAttendanceSummaries(attendanceData);
+        const attendanceByCourseId = new Map(
+          summaries.map((summary) => [summary.courseId, summary])
+        );
+
+        const mergedCourses = normalizedCourses.map((course) => {
+          const summary = attendanceByCourseId.get(course.courseId);
+          return {
+            ...course,
+            attendance: summary ? summary.percentage : course.attendance,
+            records: summary ? summary.records : course.records,
+          };
+        });
+
+        setCourses(mergedCourses);
+        setAttendanceRecords(summaries.flatMap((summary) => summary.records));
+      })
+      .catch((error) => { console.error('API request failed', error); });
+
+    _setApiLoading(false);
+  }, []);
+
   const [selectedCourse, setSelectedCourse] = useState('all');
-  const [selectedMonth, setSelectedMonth] = useState('december');
+  const [currentMonthDate, setCurrentMonthDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
 
-  const overallAttendance = Math.round(
-    mockCourses.reduce((sum, c) => sum + c.attendance, 0) / mockCourses.length
-  );
+  useEffect(() => {
+    setAttendanceCalendar(buildCalendar(attendanceRecords, currentMonthDate));
+  }, [attendanceRecords, currentMonthDate]);
 
-  const lowAttendanceCourses = mockCourses.filter(c => c.attendance < 75);
-  const totalClasses = 46;
-  const presentClasses = Math.round((overallAttendance / 100) * totalClasses);
+  const semesterOptions = Array.from(new Set(courses.map((course) => Number(course.semester)).filter((value) => Number.isFinite(value)))).sort((a, b) => a - b);
+  const visibleCourses = selectedSemester === 'all' || !selectedSemester
+    ? courses
+    : courses.filter((course) => String(course.semester) === selectedSemester);
+
+  useEffect(() => {
+    if (selectedCourse !== 'all' && !visibleCourses.some((course) => course.courseId === selectedCourse)) {
+      setSelectedCourse('all');
+    }
+  }, [selectedSemester, selectedCourse, visibleCourses]);
+
+  const overallAttendance = visibleCourses.length > 0
+    ? Math.round(visibleCourses.reduce((sum, c) => sum + c.attendance, 0) / visibleCourses.length)
+    : 0;
+
+  const lowAttendanceCourses = visibleCourses.filter(c => c.attendance < 75);
+  const selectedCourseRecords = (selectedCourse === 'all'
+    ? visibleCourses.flatMap((course) => course.records)
+    : (visibleCourses.find((course) => course.courseId === selectedCourse)?.records || [])
+  ).filter((record) => {
+    const status = String(record.status || '').toLowerCase();
+    return status !== 'holiday' && status !== 'exam';
+  });
+  const totalClasses = selectedCourseRecords.length;
+  const presentClasses = selectedCourseRecords.filter((record) => {
+    const status = String(record.status || '').toLowerCase();
+    return status === 'present' || status === 'late';
+  }).length;
 
   const getAttendanceColor = (attendance: number) => {
     if (attendance >= 90) return 'text-success';
@@ -37,32 +195,7 @@ export default function StudentAttendance() {
     return 'bg-destructive/10';
   };
 
-  // Mock daily attendance data for calendar view
-  const generateMonthData = () => {
-    const days = [];
-    for (let i = 1; i <= 31; i++) {
-      const dayOfWeek = new Date(2024, 11, i).getDay();
-      if (dayOfWeek === 0) { // Sunday
-        days.push({ date: i, status: 'holiday' });
-      } else if (i === 25) { // Christmas
-        days.push({ date: i, status: 'holiday' });
-      } else if (i > 20) { // Exam days - no classes
-        days.push({ date: i, status: 'exam' });
-      } else {
-        const rand = Math.random();
-        if (rand > 0.15) {
-          days.push({ date: i, status: 'present' });
-        } else if (rand > 0.05) {
-          days.push({ date: i, status: 'absent' });
-        } else {
-          days.push({ date: i, status: 'late' });
-        }
-      }
-    }
-    return days;
-  };
-
-  const monthData = generateMonthData();
+  const monthData = attendanceCalendar;
 
   return (
     <DashboardLayout>
@@ -138,8 +271,8 @@ export default function StudentAttendance() {
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {lowAttendanceCourses.map((course) => (
-                      <Badge key={course.id} variant="destructive">
-                        {course.code} - {course.attendance}%
+                      <Badge key={course.courseId} variant="destructive">
+                        {course.courseCode} - {course.attendance}%
                       </Badge>
                     ))}
                   </div>
@@ -164,8 +297,17 @@ export default function StudentAttendance() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Courses</SelectItem>
-                  {mockCourses.map((course) => (
-                    <SelectItem key={course.id} value={course.id}>{course.code}</SelectItem>
+                  {visibleCourses.map((course) => (
+                    <SelectItem key={course.courseId} value={course.courseId}>{course.courseCode}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedSemester || 'all'} onValueChange={setSelectedSemester}>
+                <SelectTrigger className="w-[180px]"><SelectValue placeholder="Semester" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Semesters</SelectItem>
+                  {semesterOptions.map((semester) => (
+                    <SelectItem key={semester} value={String(semester)}>Semester {semester}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -173,14 +315,14 @@ export default function StudentAttendance() {
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
-              {mockCourses
-                .filter(c => selectedCourse === 'all' || c.id === selectedCourse)
+              {visibleCourses
+                .filter(c => selectedCourse === 'all' || c.courseId === selectedCourse)
                 .map((course) => (
-                  <div key={course.id} className="space-y-2">
+                  <div key={course.courseId} className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <Badge variant="secondary">{course.code}</Badge>
-                        <span className="font-medium">{course.name}</span>
+                        <Badge variant="secondary">{course.courseCode}</Badge>
+                        <span className="font-medium">{course.courseName}</span>
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-right">
@@ -228,11 +370,25 @@ export default function StudentAttendance() {
                 <CardDescription>Daily attendance view</CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    setCurrentMonthDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+                  }}
+                >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="w-32 text-center font-medium">December 2024</span>
-                <Button variant="outline" size="icon">
+                <span className="w-32 text-center font-medium">
+                  {currentMonthDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    setCurrentMonthDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+                  }}
+                >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>

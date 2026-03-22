@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,7 @@ import {
   Users, Briefcase, TrendingUp, Clock, Building2, Plus,
   CheckCircle, AlertTriangle, Calendar, Eye, Download
 } from 'lucide-react';
-import { vacancies as initialVacancies, establishmentSummary } from '@/data/registrarMockData';
+import { fetchApi, putApi, postApi } from '@/lib/apiService';
 import { Vacancy } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
@@ -28,43 +28,103 @@ const statusColors: Record<string, string> = {
 };
 
 export default function RegistrarHR() {
+  const [vacancies, setVacancies] = useState<any>([]);
+  const [establishmentSummary, setEstablishmentSummary] = useState<any>({
+    teaching: { filled: 0, sanctioned: 0 },
+    nonTeaching: { filled: 0, sanctioned: 0 },
+    pendingPromotions: 0,
+    pendingRetirements: 0,
+    activeRecruitments: 0,
+  });
+  const [apiLoading, setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/registrar/hr/vacancies').then(d => setVacancies(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/registrar/hr/summary').then(d => setEstablishmentSummary(d)).catch((error) => { console.error('API request failed', error); });
+    setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [vacancyList, setVacancyList] = useState(initialVacancies);
+  const [vacancyList, setVacancyList] = useState<any[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newPosition, setNewPosition] = useState('');
   const [newDept, setNewDept] = useState('');
   const [newType, setNewType] = useState('teaching');
+  const [isCreating, setIsCreating] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const [forwardingPromotionName, setForwardingPromotionName] = useState<string | null>(null);
 
-  const handleAdvance = (id: string) => {
+  useEffect(() => {
+    setVacancyList(vacancies || []);
+  }, [vacancies]);
+
+  const handleAdvance = async (id: string) => {
     const steps = ['advertised', 'applications_received', 'shortlisted', 'interview_scheduled', 'selected', 'joined', 'closed'];
-    setVacancyList(prev => prev.map(v => {
-      if (v.id !== id) return v;
-      const idx = steps.indexOf(v.status);
-      if (idx < steps.length - 1) return { ...v, status: steps[idx + 1] as Vacancy['status'] };
-      return v;
-    }));
-    toast({ title: 'Status Updated', description: 'Recruitment advanced to next stage.' });
+    try {
+      setIsAdvancing(true);
+      const vacancy = vacancyList.find(v => v.id === id);
+      const idx = steps.indexOf(vacancy?.status);
+      if (idx < steps.length - 1) {
+        const newStatus = steps[idx + 1];
+        await putApi(`/registrar/hr/vacancies/${id}`, { status: newStatus });
+        setVacancyList(prev => prev.map(v => {
+          if (v.id !== id) return v;
+          return { ...v, status: newStatus as Vacancy['status'] };
+        }));
+        toast({ title: 'Status Updated', description: 'Recruitment advanced to next stage.' });
+      }
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsAdvancing(false);
+    }
   };
 
-  const handleCreate = () => {
-    if (!newPosition || !newDept) return;
-    const newVacancy: Vacancy = {
-      id: `v${vacancyList.length + 1}`,
-      position: newPosition,
-      department: newDept,
-      type: newType as any,
-      sanctioned: 1,
-      filled: 0,
-      status: 'advertised',
-      postedAt: new Date(),
-      lastDate: new Date(Date.now() + 30 * 86400000),
-      applicants: 0,
-    };
-    setVacancyList(prev => [...prev, newVacancy]);
-    setShowCreateDialog(false);
-    setNewPosition('');
-    setNewDept('');
-    toast({ title: 'Vacancy Posted', description: `"${newPosition}" in ${newDept} has been advertised.` });
+  const handleCreate = async () => {
+    if (!newPosition || !newDept) {
+      toast({ title: 'Missing fields', description: 'Position and department are required.', variant: 'destructive' });
+      return;
+    }
+    try {
+      setIsCreating(true);
+      const createdVacancy = await postApi('/registrar/hr/vacancies', {
+        position: newPosition,
+        department: newDept,
+        type: newType,
+        sanctioned: 1,
+        filled: 0,
+        status: 'advertised',
+        postedAt: new Date(),
+        lastDate: new Date(Date.now() + 30 * 86400000),
+        applicants: 0,
+      });
+      setVacancyList(prev => [...prev, createdVacancy]);
+      setShowCreateDialog(false);
+      setNewPosition('');
+      setNewDept('');
+      toast({ title: 'Vacancy Posted', description: `"${newPosition}" in ${newDept} has been advertised.` });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleForwardPromotion = async (promotion: { name: string; from: string; to: string; dept: string; years: number }) => {
+    try {
+      setForwardingPromotionName(promotion.name);
+      await postApi('/registrar/hr/promotions/forward', {
+        name: promotion.name,
+        fromDesignation: promotion.from,
+        toDesignation: promotion.to,
+        department: promotion.dept,
+        years: promotion.years,
+      });
+      toast({ title: 'Forwarded', description: `Promotion case for ${promotion.name} forwarded to VC.` });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message || 'Could not forward promotion case.', variant: 'destructive' });
+    } finally {
+      setForwardingPromotionName(null);
+    }
   };
 
   const teachingFillRate = Math.round((establishmentSummary.teaching.filled / establishmentSummary.teaching.sanctioned) * 100);
@@ -148,14 +208,14 @@ export default function RegistrarHR() {
                       {v.lastDate && (
                         <>
                           <span>•</span>
-                          <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> Last date: {v.lastDate.toLocaleDateString('en-IN')}</span>
+                          <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> Last date: {new Date(v.lastDate).toLocaleDateString('en-IN')}</span>
                         </>
                       )}
                     </div>
                   </div>
                   {!['joined', 'closed'].includes(v.status) && (
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => handleAdvance(v.id)}>
-                      <CheckCircle className="h-3 w-3" /> Advance
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => handleAdvance(v.id)} disabled={isAdvancing}>
+                      <CheckCircle className="h-3 w-3" /> {isAdvancing ? 'Updating...' : 'Advance'}
                     </Button>
                   )}
                 </div>
@@ -181,8 +241,14 @@ export default function RegistrarHR() {
                     <p className="text-sm font-medium">{p.name}</p>
                     <p className="text-xs text-muted-foreground">{p.from} → {p.to} • {p.dept} • {p.years} yrs service</p>
                   </div>
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => toast({ title: 'Forwarded', description: `Promotion case for ${p.name} forwarded to VC.` })}>
-                    Forward to VC
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => handleForwardPromotion(p)}
+                    disabled={forwardingPromotionName === p.name}
+                  >
+                    {forwardingPromotionName === p.name ? 'Forwarding...' : 'Forward to VC'}
                   </Button>
                 </div>
               ))}
@@ -234,8 +300,8 @@ export default function RegistrarHR() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
-              <Button onClick={handleCreate}>Post Vacancy</Button>
+              <Button variant="outline" onClick={() => setShowCreateDialog(false)} disabled={isCreating}>Cancel</Button>
+              <Button onClick={handleCreate} disabled={isCreating}>{isCreating ? 'Posting...' : 'Post Vacancy'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

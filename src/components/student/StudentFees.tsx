@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Wallet, CreditCard, Download, CheckCircle, AlertCircle, 
   Clock, Calendar, FileText, ArrowRight, Receipt,
@@ -13,15 +13,58 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { mockFeeRecords, mockStudentProfile } from '@/data/studentMockData';
+import { fetchApi, postApi } from '@/lib/apiService';
 import { cn } from '@/lib/utils';
+import { safeArray, safeBoolean, safeDate, safeNumber, safeString } from '@/lib/normalize';
+import { toast } from '@/hooks/use-toast';
 
 export default function StudentFees() {
-  const [yearFilter, setYearFilter] = useState('all');
-  const profile = mockStudentProfile;
+  const [feeRecords, setFeeRecords] = useState<any[]>([]);
+  const [studentProfile, setStudentProfile] = useState<any>({});
+  const [_apiLoading, _setApiLoading] = useState(true);
 
-  const pendingFees = mockFeeRecords.filter(f => f.status === 'pending' || f.status === 'overdue');
-  const paidFees = mockFeeRecords.filter(f => f.status === 'paid');
+  const normalizeFee = (raw: any) => ({
+    id: safeString(raw?.id),
+    type: safeString(raw?.type),
+    description: safeString(raw?.description),
+    amount: safeNumber(raw?.amount),
+    dueDate: safeDate(raw?.dueDate),
+    paidDate: raw?.paidDate ? safeDate(raw.paidDate) : undefined,
+    status: safeString(raw?.status),
+    semester: safeNumber(raw?.semester),
+    transactionId: raw?.transactionId ? safeString(raw.transactionId) : undefined,
+  });
+
+  useEffect(() => {
+    fetchApi('/students/fees')
+      .then((d) => setFeeRecords(safeArray(d).map(normalizeFee)))
+      .catch((error) => { console.error('API request failed', error); });
+
+    fetchApi('/students/profile')
+      .then((d) => setStudentProfile({
+        ...d,
+        scholarshipHolder: safeBoolean(d?.scholarshipHolder),
+        scholarshipName: safeString(d?.scholarshipName)
+      }))
+      .catch((error) => { console.error('API request failed', error); });
+
+    _setApiLoading(false);
+  }, []);
+
+  const [yearFilter, setYearFilter] = useState('all');
+  const [isPayingAll, setIsPayingAll] = useState(false);
+  const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
+  const profile = studentProfile;
+
+  const pendingFees = feeRecords.filter(f => f.status === 'pending' || f.status === 'overdue');
+  const paidFees = feeRecords.filter(f => f.status === 'paid');
+  const filteredPaidFees = paidFees.filter((fee) => {
+    if (yearFilter === 'all') return true;
+    if (!fee.paidDate) return false;
+    const startYear = Number.parseInt(yearFilter.split('-')[0], 10);
+    const paidYear = fee.paidDate.getFullYear();
+    return paidYear === startYear || paidYear === startYear + 1;
+  });
   const totalPending = pendingFees.reduce((sum, f) => sum + f.amount, 0);
   const totalPaid = paidFees.reduce((sum, f) => sum + f.amount, 0);
 
@@ -52,6 +95,71 @@ export default function StudentFees() {
         return <FileText className="h-5 w-5" />;
       default:
         return <Receipt className="h-5 w-5" />;
+    }
+  };
+
+  const downloadReceipt = (fee: any) => {
+    const receipt = [
+      'Campus Harmony ERP - Fee Receipt',
+      '',
+      `Description: ${fee.description}`,
+      `Type: ${fee.type}`,
+      `Amount: INR ${fee.amount}`,
+      `Status: ${fee.status}`,
+      `Paid Date: ${fee.paidDate ? fee.paidDate.toLocaleDateString() : '-'}`,
+      `Transaction ID: ${fee.transactionId || '-'}`,
+      `Generated On: ${new Date().toLocaleString()}`
+    ].join('\n');
+
+    const blob = new Blob([receipt], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `receipt_${fee.id}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePayFee = async (feeId: string, description: string) => {
+    const transactionId = `TXN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    try {
+      setPayingFeeId(feeId);
+      await postApi('/students/fees/pay', { feeRecordId: feeId, transactionId });
+      setFeeRecords((prev) => prev.map((fee) => (
+        fee.id === feeId
+          ? { ...fee, status: 'paid', paidDate: new Date(), transactionId }
+          : fee
+      )));
+      toast({ title: 'Payment successful', description: `Paid ${description}.` });
+    } catch (error: any) {
+      toast({ title: 'Payment failed', description: safeString(error?.message, 'Could not process payment.'), variant: 'destructive' });
+    } finally {
+      setPayingFeeId(null);
+    }
+  };
+
+  const handlePayAllPending = async () => {
+    if (!pendingFees.length) return;
+    try {
+      setIsPayingAll(true);
+      for (const fee of pendingFees) {
+        const transactionId = `TXN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        // eslint-disable-next-line no-await-in-loop
+        await postApi('/students/fees/pay', { feeRecordId: fee.id, transactionId });
+      }
+
+      setFeeRecords((prev) => prev.map((fee) => (
+        fee.status === 'pending' || fee.status === 'overdue'
+          ? { ...fee, status: 'paid', paidDate: new Date(), transactionId: fee.transactionId || `TXN-${Date.now()}` }
+          : fee
+      )));
+      toast({ title: 'Payments completed', description: 'All pending fees were paid successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Payment failed', description: safeString(error?.message, 'Could not complete pending payments.'), variant: 'destructive' });
+    } finally {
+      setIsPayingAll(false);
     }
   };
 
@@ -161,9 +269,13 @@ export default function StudentFees() {
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button className="w-full">
+                      <Button
+                        className="w-full"
+                        onClick={handlePayAllPending}
+                        disabled={isPayingAll}
+                      >
                         <CreditCard className="mr-2 h-4 w-4" />
-                        Proceed to Payment Gateway
+                        {isPayingAll ? 'Processing Payment...' : 'Proceed to Payment Gateway'}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -222,7 +334,7 @@ export default function StudentFees() {
                           <p className="text-2xl font-bold">₹{fee.amount.toLocaleString()}</p>
                           {getStatusBadge(fee.status)}
                         </div>
-                        <Button>
+                        <Button onClick={() => handlePayFee(fee.id, fee.description)} disabled={payingFeeId === fee.id}>
                           Pay Now
                           <ArrowRight className="ml-2 h-4 w-4" />
                         </Button>
@@ -275,18 +387,18 @@ export default function StudentFees() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paidFees.map((fee) => (
+                    {filteredPaidFees.map((fee) => (
                       <TableRow key={fee.id}>
                         <TableCell className="font-medium">{fee.description}</TableCell>
                         <TableCell className="capitalize">{fee.type}</TableCell>
-                        <TableCell>{fee.paidDate?.toLocaleDateString()}</TableCell>
+                        <TableCell>{fee.paidDate ? fee.paidDate.toLocaleDateString() : '-'}</TableCell>
                         <TableCell>
-                          <code className="text-xs">{fee.transactionId}</code>
+                          <code className="text-xs">{fee.transactionId || '-'}</code>
                         </TableCell>
                         <TableCell className="font-medium">₹{fee.amount.toLocaleString()}</TableCell>
                         <TableCell>{getStatusBadge(fee.status)}</TableCell>
                         <TableCell>
-                          <Button size="sm" variant="outline">
+                          <Button size="sm" variant="outline" onClick={() => downloadReceipt(fee)}>
                             <Download className="h-4 w-4" />
                           </Button>
                         </TableCell>

@@ -11,14 +11,66 @@ import {
   Users, AlertTriangle, Phone, Mail, Calendar, FileText,
   Plus, Eye, MessageSquare, TrendingDown, TrendingUp
 } from 'lucide-react';
-import { menteeStudents } from '@/data/facultyMockData';
-import { useState } from 'react';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function FacultyMentoring() {
+  const [menteeStudents, setMenteeStudents] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/faculty/mentees').then(d => setMenteeStudents(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const [selectedMentee, setSelectedMentee] = useState<string | null>(null);
   const { toast } = useToast();
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteForm, setNoteForm] = useState({ topic: '', notes: '', followUpDate: '' });
   const mentee = menteeStudents.find(m => m.id === selectedMentee);
+
+  const saveCounselingNote = async () => {
+    if (!selectedMentee || !noteForm.topic.trim() || !noteForm.notes.trim()) {
+      toast({ title: 'Missing details', description: 'Topic and notes are required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setSavingNote(true);
+      const created = await postApi(`/faculty/mentees/${selectedMentee}/notes`, {
+        topic: noteForm.topic.trim(),
+        notes: noteForm.notes.trim(),
+        followUpDate: noteForm.followUpDate || null
+      });
+
+      setMenteeStudents((prev: any[]) => prev.map((student) => (
+        student.id === selectedMentee
+          ? {
+              ...student,
+              counselingNotes: [
+                {
+                  id: created.id,
+                  date: new Date(created.date || Date.now()).toLocaleDateString('en-IN'),
+                  topic: created.topic,
+                  notes: created.notes,
+                  followUpDate: created.followUpDate ? new Date(created.followUpDate).toLocaleDateString('en-IN') : null,
+                  status: created.status || 'open'
+                },
+                ...(student.counselingNotes || [])
+              ],
+              lastMeetingDate: new Date().toLocaleDateString('en-IN')
+            }
+          : student
+      )));
+
+      setNoteForm({ topic: '', notes: '', followUpDate: '' });
+      toast({ title: 'Note added', description: 'Counseling note saved successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Save failed', description: error?.message || 'Unable to save note.', variant: 'destructive' });
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   if (mentee) {
     return (
@@ -68,10 +120,10 @@ export default function FacultyMentoring() {
                 <DialogContent>
                   <DialogHeader><DialogTitle>Add Counseling Note</DialogTitle></DialogHeader>
                   <div className="space-y-4">
-                    <div><Label>Topic</Label><Input placeholder="e.g., Academic Progress" /></div>
-                    <div><Label>Notes</Label><Textarea placeholder="Session details..." rows={4} /></div>
-                    <div><Label>Follow-up Date</Label><Input type="date" /></div>
-                    <Button className="w-full" onClick={() => toast({ title: 'Note Added' })}>Save Note</Button>
+                    <div><Label>Topic</Label><Input placeholder="e.g., Academic Progress" value={noteForm.topic} onChange={(event) => setNoteForm((prev) => ({ ...prev, topic: event.target.value }))} /></div>
+                    <div><Label>Notes</Label><Textarea placeholder="Session details..." rows={4} value={noteForm.notes} onChange={(event) => setNoteForm((prev) => ({ ...prev, notes: event.target.value }))} /></div>
+                    <div><Label>Follow-up Date</Label><Input type="date" value={noteForm.followUpDate} onChange={(event) => setNoteForm((prev) => ({ ...prev, followUpDate: event.target.value }))} /></div>
+                    <Button className="w-full" onClick={saveCounselingNote} disabled={savingNote}>{savingNote ? 'Saving...' : 'Save Note'}</Button>
                   </div>
                 </DialogContent>
               </Dialog>

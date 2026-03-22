@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   BookOpen, User, Clock, MapPin, Calendar, 
   FileText, Download, ExternalLink, Mail, ChevronRight,
@@ -10,18 +10,159 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { mockCourses, mockStudentProfile } from '@/data/studentMockData';
+import { fetchApi } from '@/lib/apiService';
 import { Course } from '@/types/student';
 import { cn } from '@/lib/utils';
+import { safeArray, safeNumber, safeString } from '@/lib/normalize';
+
+type StudentCourseState = Course & {
+  attendance: number;
+  internalMarks: number;
+  maxInternalMarks: number;
+  totalClasses: number;
+  presentClasses: number;
+  absentClasses: number;
+};
+
+type AttendanceSummaryState = {
+  courseId: string;
+  percentage: number;
+  totalClasses: number;
+  present: number;
+  absent: number;
+};
+
+type StudentProfileState = {
+  program: string;
+  branch: string;
+  semester: number;
+};
+
+const DEFAULT_PROFILE: StudentProfileState = {
+  program: 'Program',
+  branch: 'Branch',
+  semester: 1,
+};
+
+function normalizeCourses(raw: any): StudentCourseState[] {
+  if (!Array.isArray(raw)) return [];
+
+  return safeArray(raw).map((course: any): StudentCourseState => {
+    const schedule = safeArray(course?.schedules)
+      ? safeArray(course?.schedules).map((s: any) => ({
+          day: safeString(s?.day, '-'),
+          startTime: safeString(s?.startTime, '-'),
+          endTime: safeString(s?.endTime, '-'),
+          room: safeString(s?.room, 'TBA'),
+          type: (s?.type ?? 'lecture') as 'lecture' | 'lab' | 'tutorial',
+        }))
+      : [];
+
+    const attendance = safeNumber(course?.attendance);
+    const maxInternalMarks = safeNumber(course?.maxInternalMarks, 50);
+    const internalMarks = safeNumber(course?.internalMarks);
+
+    return {
+      id: safeString(course?.id),
+      code: safeString(course?.code, '-'),
+      name: safeString(course?.name, 'Course'),
+      credits: safeNumber(course?.credits),
+      faculty: safeString(course?.faculty?.user?.name ?? course?.faculty?.user?.email, '-'),
+      facultyEmail: safeString(course?.faculty?.user?.email, '-'),
+      schedule,
+      attendance,
+      internalMarks,
+      maxInternalMarks,
+      totalClasses: 0,
+      presentClasses: 0,
+      absentClasses: 0,
+      semester: safeNumber(course?.semester, 1),
+      department: safeString(course?.department?.name, '-'),
+    };
+  });
+}
+
+function normalizeAttendanceSummaries(raw: any): AttendanceSummaryState[] {
+  if (!Array.isArray(raw)) return [];
+
+  return safeArray(raw).map((item: any) => ({
+    courseId: safeString(item?.courseId),
+    percentage: safeNumber(item?.percentage),
+    totalClasses: safeNumber(item?.totalClasses),
+    present: safeNumber(item?.present),
+    absent: safeNumber(item?.absent),
+  }));
+}
+
+function normalizeProfile(raw: any): StudentProfileState {
+  return {
+    program: safeString(raw?.program, DEFAULT_PROFILE.program),
+    branch: safeString(raw?.branch, DEFAULT_PROFILE.branch),
+    semester: safeNumber(raw?.semester, DEFAULT_PROFILE.semester),
+  };
+}
 
 export default function StudentCourses() {
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
-  const profile = mockStudentProfile;
+  const [courses, setCourses] = useState<StudentCourseState[]>([]);
+  const [studentProfile, setStudentProfile] = useState<StudentProfileState>(DEFAULT_PROFILE);
+  const [selectedSemester, setSelectedSemester] = useState<string>('');
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    Promise.allSettled([
+      Promise.all([fetchApi('/students/courses'), fetchApi('/students/attendance')]).then(([coursesData, attendanceData]) => {
+        const normalizedCourses = normalizeCourses(coursesData);
+        const summaries = normalizeAttendanceSummaries(attendanceData);
+        const summaryByCourseId = new Map(summaries.map((summary) => [summary.courseId, summary]));
 
-  const totalCredits = mockCourses.reduce((sum, c) => sum + c.credits, 0);
-  const avgAttendance = Math.round(mockCourses.reduce((sum, c) => sum + c.attendance, 0) / mockCourses.length);
+        const mergedCourses = normalizedCourses.map((course) => {
+          const summary = summaryByCourseId.get(course.id);
+          if (!summary) return course;
+          return {
+            ...course,
+            attendance: summary.percentage,
+            totalClasses: summary.totalClasses,
+            presentClasses: summary.present,
+            absentClasses: summary.absent,
+          };
+        });
+
+        setCourses(mergedCourses);
+      }),
+      fetchApi('/students/profile').then((d) => {
+        const normalized = normalizeProfile(d);
+        setStudentProfile(normalized);
+      }),
+      fetchApi('/students/current-semester').then((d: any) => {
+        if (d?.currentSemester) setSelectedSemester(String(d.currentSemester));
+      })
+    ])
+      .catch((error) => {
+        console.error('API request failed', error);
+      })
+      .finally(() => _setApiLoading(false));
+  }, []);
+
+  const [selectedCourse, setSelectedCourse] = useState<StudentCourseState | null>(null);
+  const profile = studentProfile;
+
+  useEffect(() => {
+    if (!selectedSemester && profile.semester) {
+      setSelectedSemester(String(profile.semester));
+    }
+  }, [selectedSemester, profile.semester]);
+
+  const semesterOptions = Array.from(new Set(courses.map((course) => Number(course.semester)).filter((value) => Number.isFinite(value)))).sort((a, b) => a - b);
+  const visibleCourses = selectedSemester === 'all' || !selectedSemester
+    ? courses
+    : courses.filter((course) => String(course.semester) === selectedSemester);
+
+  const totalCredits = visibleCourses.reduce((sum, c) => sum + Number(c.credits || 0), 0);
+  const avgAttendance = visibleCourses.length > 0
+    ? Math.round(visibleCourses.reduce((sum, c) => sum + Number(c.attendance || 0), 0) / visibleCourses.length)
+    : 0;
 
   const getAttendanceColor = (attendance: number) => {
     if (attendance >= 90) return 'text-success';
@@ -33,6 +174,38 @@ export default function StudentCourses() {
     if (attendance >= 90) return { label: 'Excellent', variant: 'success' as const };
     if (attendance >= 75) return { label: 'Good', variant: 'warning' as const };
     return { label: 'Low', variant: 'destructive' as const };
+  };
+
+  const downloadTextFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadSyllabus = (course: StudentCourseState) => {
+    const content = [
+      `Syllabus - ${course.code}`,
+      `Course: ${course.name}`,
+      `Faculty: ${course.faculty}`,
+      `Department: ${course.department}`,
+      `Semester: ${course.semester}`
+    ].join('\n');
+    downloadTextFile(`${course.code}_syllabus.txt`, content);
+  };
+
+  const downloadMaterial = (courseCode: string, materialTitle: string) => {
+    const content = `Material: ${materialTitle}\nCourse: ${courseCode}\nGenerated: ${new Date().toLocaleString()}`;
+    downloadTextFile(`${courseCode}_${materialTitle.replace(/\s+/g, '_')}.txt`, content);
+  };
+
+  const openLectureLink = () => {
+    window.open('https://www.youtube.com/results?search_query=university+lecture', '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -47,8 +220,17 @@ export default function StudentCourses() {
             </p>
           </div>
           <div className="flex gap-4">
+            <Select value={selectedSemester || 'all'} onValueChange={setSelectedSemester}>
+              <SelectTrigger className="w-[180px]"><SelectValue placeholder="Semester" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Semesters</SelectItem>
+                {semesterOptions.map((semester) => (
+                  <SelectItem key={semester} value={String(semester)}>Semester {semester}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="rounded-lg bg-primary/10 px-4 py-2 text-center">
-              <p className="text-2xl font-bold text-primary">{mockCourses.length}</p>
+              <p className="text-2xl font-bold text-primary">{visibleCourses.length}</p>
               <p className="text-xs text-muted-foreground">Courses</p>
             </div>
             <div className="rounded-lg bg-muted px-4 py-2 text-center">
@@ -64,7 +246,7 @@ export default function StudentCourses() {
 
         {/* Course Grid */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {mockCourses.map((course) => {
+          {visibleCourses.map((course) => {
             const status = getAttendanceStatus(course.attendance);
             return (
               <Card key={course.id} className="transition-shadow hover:shadow-lg">
@@ -120,7 +302,7 @@ export default function StudentCourses() {
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">Percentage</p>
                       <p className="text-lg font-semibold text-primary">
-                        {Math.round((course.internalMarks / course.maxInternalMarks) * 100)}%
+                        {course.maxInternalMarks > 0 ? Math.round((course.internalMarks / course.maxInternalMarks) * 100) : 0}%
                       </p>
                     </div>
                   </div>
@@ -187,8 +369,8 @@ export default function StudentCourses() {
                               <p className="text-2xl font-bold">
                                 {course.internalMarks}/{course.maxInternalMarks}
                               </p>
-                              <Progress 
-                                value={(course.internalMarks / course.maxInternalMarks) * 100} 
+                              <Progress
+                                value={course.maxInternalMarks > 0 ? (course.internalMarks / course.maxInternalMarks) * 100 : 0}
                                 className="mt-2 h-2"
                               />
                             </div>
@@ -198,7 +380,7 @@ export default function StudentCourses() {
                             <p className="mt-2 text-sm text-muted-foreground">
                               Click to download or view the complete syllabus for this course.
                             </p>
-                            <Button variant="outline" size="sm" className="mt-3">
+                            <Button variant="outline" size="sm" className="mt-3" onClick={() => downloadSyllabus(course)}>
                               <Download className="mr-2 h-4 w-4" />
                               Download Syllabus
                             </Button>
@@ -257,15 +439,15 @@ export default function StudentCourses() {
                               <h4 className="font-medium">Attendance Summary</h4>
                               <div className="mt-3 grid grid-cols-3 gap-4">
                                 <div className="text-center">
-                                  <p className="text-2xl font-bold text-success">42</p>
+                                  <p className="text-2xl font-bold text-success">{course.presentClasses}</p>
                                   <p className="text-xs text-muted-foreground">Present</p>
                                 </div>
                                 <div className="text-center">
-                                  <p className="text-2xl font-bold text-destructive">4</p>
+                                  <p className="text-2xl font-bold text-destructive">{course.absentClasses}</p>
                                   <p className="text-xs text-muted-foreground">Absent</p>
                                 </div>
                                 <div className="text-center">
-                                  <p className="text-2xl font-bold">46</p>
+                                  <p className="text-2xl font-bold">{course.totalClasses}</p>
                                   <p className="text-xs text-muted-foreground">Total Classes</p>
                                 </div>
                               </div>
@@ -283,7 +465,7 @@ export default function StudentCourses() {
                                   <p className="text-xs text-muted-foreground">PDF • 2.4 MB</p>
                                 </div>
                               </div>
-                              <Button size="sm" variant="outline">
+                              <Button size="sm" variant="outline" onClick={() => downloadMaterial(course.code, 'Unit 1 Notes - Introduction')}>
                                 <Download className="h-4 w-4" />
                               </Button>
                             </div>
@@ -295,7 +477,7 @@ export default function StudentCourses() {
                                   <p className="text-xs text-muted-foreground">PDF • 3.1 MB</p>
                                 </div>
                               </div>
-                              <Button size="sm" variant="outline">
+                              <Button size="sm" variant="outline" onClick={() => downloadMaterial(course.code, 'Unit 2 Notes - Advanced Topics')}>
                                 <Download className="h-4 w-4" />
                               </Button>
                             </div>
@@ -307,7 +489,7 @@ export default function StudentCourses() {
                                   <p className="text-xs text-muted-foreground">YouTube Link</p>
                                 </div>
                               </div>
-                              <Button size="sm" variant="outline">
+                              <Button size="sm" variant="outline" onClick={openLectureLink}>
                                 <ExternalLink className="h-4 w-4" />
                               </Button>
                             </div>

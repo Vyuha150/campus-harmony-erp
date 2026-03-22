@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +15,7 @@ import {
   Plus, AlertTriangle, Eye, ListChecks, Download,
   PlayCircle, StopCircle, ArrowRightLeft
 } from 'lucide-react';
-import { meetingAgendas as initialMeetings } from '@/data/vcMockData';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { MeetingAgenda, ActionItem } from '@/types/vc';
 
 const meetingTypeLabels: Record<string, string> = {
@@ -33,8 +33,15 @@ const statusColors: Record<string, string> = {
 };
 
 export default function VCMeetings() {
+  const [meetingAgendas, setMeetingAgendas] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/vc/meetingagendas').then(d => setMeetingAgendas(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [meetings, setMeetings] = useState(initialMeetings);
+  const [meetings, setMeetings] = useState<any[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<MeetingAgenda | null>(null);
   const [showActionDialog, setShowActionDialog] = useState(false);
   const [showCreateMeetingDialog, setShowCreateMeetingDialog] = useState(false);
@@ -50,44 +57,96 @@ export default function VCMeetings() {
   const [newMeetingTime, setNewMeetingTime] = useState('');
   const [newMeetingVenue, setNewMeetingVenue] = useState('');
 
-  const handleMarkDiscussed = (meetingId: string, agendaId: string) => {
-    setMeetings(prev => prev.map(m =>
-      m.id === meetingId ? {
-        ...m,
-        agendaItems: m.agendaItems.map(a => a.id === agendaId ? { ...a, status: 'discussed' as const } : a)
-      } : m
-    ));
-    if (selectedMeeting?.id === meetingId) {
-      setSelectedMeeting(prev => prev ? { ...prev, agendaItems: prev.agendaItems.map(a => a.id === agendaId ? { ...a, status: 'discussed' as const } : a) } : null);
+  const toDate = (value: any) => {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
+
+  const normalizeMeeting = (meeting: any) => ({
+    ...meeting,
+    date: toDate(meeting.date),
+    agendaItems: (Array.isArray(meeting.agendaItems) ? meeting.agendaItems : []).map((item: any) => ({
+      ...item,
+      actionItems: (Array.isArray(item.actionItems) ? item.actionItems : []).map((action: any) => ({
+        ...action,
+        deadline: toDate(action.deadline),
+      })),
+    })),
+    attendees: Array.isArray(meeting.attendees) ? meeting.attendees : [],
+    documents: Array.isArray(meeting.documents) ? meeting.documents : [],
+  });
+
+  useEffect(() => {
+    setMeetings((meetingAgendas || []).map(normalizeMeeting));
+  }, [meetingAgendas]);
+
+  const persistMeetingUpdate = async (meeting: MeetingAgenda) => {
+    const updated = await putApi<any>(`/vc/meetings/${meeting.id}`, {
+      ...meeting,
+      date: meeting.date,
+      agendaItems: meeting.agendaItems,
+    });
+    const normalized = normalizeMeeting(updated);
+    setMeetings(prev => prev.map((row) => row.id === normalized.id ? normalized : row));
+    setSelectedMeeting((prev) => prev && prev.id === normalized.id ? normalized : prev);
+    return normalized;
+  };
+
+  const handleMarkDiscussed = async (meetingId: string, agendaId: string) => {
+    const target = meetings.find((meeting) => meeting.id === meetingId);
+    if (!target) return;
+    const nextMeeting = {
+      ...target,
+      agendaItems: target.agendaItems.map((agenda) => agenda.id === agendaId ? { ...agenda, status: 'discussed' as const } : agenda),
+    };
+    try {
+      await persistMeetingUpdate(nextMeeting);
+      toast({ title: 'Updated', description: 'Agenda item marked as discussed.' });
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error.message || 'Could not update agenda.', variant: 'destructive' });
     }
-    toast({ title: 'Updated', description: 'Agenda item marked as discussed.' });
   };
 
-  const handleDeferAgenda = (meetingId: string, agendaId: string) => {
-    setMeetings(prev => prev.map(m =>
-      m.id === meetingId ? {
-        ...m,
-        agendaItems: m.agendaItems.map(a => a.id === agendaId ? { ...a, status: 'deferred' as const } : a)
-      } : m
-    ));
-    if (selectedMeeting?.id === meetingId) {
-      setSelectedMeeting(prev => prev ? { ...prev, agendaItems: prev.agendaItems.map(a => a.id === agendaId ? { ...a, status: 'deferred' as const } : a) } : null);
+  const handleDeferAgenda = async (meetingId: string, agendaId: string) => {
+    const target = meetings.find((meeting) => meeting.id === meetingId);
+    if (!target) return;
+    const nextMeeting = {
+      ...target,
+      agendaItems: target.agendaItems.map((agenda) => agenda.id === agendaId ? { ...agenda, status: 'deferred' as const } : agenda),
+    };
+    try {
+      await persistMeetingUpdate(nextMeeting);
+      toast({ title: 'Deferred', description: 'Agenda item deferred to next meeting.' });
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error.message || 'Could not defer agenda.', variant: 'destructive' });
     }
-    toast({ title: 'Deferred', description: 'Agenda item deferred to next meeting.' });
   };
 
-  const handleStartMeeting = (meetingId: string) => {
-    setMeetings(prev => prev.map(m => m.id === meetingId ? { ...m, status: 'in_progress' as const } : m));
-    toast({ title: 'Meeting Started', description: 'Meeting is now in progress.' });
+  const handleStartMeeting = async (meetingId: string) => {
+    try {
+      const updated = await putApi<any>(`/vc/meetings/${meetingId}`, { status: 'in_progress' });
+      const normalized = normalizeMeeting(updated);
+      setMeetings(prev => prev.map((meeting) => meeting.id === meetingId ? normalized : meeting));
+      setSelectedMeeting(prev => prev && prev.id === meetingId ? normalized : prev);
+      toast({ title: 'Meeting Started', description: 'Meeting is now in progress.' });
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error.message || 'Could not start meeting.', variant: 'destructive' });
+    }
   };
 
-  const handleCompleteMeeting = (meetingId: string) => {
-    setMeetings(prev => prev.map(m => m.id === meetingId ? { ...m, status: 'completed' as const } : m));
-    setSelectedMeeting(null);
-    toast({ title: 'Meeting Completed', description: 'Meeting marked as completed. Minutes will be generated.' });
+  const handleCompleteMeeting = async (meetingId: string) => {
+    try {
+      const updated = await putApi<any>(`/vc/meetings/${meetingId}`, { status: 'completed' });
+      const normalized = normalizeMeeting(updated);
+      setMeetings(prev => prev.map((meeting) => meeting.id === meetingId ? normalized : meeting));
+      setSelectedMeeting(null);
+      toast({ title: 'Meeting Completed', description: 'Meeting marked as completed. Minutes will be generated.' });
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error.message || 'Could not complete meeting.', variant: 'destructive' });
+    }
   };
 
-  const handleAddActionItem = () => {
+  const handleAddActionItem = async () => {
     if (!newTask || !newAssignee || !selectedMeeting || !selectedAgendaId) return;
     const actionItem: ActionItem = {
       id: `ai_${Date.now()}`,
@@ -104,17 +163,21 @@ export default function VCMeetings() {
           actionItems: [...(a.actionItems || []), actionItem]
         } : a)
       } : m;
-
-    setMeetings(prev => prev.map(updater));
-    setSelectedMeeting(prev => prev ? updater(prev) : null);
-    setShowActionDialog(false);
-    setNewTask('');
-    setNewAssignee('');
-    setNewDeadline('');
-    toast({ title: 'Action Item Added', description: `Task assigned to ${newAssignee}.` });
+    try {
+      await persistMeetingUpdate(updater(selectedMeeting));
+      setShowActionDialog(false);
+      setNewTask('');
+      setNewAssignee('');
+      setNewDeadline('');
+      toast({ title: 'Action Item Added', description: `Task assigned to ${newAssignee}.` });
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error.message || 'Could not add action item.', variant: 'destructive' });
+    }
   };
 
-  const handleToggleActionStatus = (meetingId: string, agendaId: string, actionId: string) => {
+  const handleToggleActionStatus = async (meetingId: string, agendaId: string, actionId: string) => {
+    const target = meetings.find((meeting) => meeting.id === meetingId);
+    if (!target) return;
     const updater = (m: MeetingAgenda) =>
       m.id === meetingId ? {
         ...m,
@@ -123,32 +186,37 @@ export default function VCMeetings() {
           actionItems: a.actionItems?.map(ai => ai.id === actionId ? { ...ai, status: ai.status === 'completed' ? 'pending' as const : 'completed' as const } : ai)
         } : a)
       } : m;
-
-    setMeetings(prev => prev.map(updater));
-    setSelectedMeeting(prev => prev ? updater(prev) : null);
+    try {
+      await persistMeetingUpdate(updater(target));
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error.message || 'Could not update action item.', variant: 'destructive' });
+    }
   };
 
-  const handleCreateMeeting = () => {
+  const handleCreateMeeting = async () => {
     if (!newMeetingTitle || !newMeetingDate) return;
-    const newMeeting: MeetingAgenda = {
-      id: `m${meetings.length + 1}`,
-      meetingType: newMeetingType as any,
-      title: newMeetingTitle,
-      date: new Date(newMeetingDate),
-      time: newMeetingTime || '10:00 AM',
-      venue: newMeetingVenue || 'TBD',
-      status: 'upcoming',
-      agendaItems: [],
-      attendees: ['Vice Chancellor', 'Pro-VC', 'Registrar'],
-      documents: [],
-    };
-    setMeetings(prev => [...prev, newMeeting]);
-    setShowCreateMeetingDialog(false);
-    setNewMeetingTitle('');
-    setNewMeetingDate('');
-    setNewMeetingTime('');
-    setNewMeetingVenue('');
-    toast({ title: 'Meeting Scheduled', description: `"${newMeetingTitle}" has been scheduled.` });
+    try {
+      const created = await postApi<any>('/vc/meetings', {
+        meetingType: newMeetingType,
+        title: newMeetingTitle,
+        date: new Date(newMeetingDate),
+        time: newMeetingTime || '10:00 AM',
+        venue: newMeetingVenue || 'TBD',
+        status: 'upcoming',
+        agendaItems: [],
+        attendees: ['Vice Chancellor', 'Pro-VC', 'Registrar'],
+        documents: [],
+      });
+      setMeetings(prev => [normalizeMeeting(created), ...prev]);
+      setShowCreateMeetingDialog(false);
+      setNewMeetingTitle('');
+      setNewMeetingDate('');
+      setNewMeetingTime('');
+      setNewMeetingVenue('');
+      toast({ title: 'Meeting Scheduled', description: `"${newMeetingTitle}" has been scheduled.` });
+    } catch (error: any) {
+      toast({ title: 'Create failed', description: error.message || 'Could not schedule meeting.', variant: 'destructive' });
+    }
   };
 
   const allActionItems = meetings.flatMap(m =>
@@ -375,7 +443,15 @@ export default function VCMeetings() {
                   <StopCircle className="h-4 w-4" /> End Meeting
                 </Button>
               )}
-              <Button variant="outline" onClick={() => toast({ title: 'Minutes Generated', description: 'Draft minutes of meeting have been generated and saved.' })} className="gap-1">
+              <Button variant="outline" onClick={async () => {
+                if (!selectedMeeting) return;
+                try {
+                  await putApi(`/vc/meetings/${selectedMeeting.id}`, { minutes: `Minutes generated on ${new Date().toLocaleString('en-IN')}` });
+                  toast({ title: 'Minutes Generated', description: 'Draft minutes of meeting have been generated and saved.' });
+                } catch (error: any) {
+                  toast({ title: 'Generation failed', description: error.message || 'Could not generate minutes.', variant: 'destructive' });
+                }
+              }} className="gap-1">
                 <Download className="h-4 w-4" /> Generate Minutes
               </Button>
             </DialogFooter>

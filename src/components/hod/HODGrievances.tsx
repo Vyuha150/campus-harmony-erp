@@ -7,8 +7,9 @@ import {
   AlertTriangle, MessageSquare, Shield, FileWarning, CheckCircle,
   Clock, Send, Forward, XCircle
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { fetchApi, putApi } from '@/lib/apiService';
 
 interface Grievance {
   id: string;
@@ -22,33 +23,6 @@ interface Grievance {
   category: string;
   response?: string;
 }
-
-const initialGrievances: Grievance[] = [
-  {
-    id: 'hg-1', type: 'student_complaint', subject: 'Lab 3 Systems Non-functional',
-    description: 'Multiple systems in Computer Lab 3 are not working. Students unable to complete database practicals on time.',
-    filedBy: 'Anonymous Student', filedAt: '2026-03-03', status: 'new',
-    priority: 'high', category: 'facility',
-  },
-  {
-    id: 'hg-2', type: 'faculty_complaint', subject: 'Unfair Grading Allegation – CS201',
-    description: 'A group of students allege that internal marks in CS201 were awarded inconsistently. Request HOD review.',
-    filedBy: '3 Students (Sec A, 2nd Year)', filedAt: '2026-02-28', status: 'under_review',
-    priority: 'medium', category: 'academic',
-  },
-  {
-    id: 'hg-3', type: 'disciplinary', subject: 'Malpractice in Quiz – Jay Singh',
-    description: 'Invigilator reported suspicious behavior during CS401 quiz. Answer script shows copied responses.',
-    filedBy: 'Dr. Rahul Deshmukh', filedAt: '2026-02-25', status: 'under_review',
-    priority: 'high', category: 'disciplinary',
-  },
-  {
-    id: 'hg-4', type: 'student_complaint', subject: 'Classroom Projector Malfunction',
-    description: 'LH-301 projector has been non-functional for 2 weeks. Faculty using whiteboards as alternative.',
-    filedBy: 'Class Rep – 3rd Year A', filedAt: '2026-02-20', status: 'resolved',
-    priority: 'low', category: 'facility',
-  },
-];
 
 const typeIcons: Record<string, React.ElementType> = {
   student_complaint: MessageSquare,
@@ -64,42 +38,68 @@ const statusColors: Record<string, string> = {
 };
 
 export default function HODGrievances() {
-  const [grievances, setGrievances] = useState<Grievance[]>(initialGrievances);
+  const [grievances, setGrievances] = useState<Grievance[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [response, setResponse] = useState('');
   const { toast } = useToast();
 
+  useEffect(() => {
+    fetchApi('/hod/grievances')
+      .then((data) => setGrievances(data))
+      .catch((error) => { console.error('API request failed', error); });
+  }, []);
+
   const item = grievances.find(g => g.id === selected);
 
-  const handleSubmitResponse = () => {
+  const handleSubmitResponse = async () => {
     if (item && response) {
-      setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'resolved', response } : g));
-      toast({ title: '✅ Response Submitted', description: `Grievance "${item.subject}" resolved` });
-      setResponse('');
-      setSelected(null);
+      try {
+        await putApi(`/hod/grievances/${item.id}`, { status: 'resolved', response });
+        setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'resolved', response } : g));
+        toast({ title: '✅ Response Submitted', description: `Grievance "${item.subject}" resolved` });
+        setResponse('');
+        setSelected(null);
+      } catch (error: any) {
+        toast({ title: 'Action failed', description: error?.message || 'Unable to submit response', variant: 'destructive' });
+      }
     }
   };
 
-  const handleIssueWarning = () => {
+  const handleIssueWarning = async () => {
     if (item) {
-      setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'resolved' } : g));
-      toast({ title: '⚠️ Warning Issued', description: `Disciplinary warning recorded for "${item.subject}"` });
-      setSelected(null);
+      try {
+        await putApi(`/hod/grievances/${item.id}`, { status: 'resolved', response: response || 'Disciplinary warning issued' });
+        setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'resolved', response: response || 'Disciplinary warning issued' } : g));
+        toast({ title: '⚠️ Warning Issued', description: `Disciplinary warning recorded for "${item.subject}"` });
+        setSelected(null);
+      } catch (error: any) {
+        toast({ title: 'Action failed', description: error?.message || 'Unable to issue warning', variant: 'destructive' });
+      }
     }
   };
 
-  const handleForwardToDean = () => {
+  const handleForwardToDean = async () => {
     if (item) {
-      setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'under_review' } : g));
-      toast({ title: '📤 Forwarded to Dean', description: `"${item.subject}" escalated to Dean for review` });
-      setSelected(null);
+      try {
+        await putApi(`/hod/grievances/${item.id}`, { status: 'under_review', response: response || 'Escalated to Dean for review' });
+        setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'under_review', response: response || g.response } : g));
+        toast({ title: '📤 Forwarded to Dean', description: `"${item.subject}" escalated to Dean for review` });
+        setSelected(null);
+      } catch (error: any) {
+        toast({ title: 'Action failed', description: error?.message || 'Unable to forward grievance', variant: 'destructive' });
+      }
     }
   };
 
-  const handleMarkUnderReview = () => {
+  const handleMarkUnderReview = async () => {
     if (item) {
-      setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'under_review' } : g));
-      toast({ title: 'Status Updated', description: 'Marked as Under Review' });
+      try {
+        await putApi(`/hod/grievances/${item.id}`, { status: 'under_review' });
+        setGrievances(prev => prev.map(g => g.id === item.id ? { ...g, status: 'under_review' } : g));
+        toast({ title: 'Status Updated', description: 'Marked as Under Review' });
+      } catch (error: any) {
+        toast({ title: 'Update failed', description: error?.message || 'Unable to update grievance status', variant: 'destructive' });
+      }
     }
   };
 

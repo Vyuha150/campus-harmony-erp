@@ -10,69 +10,211 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  Package, Wrench, ShoppingCart, CheckCircle, XCircle, AlertTriangle,
-  Plus, Download, Monitor
+  Package, Wrench, ShoppingCart, AlertTriangle,
+  Plus, Download, Monitor, Pencil
 } from 'lucide-react';
-import { labInventory as initialInventory, purchaseRequests as initialPR } from '@/data/hodMockData';
-import { useState } from 'react';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { LabInventoryItem, PurchaseRequest } from '@/types/hod';
 
 export default function HODInventory() {
+  const [labInventory, setLabInventory] = useState<any>([]);
+  const [purchaseRequests, setPurchaseRequests] = useState<any>([]);
+  const [facilities, setFacilities] = useState<Array<{ id: string; name: string; type: string }>>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/hod/labinventory').then(d => setLabInventory(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/hod/purchaserequests').then(d => setPurchaseRequests(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/hod/facility-management').then(d => setFacilities(Array.isArray(d) ? d : [])).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [inventory, setInventory] = useState<LabInventoryItem[]>(initialInventory);
-  const [purchases, setPurchases] = useState<PurchaseRequest[]>(initialPR);
+  const [inventory, setInventory] = useState<LabInventoryItem[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseRequest[]>([]);
   const [showNewPR, setShowNewPR] = useState(false);
+  const [showNewItem, setShowNewItem] = useState(false);
+  const [showEditItem, setShowEditItem] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LabInventoryItem | null>(null);
+  const [editingItem, setEditingItem] = useState<LabInventoryItem | null>(null);
   const [newPR, setNewPR] = useState({ itemName: '', lab: '', quantity: '1', cost: '', justification: '' });
+  const [newItem, setNewItem] = useState({ name: '', lab: '', category: '', quantity: '1', workingCondition: '1', purchaseDate: '', warrantyExpiry: '', status: 'working' });
 
-  const totalItems = inventory.reduce((s, i) => s + i.quantity, 0);
-  const faultyItems = inventory.filter(i => i.status === 'faulty' || i.status === 'maintenance').length;
+  useEffect(() => {
+    setInventory(Array.isArray(labInventory) ? labInventory : []);
+  }, [labInventory]);
+
+  useEffect(() => {
+    setPurchases(Array.isArray(purchaseRequests) ? purchaseRequests : []);
+  }, [purchaseRequests]);
+
+  const totalUnits = inventory.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const workingUnits = inventory.reduce((sum, item) => sum + Number(item.workingCondition || 0), 0);
+  const serviceItems = inventory.filter(i => i.status === 'faulty' || i.status === 'maintenance').length;
   const pendingPR = purchases.filter(p => p.status === 'pending').length;
+  const labOptions = facilities
+    .filter((facility) => String(facility.type || '').toLowerCase().includes('lab'))
+    .map((facility) => facility.name);
+  const fallbackLabs = [...new Set(inventory.map((item) => item.lab).filter(Boolean))];
+  const availableLabs = labOptions.length > 0 ? labOptions : fallbackLabs;
+  const labsCount = availableLabs.length;
 
-  const handleApprovePR = (id: string) => {
-    setPurchases(prev => prev.map(p => p.id === id ? { ...p, status: 'approved' } : p));
-    toast({ title: '✅ Purchase Approved' });
+  const toInputDate = (value?: string) => {
+    if (!value || value === 'N/A') return '';
+
+    const direct = new Date(value);
+    if (!Number.isNaN(direct.getTime())) {
+      return direct.toISOString().slice(0, 10);
+    }
+
+    const ddmmyyyy = String(value).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmmyyyy) {
+      const day = ddmmyyyy[1].padStart(2, '0');
+      const month = ddmmyyyy[2].padStart(2, '0');
+      const year = ddmmyyyy[3];
+      return `${year}-${month}-${day}`;
+    }
+
+    return '';
   };
 
-  const handleRejectPR = (id: string) => {
-    setPurchases(prev => prev.map(p => p.id === id ? { ...p, status: 'rejected' } : p));
-    toast({ title: '❌ Purchase Rejected' });
-  };
-
-  const handleCreatePR = () => {
+  const handleCreatePR = async () => {
     if (!newPR.itemName || !newPR.lab || !newPR.cost) {
       toast({ title: 'Missing Fields', variant: 'destructive' });
       return;
     }
-    const pr: PurchaseRequest = {
-      id: `pr-${Date.now()}`,
-      itemName: newPR.itemName,
-      lab: newPR.lab,
-      requestedBy: 'Dr. Vikram Singh (HOD)',
-      quantity: parseInt(newPR.quantity),
-      estimatedCost: parseInt(newPR.cost),
-      justification: newPR.justification,
-      status: 'pending',
-      requestDate: '2026-03-08',
-    };
-    setPurchases(prev => [...prev, pr]);
-    toast({ title: 'Purchase Request Created', description: `${newPR.itemName} – ₹${parseInt(newPR.cost).toLocaleString()}` });
-    setShowNewPR(false);
-    setNewPR({ itemName: '', lab: '', quantity: '1', cost: '', justification: '' });
+    try {
+      const created = await postApi<any>('/hod/purchaserequests', {
+        itemName: newPR.itemName,
+        lab: newPR.lab,
+        quantity: parseInt(newPR.quantity),
+        estimatedCost: parseInt(newPR.cost),
+        justification: newPR.justification,
+      });
+      const pr: PurchaseRequest = {
+        id: created.id,
+        itemName: created.itemName,
+        lab: created.lab,
+        requestedBy: created.requestedBy,
+        quantity: created.quantity,
+        estimatedCost: created.estimatedCost,
+        justification: created.justification,
+        status: created.status,
+        requestDate: created.requestDate ? new Date(created.requestDate).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN'),
+      };
+      setPurchases(prev => [pr, ...prev]);
+      toast({ title: 'Purchase Request Created', description: `${newPR.itemName} – ₹${parseInt(newPR.cost).toLocaleString()}` });
+      setShowNewPR(false);
+      setNewPR({ itemName: '', lab: '', quantity: '1', cost: '', justification: '' });
+    } catch (error: any) {
+      toast({ title: 'Create failed', description: error?.message || 'Unable to create purchase request', variant: 'destructive' });
+    }
   };
 
-  const handleMaintenanceRequest = () => {
+  const handleMaintenanceRequest = async () => {
     if (selectedItem) {
-      setInventory(prev => prev.map(i => i.id === selectedItem.id ? { ...i, status: 'maintenance', lastMaintenance: '2026-03-08' } : i));
-      toast({ title: '🔧 Maintenance Requested', description: `${selectedItem.name} sent for maintenance` });
-      setShowMaintenance(false);
+      try {
+        await putApi(`/hod/labinventory/${selectedItem.id}/maintenance`, {});
+        setInventory(prev => prev.map(i => i.id === selectedItem.id ? { ...i, status: 'maintenance', lastMaintenance: new Date().toLocaleDateString('en-IN') } : i));
+        toast({ title: '🔧 Maintenance Requested', description: `${selectedItem.name} sent for maintenance` });
+        setShowMaintenance(false);
+      } catch (error: any) {
+        toast({ title: 'Action failed', description: error?.message || 'Unable to request maintenance', variant: 'destructive' });
+      }
+    }
+  };
+
+  const handleCreateItem = async () => {
+    if (!newItem.name || !newItem.lab || !newItem.category || !newItem.quantity) {
+      toast({ title: 'Missing Fields', description: 'Name, lab, category and quantity are required', variant: 'destructive' });
+      return;
+    }
+    try {
+      const created = await postApi<any>('/hod/labinventory', {
+        name: newItem.name,
+        lab: newItem.lab,
+        category: newItem.category,
+        quantity: Number(newItem.quantity),
+        workingCondition: Number(newItem.workingCondition || newItem.quantity),
+        purchaseDate: newItem.purchaseDate || undefined,
+        warrantyExpiry: newItem.warrantyExpiry || undefined,
+        status: newItem.status,
+      });
+
+      setInventory((prev) => [
+        {
+          ...created,
+          lastMaintenance: created.lastMaintenance ? new Date(created.lastMaintenance).toLocaleDateString('en-IN') : 'N/A',
+          purchaseDate: created.purchaseDate ? new Date(created.purchaseDate).toLocaleDateString('en-IN') : 'N/A',
+          warrantyExpiry: created.warrantyExpiry ? new Date(created.warrantyExpiry).toLocaleDateString('en-IN') : '',
+        },
+        ...prev,
+      ]);
+      setShowNewItem(false);
+      setNewItem({ name: '', lab: '', category: '', quantity: '1', workingCondition: '1', purchaseDate: '', warrantyExpiry: '', status: 'working' });
+      toast({ title: 'Inventory item added' });
+    } catch (error: any) {
+      toast({ title: 'Create failed', description: error?.message || 'Unable to add inventory item', variant: 'destructive' });
+    }
+  };
+
+  const openEditInventoryItem = (item: LabInventoryItem) => {
+    setEditingItem(item);
+    setNewItem({
+      name: item.name,
+      lab: item.lab,
+      category: item.category,
+      quantity: String(item.quantity),
+      workingCondition: String(item.workingCondition),
+      purchaseDate: toInputDate(item.purchaseDate),
+      warrantyExpiry: toInputDate(item.warrantyExpiry),
+      status: item.status,
+    });
+    setShowEditItem(true);
+  };
+
+  const handleUpdateItem = async () => {
+    if (!editingItem) return;
+    try {
+      const updated = await putApi<any>(`/hod/labinventory/${editingItem.id}`, {
+        name: newItem.name,
+        lab: newItem.lab,
+        category: newItem.category,
+        quantity: Number(newItem.quantity),
+        workingCondition: Number(newItem.workingCondition),
+        purchaseDate: newItem.purchaseDate || null,
+        warrantyExpiry: newItem.warrantyExpiry || null,
+        status: newItem.status,
+      });
+
+      setInventory((prev) => prev.map((item) => (item.id === editingItem.id
+        ? {
+            ...item,
+            ...updated,
+            lastMaintenance: updated.lastMaintenance ? new Date(updated.lastMaintenance).toLocaleDateString('en-IN') : item.lastMaintenance,
+            purchaseDate: updated.purchaseDate ? new Date(updated.purchaseDate).toLocaleDateString('en-IN') : 'N/A',
+            warrantyExpiry: updated.warrantyExpiry ? new Date(updated.warrantyExpiry).toLocaleDateString('en-IN') : '',
+          }
+        : item)));
+
+      setShowEditItem(false);
+      setEditingItem(null);
+      toast({ title: 'Inventory item updated' });
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Unable to update inventory item', variant: 'destructive' });
     }
   };
 
   const handleExport = () => {
-    toast({ title: '📥 Inventory Exported', description: 'Lab inventory report downloaded' });
+    postApi('/hod/inventory/export', { format: 'csv' })
+      .then(() => {
+        toast({ title: '📥 Inventory Exported', description: 'Lab inventory report downloaded' });
+      })
+      .catch((error: any) => {
+        toast({ title: 'Export failed', description: error?.message || 'Unable to export inventory', variant: 'destructive' });
+      });
   };
 
   return (
@@ -87,6 +229,9 @@ export default function HODInventory() {
             <Button variant="outline" size="sm" onClick={handleExport}>
               <Download className="mr-1 h-4 w-4" />Export
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowNewItem(true)}>
+              <Plus className="mr-1 h-4 w-4" />New Inventory Item
+            </Button>
             <Button size="sm" onClick={() => setShowNewPR(true)}>
               <Plus className="mr-1 h-4 w-4" />New Purchase Request
             </Button>
@@ -96,9 +241,9 @@ export default function HODInventory() {
         {/* Summary */}
         <div className="grid gap-4 sm:grid-cols-4">
           {[
-            { label: 'Total Equipment', value: totalItems, icon: Package, color: 'text-blue-600 bg-blue-100' },
-            { label: 'Labs', value: [...new Set(inventory.map(i => i.lab))].length, icon: Monitor, color: 'text-green-600 bg-green-100' },
-            { label: 'Faulty/Maintenance', value: faultyItems, icon: Wrench, color: 'text-amber-600 bg-amber-100' },
+            { label: 'Total Units', value: totalUnits, icon: Package, color: 'text-blue-600 bg-blue-100' },
+            { label: 'Working Units', value: workingUnits, icon: Monitor, color: 'text-green-600 bg-green-100' },
+            { label: 'Items in Service', value: serviceItems, icon: Wrench, color: 'text-amber-600 bg-amber-100' },
             { label: 'Pending Purchases', value: pendingPR, icon: ShoppingCart, color: 'text-primary bg-primary/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
@@ -114,6 +259,8 @@ export default function HODInventory() {
             </Card>
           ))}
         </div>
+
+        <p className="text-xs text-muted-foreground">Labs linked from Facility Management: {labsCount}</p>
 
         <Tabs defaultValue="inventory">
           <TabsList>
@@ -161,9 +308,14 @@ export default function HODInventory() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setSelectedItem(item); setShowMaintenance(true); }}>
-                            <Wrench className="h-3 w-3 mr-1" />Service
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => openEditInventoryItem(item)}>
+                              <Pencil className="h-3 w-3 mr-1" />Edit
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setSelectedItem(item); setShowMaintenance(true); }}>
+                              <Wrench className="h-3 w-3 mr-1" />Service
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -175,6 +327,11 @@ export default function HODInventory() {
 
           <TabsContent value="purchases" className="mt-4">
             <Card className="border-border">
+              <CardHeader className="pb-2">
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Purchase requests are raised by HOD and approved/rejected by Dean.
+                </div>
+              </CardHeader>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
@@ -207,19 +364,8 @@ export default function HODInventory() {
                             {pr.status}
                           </Badge>
                         </TableCell>
-                        <TableCell>
-                          {pr.status === 'pending' && (
-                            <div className="flex gap-1">
-                              <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600"
-                                onClick={() => handleApprovePR(pr.id)}>
-                                <CheckCircle className="h-4 w-4" />
-                              </Button>
-                              <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive"
-                                onClick={() => handleRejectPR(pr.id)}>
-                                <XCircle className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          )}
+                        <TableCell className="text-xs text-muted-foreground">
+                          {pr.status === 'pending' ? 'Awaiting Dean decision' : 'Finalized'}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -246,11 +392,14 @@ export default function HODInventory() {
                 <Select value={newPR.lab} onValueChange={v => setNewPR(p => ({ ...p, lab: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select lab..." /></SelectTrigger>
                   <SelectContent>
-                    {[...new Set(inventory.map(i => i.lab))].map(l => (
-                      <SelectItem key={l} value={l}>{l}</SelectItem>
+                    {availableLabs.map((lab) => (
+                      <SelectItem key={lab} value={lab}>{lab}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Labs are sourced from Facility Management.
+                </p>
               </div>
               <div>
                 <Label>Quantity</Label>
@@ -269,6 +418,28 @@ export default function HODInventory() {
               <Button variant="outline" onClick={() => setShowNewPR(false)}>Cancel</Button>
               <Button onClick={handleCreatePR}>Submit Request</Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showNewItem} onOpenChange={setShowNewItem}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>New Inventory Item</DialogTitle></DialogHeader>
+          <InventoryItemForm newItem={newItem} setNewItem={setNewItem} availableLabs={availableLabs} />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowNewItem(false)}>Cancel</Button>
+            <Button onClick={handleCreateItem}>Add Item</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditItem} onOpenChange={setShowEditItem}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Inventory Item</DialogTitle></DialogHeader>
+          <InventoryItemForm newItem={newItem} setNewItem={setNewItem} availableLabs={availableLabs} />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowEditItem(false)}>Cancel</Button>
+            <Button onClick={handleUpdateItem}>Update Item</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -294,5 +465,72 @@ export default function HODInventory() {
         </DialogContent>
       </Dialog>
     </DashboardLayout>
+  );
+}
+
+function InventoryItemForm({
+  newItem,
+  setNewItem,
+  availableLabs,
+}: {
+  newItem: { name: string; lab: string; category: string; quantity: string; workingCondition: string; purchaseDate: string; warrantyExpiry: string; status: string };
+  setNewItem: React.Dispatch<React.SetStateAction<{ name: string; lab: string; category: string; quantity: string; workingCondition: string; purchaseDate: string; warrantyExpiry: string; status: string }>>;
+  availableLabs: string[];
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <Label>Item Name</Label>
+        <Input value={newItem.name} onChange={(e) => setNewItem((p) => ({ ...p, name: e.target.value }))} placeholder="Desktop Systems" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Lab</Label>
+          <Select value={newItem.lab} onValueChange={(v) => setNewItem((p) => ({ ...p, lab: v }))}>
+            <SelectTrigger><SelectValue placeholder="Select lab..." /></SelectTrigger>
+            <SelectContent>
+              {availableLabs.map((lab) => (
+                <SelectItem key={lab} value={lab}>{lab}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label>Category</Label>
+          <Input value={newItem.category} onChange={(e) => setNewItem((p) => ({ ...p, category: e.target.value }))} placeholder="Computing" />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <Label>Quantity</Label>
+          <Input type="number" min="1" value={newItem.quantity} onChange={(e) => setNewItem((p) => ({ ...p, quantity: e.target.value }))} />
+        </div>
+        <div>
+          <Label>Working</Label>
+          <Input type="number" min="0" value={newItem.workingCondition} onChange={(e) => setNewItem((p) => ({ ...p, workingCondition: e.target.value }))} />
+        </div>
+        <div>
+          <Label>Status</Label>
+          <Select value={newItem.status} onValueChange={(v) => setNewItem((p) => ({ ...p, status: v }))}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="working">Working</SelectItem>
+              <SelectItem value="maintenance">Maintenance</SelectItem>
+              <SelectItem value="faulty">Faulty</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Purchase Date</Label>
+          <Input type="date" value={newItem.purchaseDate} onChange={(e) => setNewItem((p) => ({ ...p, purchaseDate: e.target.value }))} />
+        </div>
+        <div>
+          <Label>Warranty Expiry</Label>
+          <Input type="date" value={newItem.warrantyExpiry} onChange={(e) => setNewItem((p) => ({ ...p, warrantyExpiry: e.target.value }))} />
+        </div>
+      </div>
+    </div>
   );
 }

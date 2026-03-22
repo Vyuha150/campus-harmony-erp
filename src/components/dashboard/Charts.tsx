@@ -2,41 +2,18 @@ import {
   LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
 } from 'recharts';
-
-const attendanceData = [
-  { month: 'Jul', present: 92, absent: 8 },
-  { month: 'Aug', present: 88, absent: 12 },
-  { month: 'Sep', present: 85, absent: 15 },
-  { month: 'Oct', present: 90, absent: 10 },
-  { month: 'Nov', present: 87, absent: 13 },
-  { month: 'Dec', present: 91, absent: 9 },
-];
-
-const enrollmentData = [
-  { year: '2020', ug: 4200, pg: 1800, phd: 450 },
-  { year: '2021', ug: 4500, pg: 2000, phd: 520 },
-  { year: '2022', ug: 4800, pg: 2200, phd: 580 },
-  { year: '2023', ug: 5200, pg: 2400, phd: 640 },
-  { year: '2024', ug: 5500, pg: 2600, phd: 720 },
-];
-
-const placementData = [
-  { name: 'Placed', value: 78, color: 'hsl(var(--success))' },
-  { name: 'Higher Studies', value: 12, color: 'hsl(var(--info))' },
-  { name: 'Entrepreneurship', value: 5, color: 'hsl(var(--warning))' },
-  { name: 'Seeking', value: 5, color: 'hsl(var(--muted-foreground))' },
-];
-
-const researchData = [
-  { month: 'Jan', publications: 12, patents: 2, projects: 5 },
-  { month: 'Feb', publications: 15, patents: 1, projects: 7 },
-  { month: 'Mar', publications: 18, patents: 3, projects: 6 },
-  { month: 'Apr', publications: 14, patents: 2, projects: 8 },
-  { month: 'May', publications: 22, patents: 4, projects: 9 },
-  { month: 'Jun', publications: 20, patents: 2, projects: 7 },
-];
+import { useEffect, useState } from 'react';
+import { fetchApi } from '@/lib/apiService';
 
 export function AttendanceChart() {
+  const [attendanceData, setAttendanceData] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchApi('/dashboard/charts/attendance')
+      .then((data) => setAttendanceData(data))
+      .catch((error) => { console.error('API request failed', error); });
+  }, []);
+
   return (
     <ResponsiveContainer width="100%" height={250}>
       <AreaChart data={attendanceData}>
@@ -83,6 +60,14 @@ export function AttendanceChart() {
 }
 
 export function EnrollmentChart() {
+  const [enrollmentData, setEnrollmentData] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchApi('/dashboard/charts/enrollment')
+      .then((data) => setEnrollmentData(data))
+      .catch((error) => { console.error('API request failed', error); });
+  }, []);
+
   return (
     <ResponsiveContainer width="100%" height={250}>
       <BarChart data={enrollmentData}>
@@ -117,6 +102,14 @@ export function EnrollmentChart() {
 }
 
 export function PlacementChart() {
+  const [placementData, setPlacementData] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchApi('/dashboard/charts/placement')
+      .then((data) => setPlacementData(data))
+      .catch((error) => { console.error('API request failed', error); });
+  }, []);
+
   return (
     <ResponsiveContainer width="100%" height={250}>
       <PieChart>
@@ -148,6 +141,14 @@ export function PlacementChart() {
 }
 
 export function ResearchChart() {
+  const [researchData, setResearchData] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchApi('/dashboard/charts/research')
+      .then((data) => setResearchData(data))
+      .catch((error) => { console.error('API request failed', error); });
+  }, []);
+
   return (
     <ResponsiveContainer width="100%" height={250}>
       <LineChart data={researchData}>

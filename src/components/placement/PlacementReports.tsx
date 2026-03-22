@@ -8,38 +8,73 @@ import {
   Building2, GraduationCap, IndianRupee, Target, Award
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RPieChart, Pie, Cell } from 'recharts';
-import { placementMetrics } from '@/data/placementMockData';
+import { useState, useEffect } from 'react';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { useToast } from '@/hooks/use-toast';
 
 const COLORS = ['hsl(var(--primary))', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
 
 const formatPackage = (amount: number) => `₹${(amount / 100000).toFixed(1)} LPA`;
 
 export default function PlacementReports() {
+  const { toast } = useToast();
+  const [placementMetrics, setPlacementMetrics] = useState<any>({
+    placementPercentage: 0,
+    placedStudents: 0,
+    eligibleStudents: 0,
+    companiesVisited: 0,
+    minimumPackage: 0,
+    highestPackage: 0,
+    averagePackage: 0,
+    medianPackage: 0,
+  });
+  const [deptData, setDeptData] = useState<any>([]);
+  const [outcomeData, setOutcomeData] = useState<any>([]);
+  const [salaryBands, setSalaryBands] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const loadReports = async () => {
+    const [metrics, dept, outcomes, salaries] = await Promise.all([
+      fetchApi('/placements/reports'),
+      fetchApi('/placements/reports/department-wise'),
+      fetchApi('/placements/reports/outcomes'),
+      fetchApi('/placements/reports/salary-bands')
+    ]);
+
+    const m = metrics || {};
+    setPlacementMetrics({
+      placementPercentage: Number(m.placementPercentage || 0),
+      placedStudents: Number(m.totalPlaced || 0),
+      eligibleStudents: Number(m.totalStudents || 0),
+      companiesVisited: Number(m.totalCompanies || 0),
+      minimumPackage: Number(m.minimumPackage ?? m.minPackage ?? 0),
+      highestPackage: Number(m.highestPackage || 0),
+      averagePackage: Number(m.averagePackage || 0),
+      medianPackage: Number(m.medianPackage || 0),
+    });
+    setDeptData(Array.isArray(dept) ? dept : []);
+    setOutcomeData(Array.isArray(outcomes) ? outcomes : []);
+    setSalaryBands(Array.isArray(salaries) ? salaries : []);
+  };
+
+  useEffect(() => {
+    loadReports().catch((error) => {
+      console.error('API request failed', error);
+      toast({ title: 'Unable to load reports', description: error?.message || 'Please retry', variant: 'destructive' });
+    });
+    _setApiLoading(false);
+  }, []);
+
+  const handleGenerateReport = async (type: string, title: string) => {
+    try {
+      await postApi('/placements/reports/generate', { type });
+      toast({ title: `${title} generated`, description: 'Report generated successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Generation failed', description: error?.message || 'Unable to generate report.', variant: 'destructive' });
+    }
+  };
+
   const m = placementMetrics;
-
-  const deptData = [
-    { dept: 'CSE', placed: 92, total: 180, pct: 51.1 },
-    { dept: 'ECE', placed: 78, total: 150, pct: 52.0 },
-    { dept: 'ME', placed: 65, total: 120, pct: 54.2 },
-    { dept: 'EE', placed: 55, total: 100, pct: 55.0 },
-    { dept: 'IT', placed: 88, total: 140, pct: 62.9 },
-    { dept: 'MBA', placed: 120, total: 160, pct: 75.0 },
-  ];
-
-  const outcomeData = [
-    { name: 'Placed', value: m.placedStudents },
-    { name: 'Higher Studies', value: 180 },
-    { name: 'Entrepreneur', value: 25 },
-    { name: 'Unplaced', value: m.eligibleStudents - m.placedStudents - 180 - 25 },
-  ];
-
-  const salaryBands = [
-    { band: '<5 LPA', count: 320 },
-    { band: '5-10 LPA', count: 380 },
-    { band: '10-20 LPA', count: 105 },
-    { band: '20-40 LPA', count: 30 },
-    { band: '>40 LPA', count: 7 },
-  ];
 
   return (
     <DashboardLayout>
@@ -57,8 +92,8 @@ export default function PlacementReports() {
                 <SelectItem value="2024-25">2024-25</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" size="sm"><Printer className="mr-2 h-4 w-4" />Print</Button>
-            <Button size="sm"><Download className="mr-2 h-4 w-4" />Export PDF</Button>
+            <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print</Button>
+            <Button size="sm" onClick={() => handleGenerateReport('overall', 'Overall report')}><Download className="mr-2 h-4 w-4" />Export PDF</Button>
           </div>
         </div>
 
@@ -69,7 +104,7 @@ export default function PlacementReports() {
           <Card><CardContent className="p-4 text-center"><Building2 className="mx-auto h-6 w-6 text-blue-600" /><p className="mt-1 text-2xl font-bold text-foreground">{m.companiesVisited}</p><p className="text-xs text-muted-foreground">Companies</p></CardContent></Card>
           <Card><CardContent className="p-4 text-center"><TrendingUp className="mx-auto h-6 w-6 text-amber-600" /><p className="mt-1 text-2xl font-bold text-foreground">{formatPackage(m.highestPackage)}</p><p className="text-xs text-muted-foreground">Highest CTC</p></CardContent></Card>
           <Card><CardContent className="p-4 text-center"><BarChart3 className="mx-auto h-6 w-6 text-purple-600" /><p className="mt-1 text-2xl font-bold text-foreground">{formatPackage(m.averagePackage)}</p><p className="text-xs text-muted-foreground">Average CTC</p></CardContent></Card>
-          <Card><CardContent className="p-4 text-center"><Award className="mx-auto h-6 w-6 text-primary" /><p className="mt-1 text-2xl font-bold text-foreground">{formatPackage(m.medianPackage)}</p><p className="text-xs text-muted-foreground">Median CTC</p></CardContent></Card>
+          <Card><CardContent className="p-4 text-center"><Award className="mx-auto h-6 w-6 text-primary" /><p className="mt-1 text-2xl font-bold text-foreground">{formatPackage(m.medianPackage)}</p><p className="text-xs text-muted-foreground">Median CTC</p><p className="mt-1 text-xs text-muted-foreground">Min: {formatPackage(m.minimumPackage)}</p></CardContent></Card>
         </div>
 
         {/* Charts */}
@@ -142,8 +177,8 @@ export default function PlacementReports() {
                       <h3 className="font-medium text-foreground">{r.title}</h3>
                       <p className="mt-1 text-sm text-muted-foreground">{r.desc}</p>
                       <div className="mt-3 flex gap-2">
-                        <Button size="sm" variant="outline"><Printer className="mr-1 h-3 w-3" />Preview</Button>
-                        <Button size="sm"><Download className="mr-1 h-3 w-3" />Export</Button>
+                        <Button size="sm" variant="outline" onClick={() => handleGenerateReport('overall', r.title)}><Printer className="mr-1 h-3 w-3" />Preview</Button>
+                        <Button size="sm" onClick={() => handleGenerateReport('overall', r.title)}><Download className="mr-1 h-3 w-3" />Export</Button>
                       </div>
                     </div>
                   </div>

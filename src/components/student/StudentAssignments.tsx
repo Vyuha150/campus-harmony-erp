@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   FileText, Upload, Clock, CheckCircle, AlertCircle, 
   Calendar, Filter, Search, Eye, Download, MessageSquare
@@ -13,18 +13,86 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { mockAssignments } from '@/data/studentMockData';
+import { UploadField } from '@/components/ui/upload-field';
+import { fetchApi, postApi, uploadApi } from '@/lib/apiService';
 import { Assignment } from '@/types/student';
 import { cn } from '@/lib/utils';
+import { safeArray, safeDate, safeNumber, safeString } from '@/lib/normalize';
+import { toast } from '@/hooks/use-toast';
+
+function normalizeAssignment(raw: any): Assignment {
+  return {
+    id: safeString(raw?.id),
+    courseId: safeString(raw?.courseId),
+    semester: raw?.semester != null ? safeNumber(raw?.semester) : undefined,
+    courseName: safeString(raw?.courseName, 'Course'),
+    courseCode: safeString(raw?.courseCode, '-'),
+    title: safeString(raw?.title, 'Untitled Assignment'),
+    description: safeString(raw?.description),
+    dueDate: safeDate(raw?.dueDate),
+    submittedAt: raw?.submittedAt ? safeDate(raw.submittedAt) : undefined,
+    status: (raw?.status ?? 'pending') as Assignment['status'],
+    maxMarks: safeNumber(raw?.maxMarks),
+    obtainedMarks: raw?.obtainedMarks != null ? safeNumber(raw.obtainedMarks) : undefined,
+    feedback: raw?.feedback ? safeString(raw.feedback) : undefined,
+    attachments: safeArray(raw?.attachments).map((a) => safeString(a)),
+    submissionUrl: raw?.submissionUrl ? safeString(raw.submissionUrl) : undefined,
+  };
+}
 
 export default function StudentAssignments() {
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  const [selectedSemester, setSelectedSemester] = useState<string>('');
+  const [semesterOptions, setSemesterOptions] = useState<number[]>([]);
+  const [submissionFiles, setSubmissionFiles] = useState<Record<string, File | null>>({});
+  const [submissionComments, setSubmissionComments] = useState<Record<string, string>>({});
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+
+  const loadAssignments = async (semester?: string) => {
+    const semesterQuery = semester ? `?semester=${semester}` : '';
+    const data = await fetchApi(`/students/assignments${semesterQuery}`);
+    setAssignments(Array.isArray(data) ? data.map(normalizeAssignment) : []);
+  };
+
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        const [profile, courses] = await Promise.all([
+          fetchApi('/students/current-semester'),
+          fetchApi('/students/courses')
+        ]);
+        const availableSemesters = Array.from(new Set((Array.isArray(courses) ? courses : []).map((course: any) => Number(course?.semester)).filter((value) => Number.isFinite(value)))).sort((a: any, b: any) => a - b);
+        setSemesterOptions(availableSemesters);
+        const apiCurrentSemester = Number((profile as any)?.currentSemester);
+        const defaultSemester = Number.isFinite(apiCurrentSemester) && availableSemesters.includes(apiCurrentSemester)
+          ? String(apiCurrentSemester)
+          : (availableSemesters.length > 0 ? String(availableSemesters[availableSemesters.length - 1]) : '');
+        setSelectedSemester(defaultSemester);
+        await loadAssignments(defaultSemester);
+      } catch (error) {
+        console.error('API request failed', error);
+      } finally {
+        _setApiLoading(false);
+      }
+    };
+
+    initialize();
+  }, []);
+
+  useEffect(() => {
+    if (_apiLoading) return;
+    loadAssignments(selectedSemester).catch((error) => { console.error('API request failed', error); });
+  }, [selectedSemester]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('all');
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
 
-  const filteredAssignments = mockAssignments.filter(a => {
-    const matchesSearch = a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          a.courseName.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredAssignments = assignments.filter(a => {
+    const title = String(a.title ?? '').toLowerCase();
+    const courseName = String(a.courseName ?? '').toLowerCase();
+    const matchesSearch = title.includes(searchQuery.toLowerCase()) || courseName.includes(searchQuery.toLowerCase());
     const matchesCourse = courseFilter === 'all' || a.courseCode === courseFilter;
     return matchesSearch && matchesCourse;
   });
@@ -51,17 +119,69 @@ export default function StudentAssignments() {
     }
   };
 
-  const getDaysRemaining = (dueDate: Date) => {
+  const getDaysRemaining = (dueDate: Date | string | undefined) => {
+    const date = safeDate(dueDate);
     const today = new Date();
-    const diff = dueDate.getTime() - today.getTime();
+    const diff = date.getTime() - today.getTime();
     const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
     return days;
   };
 
-  const uniqueCourses = [...new Set(mockAssignments.map(a => a.courseCode))];
+  const uniqueCourses: string[] = Array.from(new Set<string>(assignments.map(a => String(a.courseCode))));
+
+  const handleSubmitAssignment = async (assignment: Assignment) => {
+    const selectedFile = submissionFiles[assignment.id];
+    const fallbackUrl = assignment.submissionUrl || '';
+
+    try {
+      setSubmittingId(assignment.id);
+      let fileUrl = fallbackUrl;
+      if (selectedFile) {
+        const uploaded: any = await uploadApi(selectedFile, 'student-assignments');
+        fileUrl = safeString(uploaded?.url || uploaded?.storagePath);
+      }
+
+      if (!fileUrl) {
+        toast({
+          title: 'File required',
+          description: 'Please select a file before submitting the assignment.',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      await postApi(`/students/assignments/${assignment.id}/submit`, {
+        fileUrl,
+        comment: submissionComments[assignment.id] || ''
+      });
+
+      setAssignments((prev) => prev.map((item) => (
+        item.id === assignment.id
+          ? {
+              ...item,
+              status: 'submitted',
+              submittedAt: new Date(),
+              submissionUrl: fileUrl
+            }
+          : item
+      )));
+
+      toast({ title: 'Assignment submitted', description: `${assignment.title} submitted successfully.` });
+    } catch (error: any) {
+      toast({
+        title: 'Submission failed',
+        description: safeString(error?.message, 'Unable to submit assignment.'),
+        variant: 'destructive'
+      });
+    } finally {
+      setSubmittingId(null);
+    }
+  };
 
   const AssignmentCard = ({ assignment }: { assignment: Assignment }) => {
-    const daysRemaining = getDaysRemaining(assignment.dueDate);
+    const dueDate = safeDate(assignment.dueDate);
+    const submittedAt = assignment.submittedAt ? safeDate(assignment.submittedAt) : undefined;
+    const daysRemaining = getDaysRemaining(dueDate);
     const isPastDue = daysRemaining < 0;
     const isUrgent = daysRemaining <= 2 && daysRemaining >= 0;
 
@@ -87,7 +207,7 @@ export default function StudentAssignments() {
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Calendar className="h-4 w-4" />
-              Due: {assignment.dueDate.toLocaleDateString()}
+              Due: {dueDate.toLocaleDateString()}
             </div>
             {assignment.status === 'pending' && (
               <span className={cn(
@@ -122,7 +242,7 @@ export default function StudentAssignments() {
           {assignment.status === 'submitted' && (
             <div className="flex items-center gap-2 rounded-lg bg-info/10 p-3 text-sm text-info">
               <CheckCircle className="h-4 w-4" />
-              Submitted on {assignment.submittedAt?.toLocaleDateString()}
+              Submitted on {submittedAt ? submittedAt.toLocaleDateString() : '-'}
             </div>
           )}
 
@@ -132,6 +252,7 @@ export default function StudentAssignments() {
                 <Button 
                   variant="outline" 
                   className="flex-1"
+                  id={`assignment-dialog-trigger-${assignment.id}`}
                   onClick={() => setSelectedAssignment(assignment)}
                 >
                   <Eye className="mr-2 h-4 w-4" />
@@ -157,7 +278,7 @@ export default function StudentAssignments() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="rounded-lg bg-muted/50 p-3">
                       <p className="text-xs text-muted-foreground">Due Date</p>
-                      <p className="font-medium">{assignment.dueDate.toLocaleDateString()}</p>
+                      <p className="font-medium">{dueDate.toLocaleDateString()}</p>
                     </div>
                     <div className="rounded-lg bg-muted/50 p-3">
                       <p className="text-xs text-muted-foreground">Maximum Marks</p>
@@ -198,20 +319,32 @@ export default function StudentAssignments() {
                   {(assignment.status === 'pending' || assignment.status === 'overdue') && (
                     <div className="space-y-4 rounded-lg border p-4">
                       <h4 className="font-medium">Submit Assignment</h4>
-                      <div className="space-y-2">
-                        <Label>Upload File</Label>
-                        <Input type="file" />
-                        <p className="text-xs text-muted-foreground">
-                          Accepted formats: PDF, DOC, DOCX, ZIP (Max 10MB)
-                        </p>
-                      </div>
+                      <UploadField
+                        label="Upload File"
+                        file={submissionFiles[assignment.id] ?? null}
+                        accept=".pdf,.doc,.docx,.zip"
+                        helperText="Accepted formats: PDF, DOC, DOCX, ZIP (Max 10MB)"
+                        onFileSelect={(selectedFile) => {
+                          setSubmissionFiles((prev) => ({ ...prev, [assignment.id]: selectedFile }));
+                        }}
+                      />
                       <div className="space-y-2">
                         <Label>Comments (Optional)</Label>
-                        <Textarea placeholder="Add any comments for the faculty..." />
+                        <Textarea
+                          placeholder="Add any comments for the faculty..."
+                          value={submissionComments[assignment.id] || ''}
+                          onChange={(event) => {
+                            setSubmissionComments((prev) => ({ ...prev, [assignment.id]: event.target.value }));
+                          }}
+                        />
                       </div>
-                      <Button className="w-full">
+                      <Button
+                        className="w-full"
+                        onClick={() => handleSubmitAssignment(assignment)}
+                        disabled={submittingId === assignment.id}
+                      >
                         <Upload className="mr-2 h-4 w-4" />
-                        Submit Assignment
+                        {submittingId === assignment.id ? 'Submitting...' : 'Submit Assignment'}
                       </Button>
                     </div>
                   )}
@@ -220,7 +353,12 @@ export default function StudentAssignments() {
             </Dialog>
 
             {assignment.status === 'pending' && (
-              <Button className="flex-1">
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  document.getElementById(`assignment-dialog-trigger-${assignment.id}`)?.click();
+                }}
+              >
                 <Upload className="mr-2 h-4 w-4" />
                 Submit
               </Button>
@@ -284,6 +422,17 @@ export default function StudentAssignments() {
               <SelectItem value="all">All Courses</SelectItem>
               {uniqueCourses.map((code) => (
                 <SelectItem key={code} value={code}>{code}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={selectedSemester || 'all'} onValueChange={(value) => setSelectedSemester(value === 'all' ? '' : value)}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filter by semester" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Semesters</SelectItem>
+              {semesterOptions.map((semester) => (
+                <SelectItem key={semester} value={String(semester)}>Semester {semester}</SelectItem>
               ))}
             </SelectContent>
           </Select>

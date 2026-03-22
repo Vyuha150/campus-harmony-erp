@@ -1,6 +1,8 @@
 import { AlertCircle, Bell, Calendar, CheckCircle2, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { useEffect, useState } from 'react';
+import { fetchApi } from '@/lib/apiService';
 
 interface Announcement {
   id: string;
@@ -10,41 +12,6 @@ interface Announcement {
   date: string;
   category: string;
 }
-
-const mockAnnouncements: Announcement[] = [
-  {
-    id: '1',
-    title: 'Mid-Semester Examination Schedule Released',
-    excerpt: 'The examination schedule for Semester VI has been published. Students are advised to check their hall tickets.',
-    priority: 'high',
-    date: '2 hours ago',
-    category: 'Examinations',
-  },
-  {
-    id: '2',
-    title: 'Last Date for Fee Payment Extended',
-    excerpt: 'The deadline for semester fee payment has been extended to December 20th, 2024.',
-    priority: 'medium',
-    date: '1 day ago',
-    category: 'Finance',
-  },
-  {
-    id: '3',
-    title: 'Annual Tech Fest Registration Open',
-    excerpt: 'TechnoVision 2024 registrations are now open. Participate in various technical and cultural events.',
-    priority: 'low',
-    date: '2 days ago',
-    category: 'Events',
-  },
-  {
-    id: '4',
-    title: 'Library Hours Extended During Exams',
-    excerpt: 'Central Library will remain open till 10 PM during examination period.',
-    priority: 'low',
-    date: '3 days ago',
-    category: 'Library',
-  },
-];
 
 const priorityConfig = {
   high: {
@@ -68,9 +35,17 @@ const priorityConfig = {
 };
 
 export function AnnouncementsWidget() {
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+
+  useEffect(() => {
+    fetchApi('/dashboard/announcements')
+      .then((data) => setAnnouncements(data))
+      .catch((error) => { console.error('API request failed', error); });
+  }, []);
+
   return (
     <div className="space-y-3">
-      {mockAnnouncements.map((announcement) => {
+      {announcements.map((announcement) => {
         const config = priorityConfig[announcement.priority];
         const Icon = config.icon;
 

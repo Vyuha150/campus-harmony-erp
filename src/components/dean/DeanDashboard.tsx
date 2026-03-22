@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,43 +11,70 @@ import {
   AlertTriangle, CheckCircle, XCircle, ArrowRight, BarChart3,
   Award, Calendar, Briefcase, Target, Minus
 } from 'lucide-react';
-import { departmentSummaries as initialDepts, deanApprovals as initialApprovals, qualityMetrics } from '@/data/deanMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { DeanApproval } from '@/types/dean';
+import { CurriculumProposal } from '@/types/dean';
 
 export default function DeanDashboard() {
+  const [departmentSummaries, setDepartmentSummaries] = useState<any>([]);
+  const [deanApprovals, setDeanApprovals] = useState<any>([]);
+  const [qualityMetrics, setQualityMetrics] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    Promise.allSettled([
+      fetchApi('/dean/dashboard').then((d: any) => {
+        setDepartmentSummaries(Array.isArray(d?.departments) ? d.departments : []);
+      }),
+      fetchApi('/dean/curriculum-proposals').then((d: any) => setDeanApprovals(Array.isArray(d) ? d : [])),
+      fetchApi('/dean/accreditation').then((d: any) => setQualityMetrics(Array.isArray(d) ? d : [])),
+    ]).finally(() => _setApiLoading(false));
+  }, []);
+
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [approvals, setApprovals] = useState<DeanApproval[]>(initialApprovals);
+  const [approvals, setApprovals] = useState<CurriculumProposal[]>([]);
   const [rejectDialog, setRejectDialog] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  const totalStudents = initialDepts.reduce((s, d) => s + d.totalStudents, 0);
-  const totalFaculty = initialDepts.reduce((s, d) => s + d.totalFaculty, 0);
-  const totalVacancies = initialDepts.reduce((s, d) => s + d.vacancies, 0);
-  const avgPass = Math.round(initialDepts.reduce((s, d) => s + d.avgPassPercentage, 0) / initialDepts.length * 10) / 10;
-  const pendingApprovals = approvals.filter(a => a.status === 'pending');
+  useEffect(() => {
+    setApprovals(Array.isArray(deanApprovals) ? deanApprovals : []);
+  }, [deanApprovals]);
 
-  const handleApprove = (id: string) => {
-    const item = approvals.find(a => a.id === id);
-    setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'approved' } : a));
-    toast({ title: 'Approved', description: item?.title });
+  const totalStudents = departmentSummaries.reduce((s, d) => s + d.totalStudents, 0);
+  const totalFaculty = departmentSummaries.reduce((s, d) => s + d.totalFaculty, 0);
+  const totalCourses = departmentSummaries.reduce((s, d) => s + Number(d.totalCourses || 0), 0);
+  const pendingApprovals = approvals.filter((a) => a.status === 'pending_dean');
+
+  const handleApprove = async (id: string) => {
+    const item = approvals.find((a) => a.id === id);
+    try {
+      const updated = await putApi(`/dean/curriculum-proposals/${id}`, { status: 'approved' });
+      setApprovals((prev) => prev.map((a) => (a.id === id ? { ...a, ...updated } : a)));
+      toast({ title: 'Approved', description: item?.title });
+    } catch (error: any) {
+      toast({ title: 'Approval failed', description: error?.message || 'Unable to approve request', variant: 'destructive' });
+    }
   };
 
-  const handleReject = (id: string) => {
-    const item = approvals.find(a => a.id === id);
-    setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'rejected' } : a));
-    toast({ title: 'Rejected', description: `${item?.title} – ${rejectReason || 'No reason provided'}` });
-    setRejectDialog(null);
-    setRejectReason('');
+  const handleReject = async (id: string) => {
+    const item = approvals.find((a) => a.id === id);
+    try {
+      const updated = await putApi(`/dean/curriculum-proposals/${id}`, { status: 'rejected' });
+      setApprovals((prev) => prev.map((a) => (a.id === id ? { ...a, ...updated } : a)));
+      toast({ title: 'Rejected', description: `${item?.title} – ${rejectReason || 'No reason provided'}` });
+      setRejectDialog(null);
+      setRejectReason('');
+    } catch (error: any) {
+      toast({ title: 'Rejection failed', description: error?.message || 'Unable to reject request', variant: 'destructive' });
+    }
   };
 
   const trendIcon = (t: string) => t === 'up' ? <TrendingUp className="h-3 w-3 text-green-600" /> : t === 'down' ? <TrendingDown className="h-3 w-3 text-destructive" /> : <Minus className="h-3 w-3 text-muted-foreground" />;
 
   const approvalIcons: Record<string, React.ElementType> = {
-    purchase: Briefcase, leave: Calendar, curriculum: GraduationCap,
-    transfer: Users, results: BarChart3, budget: Target, recruitment: Users,
+    new_course: Briefcase, syllabus_update: Calendar, program_change: GraduationCap,
+    elective_addition: Target,
   };
 
   return (
@@ -60,10 +87,10 @@ export default function DeanDashboard() {
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {[
-            { label: 'Departments', value: initialDepts.length, icon: Building2, color: 'text-blue-600 bg-blue-100' },
+            { label: 'Departments', value: departmentSummaries.length, icon: Building2, color: 'text-blue-600 bg-blue-100' },
             { label: 'Total Students', value: totalStudents.toLocaleString(), icon: GraduationCap, color: 'text-green-600 bg-green-100' },
             { label: 'Total Faculty', value: totalFaculty, icon: Users, color: 'text-purple-600 bg-purple-100' },
-            { label: 'Vacancies', value: totalVacancies, icon: AlertTriangle, color: 'text-amber-600 bg-amber-100' },
+            { label: 'Total Courses', value: totalCourses, icon: AlertTriangle, color: 'text-amber-600 bg-amber-100' },
             { label: 'Pending Approvals', value: pendingApprovals.length, icon: Bell, color: 'text-destructive bg-destructive/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
@@ -92,21 +119,21 @@ export default function DeanDashboard() {
                 </Button>
               </CardHeader>
               <CardContent className="space-y-4">
-                {initialDepts.map(dept => (
+                {departmentSummaries.map(dept => (
                   <div key={dept.id} className="rounded-lg border border-border p-3">
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <p className="font-medium text-foreground text-sm">{dept.name}</p>
-                        <p className="text-[10px] text-muted-foreground">HOD: {dept.hod} • {dept.totalStudents} students • {dept.totalFaculty} faculty</p>
+                        <p className="text-[10px] text-muted-foreground">{dept.totalStudents} students • {dept.totalFaculty} faculty • {dept.totalCourses} courses</p>
                       </div>
-                      {dept.vacancies > 0 && <Badge variant="secondary" className="text-[10px]">{dept.vacancies} vacancies</Badge>}
+                      <Badge variant="secondary" className="text-[10px]">{dept.totalCourses} courses</Badge>
                     </div>
                     <div className="grid grid-cols-4 gap-3 text-center">
                       {[
-                        { label: 'Pass %', value: `${dept.avgPassPercentage}%`, ok: dept.avgPassPercentage >= 85 },
-                        { label: 'Attendance', value: `${dept.avgAttendance}%`, ok: dept.avgAttendance >= 75 },
-                        { label: 'Publications', value: dept.researchOutput, ok: true },
-                        { label: 'Placement', value: `${dept.placementRate}%`, ok: dept.placementRate >= 80 },
+                        { label: 'Students', value: dept.totalStudents, ok: true },
+                        { label: 'Faculty', value: dept.totalFaculty, ok: true },
+                        { label: 'Courses', value: dept.totalCourses, ok: true },
+                        { label: 'Status', value: 'Active', ok: true },
                       ].map(m => (
                         <div key={m.label}>
                           <p className={`text-sm font-bold ${m.ok ? 'text-foreground' : 'text-destructive'}`}>{m.value}</p>
@@ -138,12 +165,11 @@ export default function DeanDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground">{item.title}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-1">{item.details}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">{item.department} • {item.requestedBy} • {item.requestedAt}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{item.proposedBy} • {item.submittedAt}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        {item.amount && <span className="text-xs font-mono text-muted-foreground">₹{(item.amount / 100000).toFixed(1)}L</span>}
-                        <Badge variant={item.priority === 'high' || item.priority === 'critical' ? 'destructive' : 'secondary'} className="text-[10px] capitalize">{item.priority}</Badge>
+                        <Badge variant="secondary" className="text-[10px] capitalize">{item.type.replace('_', ' ')}</Badge>
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-100"
                           onClick={() => handleApprove(item.id)}>
                           <CheckCircle className="h-4 w-4" />
@@ -175,7 +201,7 @@ export default function DeanDashboard() {
                         <p className="text-sm font-medium text-foreground truncate">{qm.metric}</p>
                         {trendIcon(qm.trend)}
                       </div>
-                      <p className="text-[10px] text-muted-foreground">Target: {qm.target} • Prev: {qm.previousValue}</p>
+                      <p className="text-[10px] text-muted-foreground">Target: {qm.target} • Category: {qm.category}</p>
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-sm font-bold text-foreground">{qm.currentValue}</p>

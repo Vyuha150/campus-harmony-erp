@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,14 +15,21 @@ import {
   TrendingUp, TrendingDown, Lightbulb, Calculator, BarChart3,
   ArrowRight, Settings, Play, Info, Download, Save
 } from 'lucide-react';
-import { policyScenarios } from '@/data/vcMockData';
+import { deleteApi, fetchApi, postApi } from '@/lib/apiService';
 import { PolicyScenario } from '@/types/vc';
 
 const impactColors = { positive: 'text-emerald-600 bg-emerald-50', negative: 'text-red-600 bg-red-50', neutral: 'text-amber-600 bg-amber-50' };
 
 export default function VCPolicyPlanning() {
+  const [policyScenarios, setPolicyScenarios] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/vc/policyscenarios').then(d => setPolicyScenarios(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [scenarios, setScenarios] = useState(policyScenarios);
+  const [scenarios, setScenarios] = useState<any[]>([]);
   const [selectedScenario, setSelectedScenario] = useState<PolicyScenario | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -46,31 +53,44 @@ export default function VCPolicyPlanning() {
   const projectedSurplus = projectedRevenue - projectedExpenditure;
   const revenueChange = ((projectedRevenue - 15900) / 15900 * 100).toFixed(1);
 
+  useEffect(() => {
+    setScenarios((policyScenarios || []).map((scenario: any) => ({
+      ...scenario,
+      parameters: Array.isArray(scenario.parameters) ? scenario.parameters : [],
+    })));
+  }, [policyScenarios]);
+
   const handleRunSimulation = (scenario: PolicyScenario) => {
     setSelectedScenario(scenario);
   };
 
-  const handleCreateScenario = () => {
+  const handleCreateScenario = async () => {
     if (!newTitle) return;
-    const newScenario: PolicyScenario = {
-      id: `ps${scenarios.length + 1}`,
-      title: newTitle,
-      description: newDescription,
-      category: newCategory as any,
-      parameters: [{ label: 'Parameter 1', currentValue: 0, proposedValue: 0, unit: '' }],
-      projectedOutcome: 'Run simulation to generate projections.',
-      impact: 'neutral',
-    };
-    setScenarios(prev => [...prev, newScenario]);
-    setShowCreateDialog(false);
-    setNewTitle('');
-    setNewDescription('');
-    toast({ title: 'Scenario Created', description: `"${newTitle}" added to planning scenarios.` });
+    try {
+      const created = await postApi<PolicyScenario>('/vc/policyscenarios', {
+        title: newTitle,
+        description: newDescription,
+        category: newCategory,
+        parameters: [{ label: 'Parameter 1', currentValue: 0, proposedValue: 0, unit: '' }],
+      });
+      setScenarios(prev => [...prev, { ...created, parameters: Array.isArray(created.parameters) ? created.parameters : [] }]);
+      setShowCreateDialog(false);
+      setNewTitle('');
+      setNewDescription('');
+      toast({ title: 'Scenario Created', description: `"${newTitle}" added to planning scenarios.` });
+    } catch (error: any) {
+      toast({ title: 'Create failed', description: error.message || 'Could not create scenario.', variant: 'destructive' });
+    }
   };
 
-  const handleDeleteScenario = (id: string) => {
-    setScenarios(prev => prev.filter(s => s.id !== id));
-    toast({ title: 'Deleted', description: 'Scenario removed.' });
+  const handleDeleteScenario = async (id: string) => {
+    try {
+      await deleteApi(`/vc/policyscenarios/${id}`);
+      setScenarios(prev => prev.filter(s => s.id !== id));
+      toast({ title: 'Deleted', description: 'Scenario removed.' });
+    } catch (error: any) {
+      toast({ title: 'Delete failed', description: error.message || 'Could not remove scenario.', variant: 'destructive' });
+    }
   };
 
   return (

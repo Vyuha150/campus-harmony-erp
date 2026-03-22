@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,39 +11,98 @@ import {
   ClipboardList, CheckCircle, Clock, AlertTriangle, Send,
   BarChart3, Users, Calendar, FileText, Download
 } from 'lucide-react';
-import { examProgress as initialExams } from '@/data/registrarMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { ExamProgress } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
   scheduling: 'bg-blue-50 text-blue-700',
   ongoing: 'bg-amber-50 text-amber-700',
+  evaluation: 'bg-purple-50 text-purple-700',
   mark_entry: 'bg-purple-50 text-purple-700',
   moderation: 'bg-orange-50 text-orange-700',
   published: 'bg-emerald-50 text-emerald-700',
 };
 
+function normalizeStatus(status: string): ExamProgress['status'] {
+  if (status === 'evaluation') return 'mark_entry';
+  if (status === 'completed') return 'published';
+  if (status === 'scheduling' || status === 'ongoing' || status === 'mark_entry' || status === 'moderation' || status === 'published') {
+    return status;
+  }
+  return 'scheduling';
+}
+
+function getSafeCounts(exam: any) {
+  const totalStudents = Math.max(0, Number(exam.totalStudents) || 0);
+  const enteredRaw = Math.max(0, Number(exam.marksEntered) || 0);
+  const status = normalizeStatus(String(exam.status || 'scheduling'));
+  const marksEntered = status === 'published' || exam.resultsPublished ? totalStudents : Math.min(enteredRaw, totalStudents);
+  return { totalStudents, marksEntered, status };
+}
+
 export default function RegistrarExamOversight() {
+  const [examProgress, setExamProgress] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/registrar/exams').then(d => setExamProgress(d)).catch((error) => { console.error('API request failed', error); });
+    setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [exams, setExams] = useState(initialExams);
+  const [exams, setExams] = useState<any[]>([]);
   const [selectedExam, setSelectedExam] = useState<ExamProgress | null>(null);
   const [publishComment, setPublishComment] = useState('');
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
 
-  const handlePublish = (id: string) => {
-    setExams(prev => prev.map(e => e.id === id ? { ...e, status: 'published' as const, resultsPublished: true, marksEntered: e.totalStudents } : e));
-    toast({ title: 'Results Published', description: 'Results have been published and students notified.' });
-    setSelectedExam(null);
-    setPublishComment('');
+  useEffect(() => {
+    setExams(examProgress || []);
+  }, [examProgress]);
+
+  const handlePublish = async (id: string) => {
+    try {
+      setIsPublishing(true);
+      const exam = exams.find(e => e.id === id);
+      const { totalStudents } = getSafeCounts(exam);
+      await putApi(`/registrar/exams/${id}`, {
+        status: 'published',
+        resultsPublished: true,
+        marksEntered: totalStudents
+      });
+      setExams(prev => prev.map(e => {
+        if (e.id !== id) return e;
+        return { ...e, status: 'published' as const, resultsPublished: true, marksEntered: totalStudents };
+      }));
+      toast({ title: 'Results Published', description: 'Results have been published and students notified.' });
+      setSelectedExam(null);
+      setPublishComment('');
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
-  const handleAdvanceStatus = (id: string) => {
+  const handleAdvanceStatus = async (id: string) => {
     const steps = ['scheduling', 'ongoing', 'mark_entry', 'moderation', 'published'];
-    setExams(prev => prev.map(e => {
-      if (e.id !== id) return e;
-      const idx = steps.indexOf(e.status);
-      if (idx < steps.length - 1) return { ...e, status: steps[idx + 1] as ExamProgress['status'] };
-      return e;
-    }));
-    toast({ title: 'Status Advanced', description: 'Examination moved to next stage.' });
+    try {
+      setIsAdvancing(true);
+      const exam = exams.find(e => e.id === id);
+      const idx = steps.indexOf(normalizeStatus(String(exam?.status || 'scheduling')));
+      if (idx >= 0 && idx < steps.length - 1) {
+        const newStatus = steps[idx + 1];
+        await putApi(`/registrar/exams/${id}`, { status: newStatus });
+        setExams(prev => prev.map(e => {
+          if (e.id !== id) return e;
+          return { ...e, status: newStatus as ExamProgress['status'] };
+        }));
+        toast({ title: 'Status Advanced', description: 'Examination moved to next stage.' });
+      }
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsAdvancing(false);
+    }
   };
 
   return (
@@ -63,9 +122,9 @@ export default function RegistrarExamOversight() {
         <div className="grid gap-4 sm:grid-cols-4">
           {[
             { label: 'Total Exams', value: exams.length, icon: ClipboardList },
-            { label: 'Results Published', value: exams.filter(e => e.resultsPublished).length, icon: CheckCircle },
-            { label: 'In Progress', value: exams.filter(e => ['mark_entry', 'moderation'].includes(e.status)).length, icon: Clock },
-            { label: 'Upcoming', value: exams.filter(e => e.status === 'scheduling').length, icon: Calendar },
+            { label: 'Results Published', value: exams.filter(e => getSafeCounts(e).status === 'published' || e.resultsPublished).length, icon: CheckCircle },
+            { label: 'In Progress', value: exams.filter(e => ['ongoing', 'mark_entry', 'moderation'].includes(getSafeCounts(e).status)).length, icon: Clock },
+            { label: 'Upcoming', value: exams.filter(e => getSafeCounts(e).status === 'scheduling').length, icon: Calendar },
           ].map(s => (
             <Card key={s.label}>
               <CardContent className="flex items-center gap-3 p-4">
@@ -84,38 +143,44 @@ export default function RegistrarExamOversight() {
           {exams.map(exam => (
             <Card key={exam.id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-4">
+                {(() => {
+                  const { totalStudents, marksEntered, status } = getSafeCounts(exam);
+                  const completion = totalStudents > 0 ? Math.round((marksEntered / totalStudents) * 100) : 0;
+                  const startDate = new Date(exam.startDate);
+                  const endDate = new Date(exam.endDate);
+                  return (
                 <div className="flex items-start gap-4">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${statusColors[exam.status]}`}>
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${statusColors[status] || statusColors.scheduling}`}>
                     <ClipboardList className="h-5 w-5" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <p className="font-medium text-sm">{exam.examName} — {exam.semester}</p>
-                      <Badge className={`text-[10px] ${statusColors[exam.status]}`}>{exam.status.replace('_', ' ')}</Badge>
+                      <Badge className={`text-[10px] ${statusColors[status] || statusColors.scheduling}`}>{status.replace('_', ' ')}</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">{exam.program} • Coordinator: {exam.coordinator}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                      <Calendar className="h-3 w-3" /> {exam.startDate.toLocaleDateString('en-IN')} — {exam.endDate.toLocaleDateString('en-IN')}
+                      <Calendar className="h-3 w-3" /> {startDate.toLocaleDateString('en-IN')} — {endDate.toLocaleDateString('en-IN')}
                       <span>•</span>
-                      <Users className="h-3 w-3" /> {exam.totalStudents} students
+                      <Users className="h-3 w-3" /> {totalStudents} students
                     </div>
                     <div className="flex items-center gap-2 mt-2">
-                      <Progress value={(exam.marksEntered / exam.totalStudents) * 100} className="h-2 flex-1" />
-                      <span className="text-xs font-medium">{Math.round((exam.marksEntered / exam.totalStudents) * 100)}% marks entered</span>
+                      <Progress value={completion} className="h-2 flex-1" />
+                      <span className="text-xs font-medium">{completion}% marks entered</span>
                     </div>
-                    {exam.marksEntered < exam.totalStudents && exam.status === 'mark_entry' && (
+                    {marksEntered < totalStudents && status === 'mark_entry' && (
                       <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3" /> {exam.totalStudents - exam.marksEntered} marks pending entry
+                        <AlertTriangle className="h-3 w-3" /> {totalStudents - marksEntered} marks pending entry
                       </p>
                     )}
                   </div>
                   <div className="flex flex-col gap-1">
-                    {exam.status !== 'published' && (
+                    {status !== 'published' && (
                       <Button size="sm" className="h-7 text-xs gap-1" onClick={() => {
-                        if (exam.status === 'moderation') { setSelectedExam(exam); }
+                        if (status === 'moderation') { setSelectedExam(exam); }
                         else handleAdvanceStatus(exam.id);
-                      }}>
-                        {exam.status === 'moderation' ? <><Send className="h-3 w-3" /> Publish</> : <><CheckCircle className="h-3 w-3" /> Advance</>}
+                      }} disabled={isAdvancing || isPublishing}>
+                        {isAdvancing || isPublishing ? 'Updating...' : status === 'moderation' ? <><Send className="h-3 w-3" /> Publish</> : <><CheckCircle className="h-3 w-3" /> Advance</>}
                       </Button>
                     )}
                     <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => toast({ title: 'Hall Tickets', description: `Hall tickets generated for ${exam.totalStudents} students.` })}>
@@ -123,6 +188,8 @@ export default function RegistrarExamOversight() {
                     </Button>
                   </div>
                 </div>
+                  );
+                })()}
               </CardContent>
             </Card>
           ))}
@@ -150,9 +217,9 @@ export default function RegistrarExamOversight() {
               <Textarea placeholder="Add remarks (optional)..." value={publishComment} onChange={e => setPublishComment(e.target.value)} rows={2} />
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => { setSelectedExam(null); setPublishComment(''); }}>Cancel</Button>
-              <Button onClick={() => selectedExam && handlePublish(selectedExam.id)} className="gap-1">
-                <Send className="h-4 w-4" /> Confirm & Publish
+              <Button variant="outline" onClick={() => { setSelectedExam(null); setPublishComment(''); }} disabled={isPublishing}>Cancel</Button>
+              <Button onClick={() => selectedExam && handlePublish(selectedExam.id)} disabled={isPublishing} className="gap-1">
+                <Send className="h-4 w-4" /> {isPublishing ? 'Publishing...' : 'Confirm & Publish'}
               </Button>
             </DialogFooter>
           </DialogContent>

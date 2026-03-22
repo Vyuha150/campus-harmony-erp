@@ -2,8 +2,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { UserRole } from "@/types/erp";
 
 // Pages
 import Index from "./pages/Index";
@@ -22,6 +23,8 @@ import StudentFees from "./components/student/StudentFees";
 import StudentLibrary from "./components/student/StudentLibrary";
 import StudentPlacements from "./components/student/StudentPlacements";
 import StudentGrievances from "./components/student/StudentGrievances";
+import StudentCommunication from "./components/student/StudentCommunication";
+import StudentMentoring from "./components/student/StudentMentoring";
 
 // Faculty Portal Pages
 import FacultyDashboard from "./components/faculty/FacultyDashboard";
@@ -46,6 +49,9 @@ import HODAccreditation from "./components/hod/HODAccreditation";
 import HODInventory from "./components/hod/HODInventory";
 import HODGrievances from "./components/hod/HODGrievances";
 import HODCommunication from "./components/hod/HODCommunication";
+import HODCourseManagement from "./components/hod/HODCourseManagement";
+import HODFacilityManagement from "./components/hod/HODFacilityManagement";
+import HODApprovals from "./components/hod/HODApprovals";
 
 // Dean Portal Pages
 import DeanDashboard from "./components/dean/DeanDashboard";
@@ -56,6 +62,10 @@ import DeanResults from "./components/dean/DeanResults";
 import DeanFinance from "./components/dean/DeanFinance";
 import DeanAccreditation from "./components/dean/DeanAccreditation";
 import DeanCoordination from "./components/dean/DeanCoordination";
+import DeanCourseManagement from "./components/dean/DeanCourseManagement";
+import DeanFacilityManagement from "./components/dean/DeanFacilityManagement";
+import DeanSemesterManagement from "./components/dean/DeanSemesterManagement";
+import DeanMeetings from "./components/dean/DeanMeetings";
 
 // Registrar Portal Pages
 import RegistrarDashboard from "./components/registrar/RegistrarDashboard";
@@ -67,6 +77,10 @@ import RegistrarDocuments from "./components/registrar/RegistrarDocuments";
 import RegistrarHR from "./components/registrar/RegistrarHR";
 import RegistrarAccreditation from "./components/registrar/RegistrarAccreditation";
 import RegistrarQueries from "./components/registrar/RegistrarQueries";
+import COEResultSubmission from "./components/coe/COEResultSubmission";
+import COEExamOversight from "./components/coe/COEExamOversight";
+import COEDashboard from "./components/coe/COEDashboard";
+import COESubmissionTracker from "./components/coe/COESubmissionTracker";
 
 // VC / Pro-VC Portal Pages
 import VCDashboard from "./components/vc/VCDashboard";
@@ -129,7 +143,6 @@ import IQACReports from "./components/iqac/IQACReports";
 import SuperAdminDashboard from "./components/admin/SuperAdminDashboard";
 import AdminUserManagement from "./components/admin/AdminUserManagement";
 import AdminSystemConfig from "./components/admin/AdminSystemConfig";
-import AdminModuleManagement from "./components/admin/AdminModuleManagement";
 import AdminAuditLogs from "./components/admin/AdminAuditLogs";
 import AdminNotifications from "./components/admin/AdminNotifications";
 
@@ -138,15 +151,54 @@ import GrievanceDashboard from "./components/grievance/GrievanceDashboard";
 
 // Security Portal Pages
 import SecurityDashboard from "./components/security/SecurityDashboard";
+import LibrarianLibrary from "./components/library/LibrarianLibrary";
+import LibraryCatalog from "./components/library/LibraryCatalog";
+import LibraryCirculation from "./components/library/LibraryCirculation";
+import LibraryAcquisitions from "./components/library/LibraryAcquisitions";
 
 const queryClient = new QueryClient();
 
+const PATH_ROLE_RULES: Array<{ prefix: string; roles: UserRole[] }> = [
+  { prefix: '/student', roles: ['student'] },
+  { prefix: '/faculty', roles: ['faculty'] },
+  { prefix: '/hod', roles: ['hod'] },
+  { prefix: '/dean', roles: ['dean'] },
+  { prefix: '/vc', roles: ['vice_chancellor', 'pro_vc'] },
+  { prefix: '/registrar', roles: ['registrar'] },
+  { prefix: '/coe', roles: ['coe'] },
+  { prefix: '/finance', roles: ['finance_officer'] },
+  { prefix: '/placement', roles: ['placement_officer'] },
+  { prefix: '/sports', roles: ['sports_director'] },
+  { prefix: '/alumni', roles: ['alumni_officer'] },
+  { prefix: '/iqac', roles: ['iqac_coordinator'] },
+  { prefix: '/admin', roles: ['super_admin'] },
+  { prefix: '/grievance', roles: ['grievance_officer'] },
+  { prefix: '/security', roles: ['security_officer'] },
+  { prefix: '/library', roles: ['librarian'] },
+];
+
+function roleCanAccessPath(role: UserRole, pathname: string): boolean {
+  if (role === 'super_admin') return true;
+  const matchedRule = PATH_ROLE_RULES.find((rule) => pathname.startsWith(rule.prefix));
+  if (!matchedRule) return true;
+  return matchedRule.roles.includes(role);
+}
+
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return null;
+  }
   
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user && !roleCanAccessPath(user.role, location.pathname)) {
+    return <Navigate to="/dashboard" replace />;
   }
   
   return <>{children}</>;
@@ -164,7 +216,7 @@ function AppRoutes() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            {user?.role === 'super_admin' ? <SuperAdminDashboard /> : user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : (user?.role === 'vice_chancellor' || user?.role === 'pro_vc') ? <VCDashboard /> : user?.role === 'registrar' ? <RegistrarDashboard /> : user?.role === 'finance_officer' ? <FinanceDashboard /> : user?.role === 'placement_officer' ? <PlacementDashboard /> : user?.role === 'sports_director' ? <SportsDashboard /> : user?.role === 'alumni_officer' ? <AlumniDashboard /> : user?.role === 'iqac_coordinator' ? <IQACDashboard /> : user?.role === 'grievance_officer' ? <GrievanceDashboard /> : user?.role === 'security_officer' ? <SecurityDashboard /> : <Dashboard />}
+            {user?.role === 'super_admin' ? <SuperAdminDashboard /> : user?.role === 'student' ? <StudentDashboard /> : user?.role === 'faculty' ? <FacultyDashboard /> : user?.role === 'hod' ? <HODDashboard /> : user?.role === 'dean' ? <DeanDashboard /> : (user?.role === 'vice_chancellor' || user?.role === 'pro_vc') ? <VCDashboard /> : user?.role === 'registrar' ? <RegistrarDashboard /> : user?.role === 'coe' ? <COEDashboard /> : user?.role === 'finance_officer' ? <FinanceDashboard /> : user?.role === 'placement_officer' ? <PlacementDashboard /> : user?.role === 'sports_director' ? <SportsDashboard /> : user?.role === 'alumni_officer' ? <AlumniDashboard /> : user?.role === 'iqac_coordinator' ? <IQACDashboard /> : user?.role === 'grievance_officer' ? <GrievanceDashboard /> : user?.role === 'security_officer' ? <SecurityDashboard /> : user?.role === 'librarian' ? <LibrarianLibrary /> : <Dashboard />}
           </ProtectedRoute>
         } 
       />
@@ -178,6 +230,8 @@ function AppRoutes() {
       <Route path="/student/library" element={<ProtectedRoute><StudentLibrary /></ProtectedRoute>} />
       <Route path="/student/placements" element={<ProtectedRoute><StudentPlacements /></ProtectedRoute>} />
       <Route path="/student/grievances" element={<ProtectedRoute><StudentGrievances /></ProtectedRoute>} />
+      <Route path="/student/communication" element={<ProtectedRoute><StudentCommunication /></ProtectedRoute>} />
+      <Route path="/student/mentoring" element={<ProtectedRoute><StudentMentoring /></ProtectedRoute>} />
       {/* Faculty Portal Routes */}
       <Route path="/faculty/profile" element={<ProtectedRoute><FacultyProfile /></ProtectedRoute>} />
       <Route path="/faculty/courses" element={<ProtectedRoute><FacultyCourses /></ProtectedRoute>} />
@@ -190,8 +244,11 @@ function AppRoutes() {
       <Route path="/faculty/grievances" element={<ProtectedRoute><FacultyGrievancesFeedback /></ProtectedRoute>} />
       <Route path="/faculty/communication" element={<ProtectedRoute><FacultyCommunication /></ProtectedRoute>} />
       {/* HOD Portal Routes */}
+      <Route path="/hod/approvals" element={<ProtectedRoute><HODApprovals /></ProtectedRoute>} />
       <Route path="/hod/faculty" element={<ProtectedRoute><HODFacultyManagement /></ProtectedRoute>} />
       <Route path="/hod/workload" element={<ProtectedRoute><HODWorkload /></ProtectedRoute>} />
+      <Route path="/hod/courses" element={<ProtectedRoute><HODCourseManagement /></ProtectedRoute>} />
+      <Route path="/hod/facilities" element={<ProtectedRoute><HODFacilityManagement /></ProtectedRoute>} />
       <Route path="/hod/students" element={<ProtectedRoute><HODStudentAcademics /></ProtectedRoute>} />
       <Route path="/hod/results" element={<ProtectedRoute><HODResultsAnalysis /></ProtectedRoute>} />
       <Route path="/hod/accreditation" element={<ProtectedRoute><HODAccreditation /></ProtectedRoute>} />
@@ -200,6 +257,10 @@ function AppRoutes() {
       <Route path="/hod/communication" element={<ProtectedRoute><HODCommunication /></ProtectedRoute>} />
       {/* Dean Portal Routes */}
       <Route path="/dean/academics" element={<ProtectedRoute><DeanAcademics /></ProtectedRoute>} />
+      <Route path="/dean/meetings" element={<ProtectedRoute><DeanMeetings /></ProtectedRoute>} />
+      <Route path="/dean/courses" element={<ProtectedRoute><DeanCourseManagement /></ProtectedRoute>} />
+      <Route path="/dean/facilities" element={<ProtectedRoute><DeanFacilityManagement /></ProtectedRoute>} />
+      <Route path="/dean/semesters" element={<ProtectedRoute><DeanSemesterManagement /></ProtectedRoute>} />
       <Route path="/dean/faculty-hr" element={<ProtectedRoute><DeanFacultyHR /></ProtectedRoute>} />
       <Route path="/dean/student-affairs" element={<ProtectedRoute><DeanStudentAffairs /></ProtectedRoute>} />
       <Route path="/dean/results" element={<ProtectedRoute><DeanResults /></ProtectedRoute>} />
@@ -224,6 +285,11 @@ function AppRoutes() {
       <Route path="/registrar/hr" element={<ProtectedRoute><RegistrarHR /></ProtectedRoute>} />
       <Route path="/registrar/accreditation" element={<ProtectedRoute><RegistrarAccreditation /></ProtectedRoute>} />
       <Route path="/registrar/queries" element={<ProtectedRoute><RegistrarQueries /></ProtectedRoute>} />
+      {/* COE Portal Routes */}
+      <Route path="/coe/dashboard" element={<ProtectedRoute><COEDashboard /></ProtectedRoute>} />
+      <Route path="/coe/exam-oversight" element={<ProtectedRoute><COEExamOversight /></ProtectedRoute>} />
+      <Route path="/coe/results" element={<ProtectedRoute><COEResultSubmission /></ProtectedRoute>} />
+      <Route path="/coe/submissions" element={<ProtectedRoute><COESubmissionTracker /></ProtectedRoute>} />
       {/* Finance Portal Routes */}
       <Route path="/finance/fees" element={<ProtectedRoute><FeeManagement /></ProtectedRoute>} />
       <Route path="/finance/accounting" element={<ProtectedRoute><Accounting /></ProtectedRoute>} />
@@ -263,16 +329,30 @@ function AppRoutes() {
       {/* Super Admin Portal Routes */}
       <Route path="/admin/users" element={<ProtectedRoute><AdminUserManagement /></ProtectedRoute>} />
       <Route path="/admin/config" element={<ProtectedRoute><AdminSystemConfig /></ProtectedRoute>} />
-      <Route path="/admin/modules" element={<ProtectedRoute><AdminModuleManagement /></ProtectedRoute>} />
       <Route path="/admin/audit" element={<ProtectedRoute><AdminAuditLogs /></ProtectedRoute>} />
       <Route path="/admin/notifications" element={<ProtectedRoute><AdminNotifications /></ProtectedRoute>} />
+      {/* Grievance Portal Routes */}
+      <Route path="/grievance/cases" element={<ProtectedRoute><GrievanceDashboard initialTab="cases" /></ProtectedRoute>} />
+      <Route path="/grievance/compliance" element={<ProtectedRoute><GrievanceDashboard initialTab="compliance" /></ProtectedRoute>} />
+      <Route path="/grievance/reports" element={<ProtectedRoute><GrievanceDashboard initialTab="reports" /></ProtectedRoute>} />
+      {/* Security Portal Routes */}
+      <Route path="/security/incidents" element={<ProtectedRoute><SecurityDashboard initialTab="incidents" /></ProtectedRoute>} />
+      <Route path="/security/visitors" element={<ProtectedRoute><SecurityDashboard initialTab="visitors" /></ProtectedRoute>} />
+      <Route path="/security/ids" element={<ProtectedRoute><SecurityDashboard initialTab="ids" /></ProtectedRoute>} />
+      <Route path="/security/vehicles" element={<ProtectedRoute><SecurityDashboard initialTab="vehicles" /></ProtectedRoute>} />
+      <Route path="/security/audit" element={<ProtectedRoute><SecurityDashboard initialTab="audit" /></ProtectedRoute>} />
+      <Route path="/security/vigilance" element={<ProtectedRoute><SecurityDashboard initialTab="vigilance" /></ProtectedRoute>} />
+      {/* Librarian Portal Routes */}
+      <Route path="/library" element={<ProtectedRoute><LibrarianLibrary initialTab="catalog" /></ProtectedRoute>} />
+      <Route path="/library/catalog" element={<ProtectedRoute><LibraryCatalog /></ProtectedRoute>} />
+      <Route path="/library/circulation" element={<ProtectedRoute><LibraryCirculation /></ProtectedRoute>} />
+      <Route path="/library/acquisitions" element={<ProtectedRoute><LibraryAcquisitions /></ProtectedRoute>} />
       {/* Placeholder routes for other modules */}
       <Route path="/academics/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/examinations/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/research/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/placements/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/library/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/grievances/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/reports/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/settings/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

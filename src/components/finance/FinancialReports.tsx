@@ -3,22 +3,67 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, FileBarChart, FileText, BarChart3, PieChart, TrendingUp, Shield, Printer } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { useToast } from '@/hooks/use-toast';
 
 export default function FinancialReports() {
-  const reports = [
-    { title: 'Balance Sheet', icon: FileText, desc: 'Assets, liabilities, and fund position', category: 'statements' },
-    { title: 'Income & Expenditure', icon: BarChart3, desc: 'Revenue, expenses, and surplus/deficit', category: 'statements' },
-    { title: 'Cash Flow Statement', icon: TrendingUp, desc: 'Operating, investing, financing flows', category: 'statements' },
-    { title: 'Budget vs Actual', icon: FileBarChart, desc: 'Department-wise budget utilization analysis', category: 'analysis' },
-    { title: 'Fee Collection Report', icon: PieChart, desc: 'Program-wise fee collection and defaults', category: 'operational' },
-    { title: 'Vendor Payment Summary', icon: FileText, desc: 'Payments made to vendors with aging', category: 'operational' },
-    { title: 'Payroll Summary', icon: FileText, desc: 'Monthly payroll cost by department', category: 'operational' },
-    { title: 'NAAC Financial Data', icon: Shield, desc: 'Infrastructure & library expenditure for NAAC', category: 'compliance' },
-    { title: 'NIRF Financial Metrics', icon: Shield, desc: 'Per-student expenditure, capex data for NIRF', category: 'compliance' },
-    { title: 'Audit Trail Report', icon: Shield, desc: 'All transaction approvals and modifications', category: 'audit' },
-    { title: 'Tax Compliance Report', icon: FileText, desc: 'TDS, GST, and professional tax summaries', category: 'compliance' },
-    { title: 'Expenditure by Category', icon: PieChart, desc: 'Detailed breakdown by expense heads', category: 'analysis' },
-  ];
+  const [reports, setReports] = useState<any>([]);
+  const [fiscalYear, setFiscalYear] = useState('2025-26');
+  const { toast } = useToast();
+  const [reportSummary, setReportSummary] = useState<any>({
+    reportsGenerated: 0,
+    auditObservations: 0,
+    pendingAuditResolutions: 0,
+    lastAuditPeriod: '-',
+    complianceScore: '0%',
+  });
+
+  useEffect(() => {
+    fetchApi('/finance/reports/catalog').then(d => setReports(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/finance/reports/summary').then(d => setReportSummary(d)).catch((error) => { console.error('API request failed', error); });
+  }, []);
+
+  const getFiscalYearRange = (fy: string) => {
+    const [startYearRaw, endYearRaw] = fy.split('-');
+    const startYear = Number(startYearRaw);
+    const endYearSuffix = Number(endYearRaw);
+    if (Number.isNaN(startYear) || Number.isNaN(endYearSuffix)) {
+      return {
+        startDate: `${new Date().getFullYear()}-04-01`,
+        endDate: `${new Date().getFullYear() + 1}-03-31`,
+      };
+    }
+
+    const endYear = endYearSuffix < 100
+      ? Math.floor(startYear / 100) * 100 + endYearSuffix
+      : endYearSuffix;
+
+    return {
+      startDate: `${startYear}-04-01`,
+      endDate: `${endYear}-03-31`,
+    };
+  };
+
+  const generateReport = async (type: string) => {
+    try {
+      const { startDate, endDate } = getFiscalYearRange(fiscalYear);
+      await postApi('/finance/reports/generate', { type, startDate, endDate });
+      toast({ title: 'Report request submitted', description: `${type} generated for ${fiscalYear}.` });
+    } catch (error) {
+      console.error('Failed to generate report', error);
+      toast({ title: 'Generation failed', description: 'Could not generate report.', variant: 'destructive' });
+    }
+  };
+
+  const iconMap: Record<string, any> = {
+    FileBarChart,
+    FileText,
+    BarChart3,
+    PieChart,
+    TrendingUp,
+    Shield,
+  };
 
   return (
     <DashboardLayout>
@@ -29,16 +74,16 @@ export default function FinancialReports() {
             <p className="text-muted-foreground">Generate, view, and export financial reports for analysis and compliance</p>
           </div>
           <div className="flex gap-2">
-            <Select defaultValue="2025-26"><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="2025-26">FY 2025-26</SelectItem><SelectItem value="2024-25">FY 2024-25</SelectItem></SelectContent></Select>
+            <Select value={fiscalYear} onValueChange={setFiscalYear}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="2025-26">FY 2025-26</SelectItem><SelectItem value="2024-25">FY 2024-25</SelectItem></SelectContent></Select>
           </div>
         </div>
 
         {/* Quick Stats */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Reports Generated</p><p className="text-2xl font-bold text-foreground">42</p><p className="text-xs text-muted-foreground">This quarter</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Audit Observations</p><p className="text-2xl font-bold text-amber-600">5</p><p className="text-xs text-muted-foreground">2 pending resolution</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Last Audit</p><p className="text-2xl font-bold text-foreground">Jan 2026</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Compliance Score</p><p className="text-2xl font-bold text-green-600">94%</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Reports Generated</p><p className="text-2xl font-bold text-foreground">{reportSummary.reportsGenerated}</p><p className="text-xs text-muted-foreground">This quarter</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Audit Observations</p><p className="text-2xl font-bold text-amber-600">{reportSummary.auditObservations}</p><p className="text-xs text-muted-foreground">{reportSummary.pendingAuditResolutions} pending resolution</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Last Audit</p><p className="text-2xl font-bold text-foreground">{reportSummary.lastAuditPeriod}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Compliance Score</p><p className="text-2xl font-bold text-green-600">{reportSummary.complianceScore}</p></CardContent></Card>
         </div>
 
         {/* Report Categories */}
@@ -51,14 +96,17 @@ export default function FinancialReports() {
                   <CardContent className="p-5">
                     <div className="flex items-start gap-4">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                        <r.icon className="h-5 w-5 text-primary" />
+                        {(() => {
+                          const Icon = iconMap[r.icon] || FileText;
+                          return <Icon className="h-5 w-5 text-primary" />;
+                        })()}
                       </div>
                       <div className="flex-1">
                         <h3 className="font-medium text-foreground">{r.title}</h3>
                         <p className="mt-1 text-sm text-muted-foreground">{r.desc}</p>
                         <div className="mt-3 flex gap-2">
-                          <Button size="sm" variant="outline"><Printer className="mr-1 h-3 w-3" />Preview</Button>
-                          <Button size="sm"><Download className="mr-1 h-3 w-3" />Export</Button>
+                          <Button size="sm" variant="outline" onClick={() => generateReport(r.title)}><Printer className="mr-1 h-3 w-3" />Preview</Button>
+                          <Button size="sm" onClick={() => generateReport(r.title)}><Download className="mr-1 h-3 w-3" />Export</Button>
                         </div>
                       </div>
                     </div>

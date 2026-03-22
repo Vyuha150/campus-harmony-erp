@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Briefcase, Building2, Calendar, MapPin, CheckCircle, 
   Clock, Award, TrendingUp, FileText, Upload, ExternalLink,
@@ -13,17 +13,121 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
-import { mockPlacementDrives, mockStudentProfile } from '@/data/studentMockData';
+import { UploadField } from '@/components/ui/upload-field';
+import { safeString, safeNumber, safeDate, safeArray } from '@/lib/normalize';
+import { fetchApi, postApi, uploadApi } from '@/lib/apiService';
 import { PlacementDrive } from '@/types/student';
 import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 export default function StudentPlacements() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const profile = mockStudentProfile;
+  const navigate = useNavigate();
+  const [placementDrives, setPlacementDrives] = useState<any>([]);
+  const [studentProfile, setStudentProfile] = useState<any>({});
+  const [_apiLoading, _setApiLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [onlyEligible, setOnlyEligible] = useState(false);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
 
-  const upcomingDrives = mockPlacementDrives.filter(d => d.status === 'upcoming');
-  const appliedDrives = mockPlacementDrives.filter(d => d.applicationStatus === 'applied' || d.applicationStatus === 'shortlisted');
-  const selectedOffers = mockPlacementDrives.filter(d => d.applicationStatus === 'selected');
+  const normalizeDrive = (drive: any) => ({
+    ...drive,
+    companyName: safeString(drive.companyName ?? drive.company?.name, 'Company'),
+    role: safeString(drive.role),
+    driveDate: safeDate(drive.driveDate),
+    eligibility: {
+      minCgpa: safeNumber(drive?.eligibility?.minCgpa),
+      backlogs: safeNumber(drive?.eligibility?.backlogs),
+      allowedBranches: safeArray(drive?.eligibility?.allowedBranches).map((b: any) => safeString(b)),
+    },
+    rounds: safeArray(drive?.rounds).map((round: any) => ({
+      name: safeString(round?.name),
+      status: safeString(round?.status),
+    })),
+    applicationStatus: safeString(drive.applicationStatus, 'not_applied'),
+    package: safeString(drive.package),
+    location: safeString(drive.location),
+    jobDescription: safeString(drive.jobDescription),
+  });
+
+  useEffect(() => {
+    Promise.all([
+      fetchApi('/students/placements'),
+      fetchApi('/students/profile'),
+    ])
+      .then(([drives, profile]) => {
+        setPlacementDrives(safeArray(drives).map(normalizeDrive));
+        setStudentProfile({
+          ...profile,
+          cgpa: safeNumber(profile?.cgpa),
+        });
+      })
+      .catch((e: Error) => setApiError(e.message))
+      .finally(() => _setApiLoading(false));
+  }, []);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const profile = studentProfile;
+
+  const handleApply = async (driveId: string, companyName: string) => {
+    try {
+      await postApi(`/students/placements/${driveId}/apply`, {});
+      setPlacementDrives((prev: any[]) => prev.map((drive) => (
+        drive.id === driveId ? { ...drive, applicationStatus: 'applied' } : drive
+      )));
+      toast({ title: 'Application submitted', description: `Applied to ${companyName}.` });
+    } catch (error: any) {
+      toast({ title: 'Application failed', description: safeString(error?.message, 'Unable to apply.'), variant: 'destructive' });
+    }
+  };
+
+  const handleOfferLetterDownload = (drive: PlacementDrive) => {
+    const content = [
+      'Campus Harmony ERP - Offer Letter',
+      '',
+      `Company: ${drive.companyName}`,
+      `Role: ${drive.role}`,
+      `Package: ${drive.package}`,
+      `Location: ${drive.location}`,
+      `Generated On: ${new Date().toLocaleString()}`,
+    ].join('\n');
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${drive.companyName.replace(/\s+/g, '_')}_offer_letter.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const displayedDrives = placementDrives.filter((drive: PlacementDrive) => {
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch = !query
+      || drive.companyName.toLowerCase().includes(query)
+      || drive.role.toLowerCase().includes(query)
+      || drive.location.toLowerCase().includes(query);
+
+    if (!matchesSearch) return false;
+    if (!onlyEligible) return true;
+    return isEligible(drive);
+  });
+
+  if (apiError) {
+    return (
+      <DashboardLayout>
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+          {apiError}
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const upcomingDrives = placementDrives.filter(d => d.status === 'upcoming');
+  const appliedDrives = placementDrives.filter(d => d.applicationStatus === 'applied' || d.applicationStatus === 'shortlisted');
+  const selectedOffers = placementDrives.filter(d => d.applicationStatus === 'selected');
 
   const getApplicationStatusBadge = (status?: string) => {
     switch (status) {
@@ -223,7 +327,12 @@ export default function StudentPlacements() {
 
                 <DialogFooter>
                   {drive.applicationStatus === 'not_applied' && eligible && (
-                    <Button className="w-full">Apply Now</Button>
+                    <Button
+                      className="w-full"
+                      onClick={() => handleApply(drive.id, drive.companyName)}
+                    >
+                      Apply Now
+                    </Button>
                   )}
                   {!eligible && (
                     <Button disabled className="w-full">
@@ -235,10 +344,18 @@ export default function StudentPlacements() {
             </Dialog>
 
             {drive.applicationStatus === 'not_applied' && eligible && (
-              <Button className="flex-1">Apply</Button>
+              <Button
+                className="flex-1"
+                onClick={() => handleApply(drive.id, drive.companyName)}
+              >
+                Apply
+              </Button>
             )}
             {drive.applicationStatus === 'selected' && (
-              <Button className="flex-1 bg-success hover:bg-success/90">
+              <Button
+                className="flex-1 bg-success hover:bg-success/90"
+                onClick={() => handleOfferLetterDownload(drive)}
+              >
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Offer Letter
               </Button>
@@ -259,11 +376,30 @@ export default function StudentPlacements() {
             <p className="page-description">View placement drives and manage your applications</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline">
-              <Upload className="mr-2 h-4 w-4" />
-              Upload Resume
-            </Button>
-            <Button>
+            <UploadField
+              mode="button"
+              buttonText="Upload Resume"
+              accept=".pdf,.doc,.docx"
+              file={resumeFile}
+              onFileSelect={async (selected) => {
+                if (!selected) {
+                  setResumeFile(null);
+                  return;
+                }
+                try {
+                  await uploadApi(selected, 'placement-resumes');
+                  setResumeFile(selected);
+                  toast({ title: 'Resume uploaded', description: `${selected.name} uploaded successfully.` });
+                } catch (error: any) {
+                  toast({
+                    title: 'Upload failed',
+                    description: safeString(error?.message, 'Unable to upload resume.'),
+                    variant: 'destructive'
+                  });
+                }
+              }}
+            />
+            <Button onClick={() => navigate('/student/profile')}>
               <FileText className="mr-2 h-4 w-4" />
               My Profile
             </Button>
@@ -327,7 +463,10 @@ export default function StudentPlacements() {
               </div>
               <div className="mt-4 md:mt-0">
                 <p className="text-3xl font-bold text-success">{selectedOffers[0].package}</p>
-                <Button className="mt-2 bg-success hover:bg-success/90">
+                <Button
+                  className="mt-2 bg-success hover:bg-success/90"
+                  onClick={() => handleOfferLetterDownload(selectedOffers[0])}
+                >
                   View Offer Letter
                 </Button>
               </div>
@@ -346,16 +485,16 @@ export default function StudentPlacements() {
               className="pl-9"
             />
           </div>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => setOnlyEligible((prev) => !prev)}>
             <Filter className="mr-2 h-4 w-4" />
-            Filter
+            {onlyEligible ? 'Eligible Only' : 'All Drives'}
           </Button>
         </div>
 
         {/* Tabs */}
         <Tabs defaultValue="all" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="all">All Drives ({mockPlacementDrives.length})</TabsTrigger>
+            <TabsTrigger value="all">All Drives ({placementDrives.length})</TabsTrigger>
             <TabsTrigger value="upcoming">Upcoming ({upcomingDrives.length})</TabsTrigger>
             <TabsTrigger value="applied">My Applications ({appliedDrives.length})</TabsTrigger>
             <TabsTrigger value="offers">Offers ({selectedOffers.length})</TabsTrigger>
@@ -363,7 +502,7 @@ export default function StudentPlacements() {
 
           <TabsContent value="all">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {mockPlacementDrives.map((drive) => (
+              {displayedDrives.map((drive) => (
                 <DriveCard key={drive.id} drive={drive} />
               ))}
             </div>

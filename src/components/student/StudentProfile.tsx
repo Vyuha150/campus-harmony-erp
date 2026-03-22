@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   User, Mail, Phone, MapPin, Calendar, GraduationCap, 
   BookOpen, Award, Users, Download, Edit, Save, X,
@@ -13,12 +13,212 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { mockStudentProfile, mockCertificates } from '@/data/studentMockData';
+import { fetchApi } from '@/lib/apiService';
 import { cn } from '@/lib/utils';
 
+type StudentProfileState = {
+  name: string;
+  email: string;
+  personalEmail: string;
+  phone: string;
+  alternatePhone: string;
+  rollNumber: string;
+  program: string;
+  branch: string;
+  semester: number;
+  section: string;
+  cgpa: number;
+  batch: string;
+  totalCredits: number;
+  earnedCredits: number;
+  dateOfBirth: Date | null;
+  gender: string;
+  bloodGroup: string;
+  nationality: string;
+  category: string;
+  aadharNumber: string;
+  specialization: string;
+  admissionYear: number;
+  admissionType: string;
+  mentorName: string;
+  mentorEmail: string;
+  scholarshipHolder: boolean;
+  scholarshipName: string;
+  fatherName: string;
+  fatherOccupation: string;
+  fatherPhone: string;
+  fatherEmail: string;
+  motherName: string;
+  motherOccupation: string;
+  motherPhone: string;
+  permanentAddress: {
+    line1: string;
+    line2: string;
+    city: string;
+    state: string;
+    pincode: string;
+    country: string;
+  };
+  currentAddress: {
+    line1: string;
+    line2: string;
+    city: string;
+    state: string;
+    pincode: string;
+    country: string;
+  };
+  hostelResident: boolean;
+};
+
+type CertificateState = {
+  id: string;
+  type: string;
+  status: string;
+  requestedAt: Date | null;
+  copies: number;
+};
+
+const DEFAULT_PROFILE: StudentProfileState = {
+  name: 'Student',
+  email: 'Not provided',
+  personalEmail: '',
+  phone: 'Not provided',
+  alternatePhone: '',
+  rollNumber: 'Not assigned',
+  program: 'Program',
+  branch: 'Branch',
+  semester: 1,
+  section: '-',
+  cgpa: 0,
+  batch: '-',
+  totalCredits: 0,
+  earnedCredits: 0,
+  dateOfBirth: null,
+  gender: 'not_specified',
+  bloodGroup: 'Not provided',
+  nationality: 'Not provided',
+  category: 'general',
+  aadharNumber: '',
+  specialization: '',
+  admissionYear: new Date().getFullYear(),
+  admissionType: 'regular',
+  mentorName: 'Not assigned',
+  mentorEmail: 'Not provided',
+  scholarshipHolder: false,
+  scholarshipName: '',
+  fatherName: 'Not provided',
+  fatherOccupation: 'Not provided',
+  fatherPhone: 'Not provided',
+  fatherEmail: '',
+  motherName: 'Not provided',
+  motherOccupation: 'Not provided',
+  motherPhone: '',
+  permanentAddress: {
+    line1: 'Not provided',
+    line2: '',
+    city: 'Not provided',
+    state: 'Not provided',
+    pincode: 'Not provided',
+    country: 'Not provided',
+  },
+  currentAddress: {
+    line1: 'Not provided',
+    line2: '',
+    city: 'Not provided',
+    state: 'Not provided',
+    pincode: 'Not provided',
+    country: 'Not provided',
+  },
+  hostelResident: false,
+};
+
+function toDate(value: unknown): Date | null {
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizeProfile(raw: any): StudentProfileState {
+  const permanentAddress = raw?.permanentAddress ?? {};
+  const currentAddress = raw?.currentAddress ?? {};
+
+  return {
+    ...DEFAULT_PROFILE,
+    ...raw,
+    name: raw?.name ?? DEFAULT_PROFILE.name,
+    email: raw?.email ?? DEFAULT_PROFILE.email,
+    personalEmail: raw?.personalEmail ?? DEFAULT_PROFILE.personalEmail,
+    phone: raw?.phone ?? DEFAULT_PROFILE.phone,
+    alternatePhone: raw?.alternatePhone ?? DEFAULT_PROFILE.alternatePhone,
+    rollNumber: raw?.rollNumber ?? DEFAULT_PROFILE.rollNumber,
+    program: raw?.program ?? DEFAULT_PROFILE.program,
+    branch: raw?.branch ?? DEFAULT_PROFILE.branch,
+    semester: Number(raw?.semester ?? DEFAULT_PROFILE.semester),
+    section: raw?.section ?? DEFAULT_PROFILE.section,
+    cgpa: Number(raw?.cgpa ?? DEFAULT_PROFILE.cgpa),
+    batch: raw?.batch ?? DEFAULT_PROFILE.batch,
+    totalCredits: Number(raw?.totalCredits ?? DEFAULT_PROFILE.totalCredits),
+    earnedCredits: Number(raw?.earnedCredits ?? DEFAULT_PROFILE.earnedCredits),
+    dateOfBirth: toDate(raw?.dateOfBirth),
+    gender: raw?.gender ?? DEFAULT_PROFILE.gender,
+    bloodGroup: raw?.bloodGroup ?? DEFAULT_PROFILE.bloodGroup,
+    nationality: raw?.nationality ?? DEFAULT_PROFILE.nationality,
+    category: raw?.category ?? DEFAULT_PROFILE.category,
+    aadharNumber: raw?.aadharNumber ?? DEFAULT_PROFILE.aadharNumber,
+    specialization: raw?.specialization ?? DEFAULT_PROFILE.specialization,
+    admissionYear: Number(raw?.admissionYear ?? DEFAULT_PROFILE.admissionYear),
+    admissionType: raw?.admissionType ?? DEFAULT_PROFILE.admissionType,
+    mentorName: raw?.mentorName ?? DEFAULT_PROFILE.mentorName,
+    mentorEmail: raw?.mentorEmail ?? DEFAULT_PROFILE.mentorEmail,
+    scholarshipHolder: Boolean(raw?.scholarshipHolder),
+    scholarshipName: raw?.scholarshipName ?? DEFAULT_PROFILE.scholarshipName,
+    fatherName: raw?.fatherName ?? DEFAULT_PROFILE.fatherName,
+    fatherOccupation: raw?.fatherOccupation ?? DEFAULT_PROFILE.fatherOccupation,
+    fatherPhone: raw?.fatherPhone ?? DEFAULT_PROFILE.fatherPhone,
+    fatherEmail: raw?.fatherEmail ?? DEFAULT_PROFILE.fatherEmail,
+    motherName: raw?.motherName ?? DEFAULT_PROFILE.motherName,
+    motherOccupation: raw?.motherOccupation ?? DEFAULT_PROFILE.motherOccupation,
+    motherPhone: raw?.motherPhone ?? DEFAULT_PROFILE.motherPhone,
+    permanentAddress: {
+      ...DEFAULT_PROFILE.permanentAddress,
+      ...permanentAddress,
+    },
+    currentAddress: {
+      ...DEFAULT_PROFILE.currentAddress,
+      ...currentAddress,
+    },
+    hostelResident: Boolean(raw?.hostelResident),
+  };
+}
+
+function normalizeCertificates(raw: any): CertificateState[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((cert) => ({
+    id: String(cert?.id ?? ''),
+    type: String(cert?.type ?? 'certificate'),
+    status: String(cert?.status ?? 'processing'),
+    requestedAt: toDate(cert?.requestedAt),
+    copies: Number(cert?.copies ?? 1),
+  }));
+}
+
 export default function StudentProfile() {
+  const [studentProfile, setStudentProfile] = useState<StudentProfileState>(DEFAULT_PROFILE);
+  const [certificates, setCertificates] = useState<CertificateState[]>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    Promise.allSettled([
+      fetchApi('/students/profile').then((d) => setStudentProfile(normalizeProfile(d))),
+      fetchApi('/students/certificates').then((d) => setCertificates(normalizeCertificates(d))),
+    ])
+      .catch((error) => {
+        console.error('API request failed', error);
+      })
+      .finally(() => _setApiLoading(false));
+  }, []);
+
   const [isEditing, setIsEditing] = useState(false);
-  const profile = mockStudentProfile;
+  const profile = studentProfile;
 
   const InfoRow = ({ label, value, icon: Icon }: { label: string; value: string | React.ReactNode; icon?: React.ComponentType<{ className?: string }> }) => (
     <div className="flex items-start gap-3 py-3">
@@ -66,7 +266,13 @@ export default function StudentProfile() {
             <div className="flex flex-col items-center gap-6 md:flex-row md:items-start">
               <Avatar className="h-28 w-28 border-4 border-primary">
                 <AvatarFallback className="bg-primary/10 text-primary text-3xl font-bold">
-                  {profile.name.split(' ').map(n => n[0]).join('')}
+                  {profile.name
+                    .split(' ')
+                    .filter(Boolean)
+                    .map((n) => n[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 text-center md:text-left">
@@ -155,7 +361,7 @@ export default function StudentProfile() {
                       <InfoRow icon={Mail} label="Personal Email" value={profile.personalEmail || 'Not provided'} />
                       <InfoRow icon={Phone} label="Phone Number" value={profile.phone} />
                       <InfoRow icon={Phone} label="Alternate Phone" value={profile.alternatePhone || 'Not provided'} />
-                      <InfoRow icon={Calendar} label="Date of Birth" value={profile.dateOfBirth.toLocaleDateString()} />
+                      <InfoRow icon={Calendar} label="Date of Birth" value={profile.dateOfBirth ? profile.dateOfBirth.toLocaleDateString() : 'Not provided'} />
                       <InfoRow label="Gender" value={profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1)} />
                       <InfoRow label="Blood Group" value={profile.bloodGroup} />
                       <InfoRow label="Nationality" value={profile.nationality} />
@@ -299,7 +505,7 @@ export default function StudentProfile() {
                   </Button>
                 </div>
                 <div className="space-y-3">
-                  {mockCertificates.map((cert) => (
+                  {certificates.map((cert) => (
                     <div key={cert.id} className="flex items-center justify-between rounded-lg border p-4">
                       <div className="flex items-center gap-4">
                         <div className={cn(
@@ -314,7 +520,7 @@ export default function StudentProfile() {
                         <div>
                           <p className="font-medium capitalize">{cert.type.replace('_', ' ')} Certificate</p>
                           <p className="text-sm text-muted-foreground">
-                            Requested: {cert.requestedAt.toLocaleDateString()} • {cert.copies} copies
+                            Requested: {cert.requestedAt ? cert.requestedAt.toLocaleDateString() : 'Not available'} • {cert.copies} copies
                           </p>
                         </div>
                       </div>

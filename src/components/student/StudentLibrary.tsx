@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Library, BookOpen, Search, Clock, AlertCircle, 
   RefreshCw, Calendar, Filter, BookMarked, History,
@@ -12,16 +12,52 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { mockLibraryBooks } from '@/data/studentMockData';
+import { fetchApi, postApi } from '@/lib/apiService';
 import { cn } from '@/lib/utils';
+import { safeArray, safeDate, safeNumber, safeString } from '@/lib/normalize';
+import { toast } from '@/hooks/use-toast';
 
 export default function StudentLibrary() {
+  const [libraryBooks, setLibraryBooks] = useState<any[]>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('borrowed');
+  const [renewingBookId, setRenewingBookId] = useState<string | null>(null);
+
+  const normalizeBook = (raw: any) => ({
+    id: safeString(raw?.id),
+    isbn: safeString(raw?.isbn),
+    title: safeString(raw?.title),
+    author: safeString(raw?.author),
+    category: safeString(raw?.category),
+    issuedDate: safeDate(raw?.issuedDate),
+    dueDate: safeDate(raw?.dueDate),
+    returnedDate: raw?.returnedDate ? safeDate(raw.returnedDate) : undefined,
+    fine: safeNumber(raw?.fine),
+    renewalCount: safeNumber(raw?.renewalCount),
+    maxRenewals: safeNumber(raw?.maxRenewals),
+    status: safeString(raw?.status),
+  });
+
+  useEffect(() => {
+    fetchApi('/students/library')
+      .then((d) => setLibraryBooks(safeArray(d).map(normalizeBook)))
+      .catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState('');
 
-  const issuedBooks = mockLibraryBooks.filter(b => b.status === 'issued');
-  const overdueBooks = mockLibraryBooks.filter(b => b.status === 'overdue');
-  const returnedBooks = mockLibraryBooks.filter(b => b.status === 'returned');
-  const totalFines = mockLibraryBooks.reduce((sum, b) => sum + (b.fine || 0), 0);
+  const issuedBooks = libraryBooks.filter(b => b.status === 'issued');
+  const overdueBooks = libraryBooks.filter(b => b.status === 'overdue');
+  const returnedBooks = libraryBooks.filter(b => b.status === 'returned');
+  const totalFines = libraryBooks.reduce((sum, b) => sum + (b.fine || 0), 0);
+  const catalogResults = libraryBooks.filter((book) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return false;
+    return [book.title, book.author, book.isbn, book.category].some((value) =>
+      safeString(value).toLowerCase().includes(query)
+    );
+  });
 
   const getDaysRemaining = (dueDate: Date) => {
     const today = new Date();
@@ -54,6 +90,39 @@ export default function StudentLibrary() {
     }
   };
 
+  const handleCardDownload = () => {
+    const cardText = [
+      'Campus Harmony ERP - Library Card',
+      '',
+      `Issued Books: ${issuedBooks.length}`,
+      `Outstanding Fine: INR ${totalFines}`,
+      `Generated On: ${new Date().toLocaleString()}`
+    ].join('\n');
+
+    const blob = new Blob([cardText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'library_card.txt';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRenew = async (book: any) => {
+    try {
+      setRenewingBookId(book.id);
+      const updated = await postApi(`/students/library/${book.id}/renew`, {});
+      setLibraryBooks((prev) => prev.map((item) => item.id === book.id ? normalizeBook(updated) : item));
+      toast({ title: 'Book renewed', description: `${book.title} renewed successfully.` });
+    } catch (error: any) {
+      toast({ title: 'Renewal failed', description: safeString(error?.message, 'Unable to renew this book.'), variant: 'destructive' });
+    } finally {
+      setRenewingBookId(null);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="animate-fade-in space-y-6">
@@ -64,11 +133,11 @@ export default function StudentLibrary() {
             <p className="page-description">Manage your library books and search catalog</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline">
+            <Button variant="outline" onClick={handleCardDownload}>
               <QrCode className="mr-2 h-4 w-4" />
               My Library Card
             </Button>
-            <Button>
+            <Button onClick={() => setActiveTab('search')}>
               <Search className="mr-2 h-4 w-4" />
               Search Catalog
             </Button>
@@ -120,7 +189,7 @@ export default function StudentLibrary() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="borrowed" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList>
             <TabsTrigger value="borrowed" className="relative">
               Currently Borrowed
@@ -175,9 +244,16 @@ export default function StudentLibrary() {
                           </div>
                           <div className="flex gap-2">
                             {book.renewalCount < book.maxRenewals && (
-                              <Button size="sm" variant="outline">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleRenew(book)}
+                                disabled={renewingBookId === book.id}
+                              >
                                 <RefreshCw className="mr-2 h-4 w-4" />
-                                Renew ({book.maxRenewals - book.renewalCount} left)
+                                {renewingBookId === book.id
+                                  ? 'Renewing...'
+                                  : `Renew (${book.maxRenewals - book.renewalCount} left)`}
                               </Button>
                             )}
                           </div>
@@ -193,7 +269,7 @@ export default function StudentLibrary() {
                   <BookOpen className="h-12 w-12 text-muted-foreground" />
                   <p className="mt-4 text-lg font-medium">No Books Borrowed</p>
                   <p className="text-sm text-muted-foreground">Visit the library to borrow books</p>
-                  <Button className="mt-4">
+                  <Button className="mt-4" onClick={() => setActiveTab('search')}>
                     <Search className="mr-2 h-4 w-4" />
                     Search Catalog
                   </Button>
@@ -262,23 +338,27 @@ export default function StudentLibrary() {
                       className="pl-9"
                     />
                   </div>
-                  <Button>Search</Button>
+                  <Button onClick={() => setActiveTab('search')}>Search</Button>
                 </div>
-                <div className="mt-8 flex flex-col items-center justify-center py-12 text-center">
-                  <Library className="h-16 w-16 text-muted-foreground" />
-                  <p className="mt-4 text-lg font-medium">Search Our Collection</p>
-                  <p className="max-w-md text-sm text-muted-foreground">
-                    Access over 50,000 books, 10,000+ e-journals, and digital resources.
-                    Use the search bar above to find what you need.
-                  </p>
-                  <div className="mt-6 flex gap-2">
-                    <Badge variant="outline">Books</Badge>
-                    <Badge variant="outline">E-Journals</Badge>
-                    <Badge variant="outline">Thesis</Badge>
-                    <Badge variant="outline">E-Books</Badge>
-                    <Badge variant="outline">Magazines</Badge>
+                {catalogResults.length > 0 ? (
+                  <div className="mt-6 space-y-3">
+                    {catalogResults.map((book) => (
+                      <div key={book.id} className="rounded-lg border p-3">
+                        <p className="font-medium">{book.title}</p>
+                        <p className="text-sm text-muted-foreground">{book.author} • {book.category}</p>
+                        <p className="text-xs text-muted-foreground">ISBN: {book.isbn}</p>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-8 flex flex-col items-center justify-center py-12 text-center">
+                    <Library className="h-16 w-16 text-muted-foreground" />
+                    <p className="mt-4 text-lg font-medium">Search Our Collection</p>
+                    <p className="max-w-md text-sm text-muted-foreground">
+                      Enter a title, author, ISBN, or category to find matching resources.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

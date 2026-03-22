@@ -1,10 +1,11 @@
 import { Bell, Search, HelpCircle, Settings, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { ROLE_INFO, UserRole } from '@/types/erp';
+import { ROLE_INFO } from '@/types/erp';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { useApiData } from '@/hooks/useApiData';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,29 +20,56 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-const mockNotifications = [
-  { id: 1, title: 'New Leave Request', message: 'Dr. Sharma has requested casual leave', time: '5m ago', unread: true },
-  { id: 2, title: 'Exam Results Published', message: 'B.Tech Sem 5 results are now available', time: '1h ago', unread: true },
-  { id: 3, title: 'Fee Reminder', message: 'Last date for fee payment is Dec 15', time: '2h ago', unread: false },
-  { id: 4, title: 'Meeting Scheduled', message: 'Academic Council meeting on Monday', time: '1d ago', unread: false },
-];
+const notificationEndpointByRole: Record<string, string | null> = {
+  super_admin: '/admin/notifications',
+  vice_chancellor: '/vc/messages',
+  pro_vc: '/vc/messages',
+  hod: '/hod/messages',
+  faculty: '/faculty/messages',
+  alumni_officer: '/alumni/communications',
+  placement_officer: '/placements/messages',
+  iqac_coordinator: '/iqac/meetings',
+  grievance_officer: '/grievances/cases',
+  security_officer: '/security/incidents',
+  student: null,
+  registrar: null,
+  dean: null,
+  finance_officer: null,
+  sports_director: null,
+  librarian: null,
+};
+
+function formatRelativeTime(value?: string | Date): string {
+  if (!value) return 'Just now';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Just now';
+  const diffMin = Math.round((Date.now() - date.getTime()) / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 1440) return `${Math.floor(diffMin / 60)}h ago`;
+  return `${Math.floor(diffMin / 1440)}d ago`;
+}
 
 export function Header() {
-  const { user, switchRole } = useAuth();
+  const { user } = useAuth();
 
   if (!user) return null;
 
   const roleInfo = ROLE_INFO[user.role];
-  const unreadCount = mockNotifications.filter(n => n.unread).length;
+  const notificationsEndpoint = notificationEndpointByRole[user.role] || null;
+  const { data: notificationData } = useApiData<any[]>(notificationsEndpoint || '/health', []);
+  const notifications = (notificationsEndpoint ? notificationData : []).slice(0, 8).map((item: any) => ({
+    id: item.id,
+    title: item.title || item.subject || item.type || 'Update',
+    message: item.message || item.description || item.content || 'No additional details',
+    time: formatRelativeTime(item.createdAt || item.sentAt || item.date || item.submittedAt),
+    unread: item.read === false || item.status === 'pending',
+  }));
+  const unreadCount = notifications.filter((n: any) => n.unread).length;
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   };
-
-  const availableRoles: UserRole[] = [
-    'super_admin', 'vice_chancellor', 'registrar', 'dean', 'hod', 
-    'faculty', 'student', 'finance_officer', 'placement_officer'
-  ];
 
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-card px-6">
@@ -83,7 +111,7 @@ export function Header() {
               </Button>
             </div>
             <div className="max-h-80 overflow-y-auto">
-              {mockNotifications.map((notification) => (
+              {notifications.map((notification: any) => (
                 <div
                   key={notification.id}
                   className={`border-b px-4 py-3 transition-colors hover:bg-muted/50 ${
@@ -102,6 +130,9 @@ export function Header() {
                   </div>
                 </div>
               ))}
+              {notifications.length === 0 && (
+                <div className="px-4 py-6 text-center text-sm text-muted-foreground">No notifications</div>
+              )}
             </div>
             <div className="border-t p-2">
               <Button variant="ghost" className="w-full text-sm">
@@ -111,30 +142,7 @@ export function Header() {
           </PopoverContent>
         </Popover>
 
-        {/* Role Switcher (Demo) */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2">
-              <Badge variant="secondary" className="font-normal">
-                {roleInfo.label}
-              </Badge>
-              <ChevronDown className="h-3 w-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Switch Role (Demo)</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {availableRoles.map((role) => (
-              <DropdownMenuItem
-                key={role}
-                onClick={() => switchRole(role)}
-                className={user.role === role ? 'bg-muted' : ''}
-              >
-                {ROLE_INFO[role].label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Badge variant="secondary" className="font-normal">{roleInfo.label}</Badge>
 
         {/* User Menu */}
         <DropdownMenu>

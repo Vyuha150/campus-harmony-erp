@@ -10,7 +10,9 @@ import {
   BarChart3, Bell, ClipboardList
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart as RPieChart, Pie, Cell, Legend } from 'recharts';
-import { financialSnapshot, financeAlerts, financeTasks, budgetAllocations } from '@/data/financeMockData';
+import { useState, useEffect } from 'react';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
+import { useToast } from '@/hooks/use-toast';
 
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', 'hsl(var(--accent))', 'hsl(var(--muted))', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444'];
 
@@ -21,18 +23,76 @@ const formatCurrency = (amount: number) => {
 };
 
 export default function FinanceDashboard() {
-  const snapshot = financialSnapshot;
-  const budgetUtilization = ((snapshot.budgetSpent / snapshot.budgetAllocated) * 100).toFixed(1);
-  const revenuePercentage = ((snapshot.revenueCollected / (snapshot.revenueCollected + snapshot.outstandingDues)) * 100).toFixed(1);
+  const [financialSnapshot, setFinancialSnapshot] = useState<any>({
+    budgetSpent: 0,
+    budgetAllocated: 0,
+    revenueCollected: 0,
+    outstandingDues: 0,
+    salaryPercentage: 0,
+    lastUpdated: new Date(),
+    cashFlow: [],
+  });
+  const [financeAlerts, setFinanceAlerts] = useState<any>([]);
+  const [financeTasks, setFinanceTasks] = useState<any>([]);
+  const [budgetAllocations, setBudgetAllocations] = useState<any>([]);
+  const { toast } = useToast();
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/finance/snapshot').then(d => setFinancialSnapshot(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/finance/alerts').then(d => setFinanceAlerts(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/finance/tasks').then(d => setFinanceTasks(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/finance/budgets').then(d => setBudgetAllocations(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
 
-  const pieData = [
-    { name: 'Salary & Wages', value: 62.4 },
-    { name: 'Infrastructure', value: 12.5 },
-    { name: 'Academic', value: 8.3 },
-    { name: 'Administration', value: 6.2 },
-    { name: 'Research', value: 5.1 },
-    { name: 'Others', value: 5.5 },
-  ];
+  const toDate = (value: any) => {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
+
+  const handleAcknowledgeAlert = async (id: string) => {
+    try {
+      await putApi(`/finance/alerts/${id}/ack`, {});
+      setFinanceAlerts((prev: any[]) => prev.map((alert: any) => alert.id === id ? { ...alert, acknowledged: true } : alert));
+    } catch (error) {
+      console.error('Failed to acknowledge alert', error);
+    }
+  };
+
+  const handleTaskDecision = async (id: string, status: 'approved' | 'rejected') => {
+    try {
+      await putApi(`/finance/tasks/${id}`, { status });
+      setFinanceTasks((prev: any[]) => prev.map((task: any) => task.id === id ? { ...task, status } : task));
+    } catch (error) {
+      console.error('Failed to update task', error);
+    }
+  };
+
+  const generateDashboardReport = async (type: string) => {
+    try {
+      await postApi('/finance/reports/generate', { type });
+      toast({ title: 'Report generated', description: `${type} report generated successfully.` });
+    } catch (error: any) {
+      toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });
+    }
+  };
+
+  const snapshot = financialSnapshot;
+  const snapshotLastUpdated = toDate(snapshot.lastUpdated);
+  const budgetUtilization = snapshot.budgetAllocated > 0
+    ? ((snapshot.budgetSpent / snapshot.budgetAllocated) * 100).toFixed(1)
+    : '0.0';
+  const revenueBase = snapshot.revenueCollected + snapshot.outstandingDues;
+  const revenuePercentage = revenueBase > 0
+    ? ((snapshot.revenueCollected / revenueBase) * 100).toFixed(1)
+    : '0.0';
+
+  const totalSpentAcrossDepartments = budgetAllocations.reduce((sum: number, item: any) => sum + (item.spentAmount || 0), 0);
+
+  const pieData = budgetAllocations.map((item: any) => ({
+    name: item.department,
+    value: totalSpentAcrossDepartments > 0 ? Number((((item.spentAmount || 0) / totalSpentAcrossDepartments) * 100).toFixed(1)) : 0,
+  }));
 
   return (
     <DashboardLayout>
@@ -40,11 +100,11 @@ export default function FinanceDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Finance Dashboard</h1>
-            <p className="text-muted-foreground">Financial Year 2025-26 • Updated {snapshot.lastUpdated.toLocaleDateString('en-IN')}</p>
+            <p className="text-muted-foreground">Financial Year 2025-26 • Updated {snapshotLastUpdated.toLocaleDateString('en-IN')}</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm"><FileText className="mr-2 h-4 w-4" />Export Report</Button>
-            <Button size="sm"><BarChart3 className="mr-2 h-4 w-4" />Generate Statement</Button>
+            <Button variant="outline" size="sm" onClick={() => generateDashboardReport('dashboard_export')}><FileText className="mr-2 h-4 w-4" />Export Report</Button>
+            <Button size="sm" onClick={() => generateDashboardReport('financial_statement')}><BarChart3 className="mr-2 h-4 w-4" />Generate Statement</Button>
           </div>
         </div>
 
@@ -92,7 +152,7 @@ export default function FinanceDashboard() {
                   <p className="text-2xl font-bold text-destructive">{formatCurrency(snapshot.outstandingDues)}</p>
                   <div className="mt-1 flex items-center gap-1">
                     <ArrowDownRight className="h-3 w-3 text-destructive" />
-                    <span className="text-xs text-destructive">156 students defaulting</span>
+                    <span className="text-xs text-destructive">{snapshot.defaulterCount || 0} students defaulting</span>
                   </div>
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
@@ -186,7 +246,7 @@ export default function FinanceDashboard() {
                     <Badge variant={alert.severity === 'critical' ? 'destructive' : alert.severity === 'high' ? 'default' : 'secondary'}>
                       {alert.severity}
                     </Badge>
-                    {!alert.acknowledged && <Button size="sm" variant="outline">Acknowledge</Button>}
+                    {!alert.acknowledged && <Button size="sm" variant="outline" onClick={() => handleAcknowledgeAlert(alert.id)}>Acknowledge</Button>}
                   </div>
                 </CardContent>
               </Card>
@@ -213,8 +273,8 @@ export default function FinanceDashboard() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" className="text-destructive">Reject</Button>
-                      <Button size="sm">Approve</Button>
+                      <Button size="sm" variant="outline" className="text-destructive" onClick={() => handleTaskDecision(task.id, 'rejected')}>Reject</Button>
+                      <Button size="sm" onClick={() => handleTaskDecision(task.id, 'approved')}>Approve</Button>
                     </div>
                   </div>
                 </CardContent>

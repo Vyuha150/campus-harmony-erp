@@ -4,9 +4,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Calendar, FileText, Users, ChevronRight, Download } from 'lucide-react';
-import { committees } from '@/data/facultyMockData';
+import { useState, useEffect } from 'react';
+import { fetchApi } from '@/lib/apiService';
 
 export default function FacultyCommittees() {
+  const [committees, setCommittees] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/faculty/committees').then(d => setCommittees(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="space-y-6">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -6,26 +6,39 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import {
-  BarChart3, CheckCircle, Clock, Download, TrendingUp, AlertTriangle
+  BarChart3, CheckCircle, Clock, TrendingUp, AlertTriangle
 } from 'lucide-react';
-import { resultSummaries as initialResults } from '@/data/deanMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 import { ResultSummary } from '@/types/dean';
 
 export default function DeanResults() {
+  const [resultSummaries, setResultSummaries] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/dean/results').then(d => setResultSummaries(Array.isArray(d) ? d : [])).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [results, setResults] = useState<ResultSummary[]>(initialResults);
+  const [results, setResults] = useState<ResultSummary[]>([]);
+
+  useEffect(() => {
+    setResults(Array.isArray(resultSummaries) ? resultSummaries : []);
+  }, [resultSummaries]);
 
   const pending = results.filter(r => r.status === 'pending_approval');
-  const avgPass = Math.round(results.reduce((s, r) => s + r.passPercentage, 0) / results.length * 10) / 10;
+  const avgPass = results.length > 0 ? Math.round(results.reduce((s, r) => s + r.passPercentage, 0) / results.length * 10) / 10 : 0;
 
-  const approveResult = (dept: string, program: string, sem: number) => {
-    setResults(prev => prev.map(r =>
-      r.department === dept && r.program === program && r.semester === sem
-        ? { ...r, status: 'published' }
-        : r
-    ));
-    toast({ title: 'Results Approved & Published', description: `${program} Sem ${sem}` });
+  const approveResult = async (result: ResultSummary) => {
+    const identifier = result.departmentId || result.department;
+    try {
+      await putApi(`/dean/results/${encodeURIComponent(identifier)}/approve`, {});
+      setResults((prev) => prev.map((r) => ((r.departmentId || r.department) === identifier ? { ...r, status: 'published' } : r)));
+      toast({ title: 'Results approved', description: `${result.department} results marked as published` });
+    } catch (error: any) {
+      toast({ title: 'Approval failed', description: error?.message || 'Unable to approve results', variant: 'destructive' });
+    }
   };
 
   return (
@@ -36,9 +49,6 @@ export default function DeanResults() {
             <h1 className="text-2xl font-bold text-foreground">Exams & Results</h1>
             <p className="text-muted-foreground">Review and approve semester results before publication</p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => toast({ title: 'Export Started', description: 'Results CSV will be downloaded shortly' })}>
-            <Download className="mr-1 h-4 w-4" />Export All Results
-          </Button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-4">
@@ -69,12 +79,12 @@ export default function DeanResults() {
             </CardHeader>
             <CardContent className="space-y-2">
               {pending.map(r => (
-                <div key={`${r.department}-${r.program}-${r.semester}`} className="flex items-center justify-between rounded-lg border border-amber-200 bg-white/60 dark:bg-background/60 p-3">
+                <div key={r.departmentId || r.department} className="flex items-center justify-between rounded-lg border border-amber-200 bg-white/60 dark:bg-background/60 p-3">
                   <div>
-                    <p className="text-sm font-medium text-foreground">{r.program} – Semester {r.semester}</p>
+                    <p className="text-sm font-medium text-foreground">{r.department}</p>
                     <p className="text-xs text-muted-foreground">{r.department} • {r.totalStudents} students • Pass: {r.passPercentage}%</p>
                   </div>
-                  <Button size="sm" onClick={() => approveResult(r.department, r.program, r.semester)}>
+                  <Button size="sm" onClick={() => approveResult(r)}>
                     <CheckCircle className="mr-1 h-4 w-4" />Approve & Publish
                   </Button>
                 </div>
@@ -90,23 +100,18 @@ export default function DeanResults() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Department</TableHead>
-                  <TableHead>Program</TableHead>
-                  <TableHead className="text-center">Sem</TableHead>
                   <TableHead className="text-center">Total</TableHead>
                   <TableHead className="text-center">Passed</TableHead>
                   <TableHead className="text-center">Failed</TableHead>
                   <TableHead className="text-center">Pass %</TableHead>
                   <TableHead className="text-center">Avg GPA</TableHead>
-                  <TableHead>Topper</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {results.map(r => (
-                  <TableRow key={`${r.department}-${r.program}-${r.semester}`}>
+                  <TableRow key={r.departmentId || r.department}>
                     <TableCell className="font-medium">{r.department}</TableCell>
-                    <TableCell className="text-sm">{r.program}</TableCell>
-                    <TableCell className="text-center">{r.semester}</TableCell>
                     <TableCell className="text-center">{r.totalStudents}</TableCell>
                     <TableCell className="text-center text-green-600">{r.passed}</TableCell>
                     <TableCell className="text-center text-destructive">{r.failed}</TableCell>
@@ -117,9 +122,6 @@ export default function DeanResults() {
                       </div>
                     </TableCell>
                     <TableCell className="text-center font-medium">{r.avgGPA}</TableCell>
-                    <TableCell className="text-xs">
-                      {r.toppers[0] && <span>{r.toppers[0].name} ({r.toppers[0].gpa})</span>}
-                    </TableCell>
                     <TableCell>
                       <Badge variant={r.status === 'published' ? 'default' : r.status === 'approved' ? 'secondary' : 'outline'} className="capitalize text-[10px]">
                         {r.status.replace('_', ' ')}

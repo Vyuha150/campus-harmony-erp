@@ -8,16 +8,76 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import {
   User, Mail, Phone, Building2, GraduationCap, Calendar,
   Download, FileText, Briefcase, Clock, Award, BookOpen,
-  Plus
+  Plus, TrendingUp
 } from 'lucide-react';
-import { facultyProfile, leaveBalances, leaveHistory } from '@/data/facultyMockData';
+import { useState, useEffect } from 'react';
+import { fetchApi, postApi } from '@/lib/apiService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
 
 export default function FacultyProfile() {
+  const [facultyProfile, setFacultyProfile] = useState<any>({
+    name: '',
+    designation: '',
+    department: '',
+    employeeId: '',
+    email: '',
+    phone: '',
+    dateOfJoining: new Date().toISOString(),
+    qualification: '',
+    specialization: '',
+    experience: 0,
+    hIndex: 0,
+    totalPublications: 0,
+    totalProjects: 0,
+    weeklyHours: 0,
+  });
+  const [leaveBalances, setLeaveBalances] = useState<any>([]);
+  const [leaveHistory, setLeaveHistory] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  const [submittingLeave, setSubmittingLeave] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({ type: '', fromDate: '', toDate: '', reason: '' });
+  const { toast } = useToast();
+  useEffect(() => {
+    fetchApi('/faculty/profile').then(d => setFacultyProfile(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/faculty/profile/leave-balances').then(d => setLeaveBalances(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/faculty/profile/leave-history').then(d => setLeaveHistory(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
+  const applyLeave = async () => {
+    if (!leaveForm.type || !leaveForm.fromDate || !leaveForm.toDate || !leaveForm.reason.trim()) {
+      toast({ title: 'Missing details', description: 'Leave type, dates, and reason are required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setSubmittingLeave(true);
+      await postApi('/faculty/profile/leave-request', {
+        type: leaveForm.type,
+        fromDate: leaveForm.fromDate,
+        toDate: leaveForm.toDate,
+        reason: leaveForm.reason.trim()
+      });
+
+      const refreshedHistory = await fetchApi('/faculty/profile/leave-history');
+      const refreshedBalances = await fetchApi('/faculty/profile/leave-balances');
+      setLeaveHistory(Array.isArray(refreshedHistory) ? refreshedHistory : []);
+      setLeaveBalances(Array.isArray(refreshedBalances) ? refreshedBalances : []);
+
+      setLeaveForm({ type: '', fromDate: '', toDate: '', reason: '' });
+      toast({ title: 'Leave applied', description: 'Leave request submitted successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Submit failed', description: error?.message || 'Unable to submit leave request.', variant: 'destructive' });
+    } finally {
+      setSubmittingLeave(false);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -28,7 +88,12 @@ export default function FacultyProfile() {
           <CardContent className="p-6">
             <div className="flex flex-col gap-6 md:flex-row">
               <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-primary/10 text-3xl font-bold text-primary">
-                {facultyProfile.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                {(facultyProfile.name || '')
+                  .split(' ')
+                  .filter(Boolean)
+                  .map((n: string) => n[0])
+                  .join('')
+                  .slice(0, 2)}
               </div>
               <div className="flex-1 space-y-4">
                 <div>
@@ -117,7 +182,7 @@ export default function FacultyProfile() {
                     <div className="space-y-4">
                       <div>
                         <Label>Leave Type</Label>
-                        <Select><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                        <Select value={leaveForm.type} onValueChange={(value) => setLeaveForm((prev) => ({ ...prev, type: value }))}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="casual">Casual Leave</SelectItem>
                             <SelectItem value="earned">Earned Leave</SelectItem>
@@ -128,11 +193,11 @@ export default function FacultyProfile() {
                         </Select>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
-                        <div><Label>From</Label><Input type="date" /></div>
-                        <div><Label>To</Label><Input type="date" /></div>
+                        <div><Label>From</Label><Input type="date" value={leaveForm.fromDate} onChange={(event) => setLeaveForm((prev) => ({ ...prev, fromDate: event.target.value }))} /></div>
+                        <div><Label>To</Label><Input type="date" value={leaveForm.toDate} onChange={(event) => setLeaveForm((prev) => ({ ...prev, toDate: event.target.value }))} /></div>
                       </div>
-                      <div><Label>Reason</Label><Textarea placeholder="Reason for leave..." /></div>
-                      <Button className="w-full">Submit Application</Button>
+                      <div><Label>Reason</Label><Textarea placeholder="Reason for leave..." value={leaveForm.reason} onChange={(event) => setLeaveForm((prev) => ({ ...prev, reason: event.target.value }))} /></div>
+                      <Button className="w-full" onClick={applyLeave} disabled={submittingLeave}>{submittingLeave ? 'Submitting...' : 'Submit Application'}</Button>
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -222,6 +287,3 @@ export default function FacultyProfile() {
     </DashboardLayout>
   );
 }
-
-// Need this import for the stats
-import { TrendingUp } from 'lucide-react';

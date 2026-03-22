@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +13,7 @@ import {
   Search, Eye, GraduationCap, Users, Award, Building2,
   BookOpen, FileText, Mail, Phone, Calendar, MapPin, Download
 } from 'lucide-react';
-import { departmentPerformance } from '@/data/vcMockData';
+import { fetchApi } from '@/lib/apiService';
 
 interface SearchResult {
   type: string;
@@ -29,20 +29,16 @@ interface SearchResult {
   extraInfo?: Record<string, string>;
 }
 
-const mockSearchResults: SearchResult[] = [
-  { type: 'student', name: 'Arjun Reddy', id: 'STD-2024-001', department: 'Computer Science', details: 'B.Tech CSE 3rd Year • CGPA: 8.7 • Attendance: 89%', awards: ['Dean\'s List 2025', 'Hackathon Winner'], email: 'arjun.reddy@student.edu', phone: '+91-9876543210', joinDate: '2023-08-01', extraInfo: { 'Semester': '5th', 'Section': 'A', 'Mentor': 'Dr. Vikram Singh', 'Hostel': 'Block C-204', 'Fee Status': 'Paid' } },
-  { type: 'student', name: 'Priya Sharma', id: 'STD-2024-045', department: 'Electronics', details: 'B.Tech ECE 4th Year • CGPA: 9.1 • Attendance: 94%', awards: ['Gold Medal Candidate', 'Research Paper Published'], email: 'priya.sharma@student.edu', phone: '+91-9876543211', joinDate: '2022-08-01', extraInfo: { 'Semester': '7th', 'Section': 'B', 'Mentor': 'Dr. Neha Gupta', 'Fee Status': 'Paid' } },
-  { type: 'student', name: 'Rahul Verma', id: 'STD-2024-102', department: 'Mechanical', details: 'B.Tech ME 2nd Year • CGPA: 7.9 • Attendance: 78%', awards: [], email: 'rahul.verma@student.edu', phone: '+91-9876543212', joinDate: '2024-08-01', extraInfo: { 'Semester': '3rd', 'Section': 'A', 'Fee Status': 'Pending - ₹45,000' } },
-  { type: 'faculty', name: 'Dr. Vikram Singh', id: 'FAC-001', department: 'Computer Science', details: 'Professor & HOD • Exp: 18 years • Publications: 42', awards: ['Best Researcher 2024'], email: 'vikram.singh@university.edu', phone: '+91-9876543220', joinDate: '2008-07-01', extraInfo: { 'Designation': 'Professor', 'Specialization': 'AI/ML', 'PhD Students': '8', 'Courses': '3' } },
-  { type: 'faculty', name: 'Dr. Neha Agarwal', id: 'FAC-012', department: 'Computer Science', details: 'Associate Professor • Exp: 12 years • Publications: 28', awards: [], email: 'neha.agarwal@university.edu', phone: '+91-9876543221', joinDate: '2014-01-15', extraInfo: { 'Designation': 'Associate Professor', 'Specialization': 'Cybersecurity', 'PhD Students': '3', 'Courses': '4' } },
-  { type: 'faculty', name: 'Dr. Suresh Patel', id: 'FAC-008', department: 'Electronics', details: 'Professor • Exp: 20 years • Publications: 55', awards: ['UGC Award 2023'], email: 'suresh.patel@university.edu', phone: '+91-9876543222', joinDate: '2006-06-01', extraInfo: { 'Designation': 'Professor', 'Specialization': 'VLSI Design', 'PhD Students': '12' } },
-  { type: 'department', name: 'Computer Science', id: 'DEPT-CSE', department: '', details: 'Students: 1200 • Faculty: 35 • Pass Rate: 94% • Placement: 95%', awards: [], extraInfo: { 'HOD': 'Dr. Vikram Singh', 'Programs': '5', 'Labs': '12', 'Research Centers': '2' } },
-  { type: 'department', name: 'Electronics', id: 'DEPT-ECE', department: '', details: 'Students: 800 • Faculty: 28 • Pass Rate: 91% • Placement: 82%', awards: [], extraInfo: { 'HOD': 'Dr. Suresh Patel', 'Programs': '4', 'Labs': '10' } },
-  { type: 'program', name: 'B.Tech Computer Science', id: 'PROG-BTCS', department: 'Computer Science', details: 'Seats: 180 • Duration: 4 years • Accredited till 2028', awards: [], extraInfo: { 'Total Enrolled': '720', 'Avg CGPA': '8.2', 'Placement Rate': '95%' } },
-  { type: 'program', name: 'MBA', id: 'PROG-MBA', department: 'Business Admin', details: 'Seats: 120 • Duration: 2 years • AICTE Approved', awards: [], extraInfo: { 'Total Enrolled': '240', 'Avg CGPA': '7.8', 'Placement Rate': '88%' } },
-];
-
 export default function VCGlobalAccess() {
+  const [departmentPerformance, setDepartmentPerformance] = useState<any>([]);
+  const [globalRecords, setGlobalRecords] = useState<SearchResult[]>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/vc/departmentperformance').then(d => setDepartmentPerformance(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/global-access-records').then(d => setGlobalRecords(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCategory, setSearchCategory] = useState('all');
@@ -55,12 +51,12 @@ export default function VCGlobalAccess() {
     const cat = category ?? searchCategory;
     setHasSearched(true);
     const results = q
-      ? mockSearchResults.filter(r =>
+      ? globalRecords.filter(r =>
           (r.name.toLowerCase().includes(q.toLowerCase()) ||
           r.id.toLowerCase().includes(q.toLowerCase()) ||
           r.department.toLowerCase().includes(q.toLowerCase()))
         ).filter(r => cat === 'all' || r.type === cat)
-      : mockSearchResults.filter(r => cat === 'all' || r.type === cat);
+      : globalRecords.filter(r => cat === 'all' || r.type === cat);
     setSearchResults(results);
     if (results.length === 0) {
       toast({ title: 'No Results', description: `No matches found for "${q}"` });
@@ -132,10 +128,10 @@ export default function VCGlobalAccess() {
         {!hasSearched && (
           <div className="grid gap-4 sm:grid-cols-4">
             {[
-              { label: 'Student Records', count: '13,900', icon: GraduationCap, color: 'text-blue-600', type: 'student' },
-              { label: 'Faculty Records', count: '715', icon: Users, color: 'text-emerald-600', type: 'faculty' },
-              { label: 'Departments', count: '8', icon: Building2, color: 'text-purple-600', type: 'department' },
-              { label: 'Programs', count: '79', icon: BookOpen, color: 'text-amber-600', type: 'program' },
+              { label: 'Student Records', count: globalRecords.filter(r => r.type === 'student').length.toLocaleString(), icon: GraduationCap, color: 'text-blue-600', type: 'student' },
+              { label: 'Faculty Records', count: globalRecords.filter(r => r.type === 'faculty').length.toLocaleString(), icon: Users, color: 'text-emerald-600', type: 'faculty' },
+              { label: 'Departments', count: globalRecords.filter(r => r.type === 'department').length.toLocaleString(), icon: Building2, color: 'text-purple-600', type: 'department' },
+              { label: 'Programs', count: globalRecords.filter(r => r.type === 'program').length.toLocaleString(), icon: BookOpen, color: 'text-amber-600', type: 'program' },
             ].map(item => (
               <Card key={item.label} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleQuickLink(item.type)}>
                 <CardContent className="flex items-center gap-3 p-4">

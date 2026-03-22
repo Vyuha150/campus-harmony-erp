@@ -3,18 +3,42 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertTriangle, CheckCircle2, Clock, FileText, Send, Eye, ChevronDown, ChevronUp } from 'lucide-react';
-import { criteriaProgress, qualityDocuments } from '@/data/iqacMockData';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createIQACAction, fetchIQACCriteriaProgress, fetchIQACDocuments } from '@/lib/iqacApi';
+import { useToast } from '@/hooks/use-toast';
 
 export default function IQACCriteria() {
-  const [expandedCriteria, setExpandedCriteria] = useState<number | null>(null);
-  const [noteText, setNoteText] = useState('');
+  const { toast } = useToast();
+  const [criteriaProgress, setCriteriaProgress] = useState<any>([]);
+  const [qualityDocuments, setQualityDocuments] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setApiLoading(true);
+        const [criteria, documents] = await Promise.all([
+          fetchIQACCriteriaProgress(),
+          fetchIQACDocuments()
+        ]);
+        setCriteriaProgress(criteria);
+        setQualityDocuments(documents);
+      } catch (error: any) {
+        toast({ title: 'Unable to load criteria', description: error?.message || 'Please try again.', variant: 'destructive' });
+      } finally {
+        setApiLoading(false);
+      }
+    };
+    load();
+  }, []);
 
-  const overallProgress = Math.round(criteriaProgress.reduce((a, b) => a + b.dataProgress, 0) / criteriaProgress.length);
+  const [expandedCriteria, setExpandedCriteria] = useState<number | null>(null);
+  const [noteTextByCriteria, setNoteTextByCriteria] = useState<Record<number, string>>({});
+
+  const overallProgress = criteriaProgress.length > 0
+    ? Math.round(criteriaProgress.reduce((a, b) => a + b.dataProgress, 0) / criteriaProgress.length)
+    : 0;
   const totalDocs = criteriaProgress.reduce((a, b) => a + b.documentsUploaded, 0);
   const totalRequired = criteriaProgress.reduce((a, b) => a + b.requiredDocuments, 0);
 
@@ -36,6 +60,35 @@ export default function IQACCriteria() {
 
   const criterionDocs = (criteriaNum: number) =>
     qualityDocuments.filter(d => d.criteriaNumber === criteriaNum);
+
+  const handleSendNote = async (criteria: any) => {
+    const noteText = (noteTextByCriteria[criteria.criteriaNumber] || '').trim();
+    if (!noteText) {
+      toast({ title: 'Note required', description: 'Enter a note before sending.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 7);
+
+      await createIQACAction({
+        title: `Follow-up note for ${criteria.title}`,
+        description: noteText,
+        category: 'governance',
+        priority: criteria.status === 'needs_attention' ? 'high' : 'medium',
+        assignedTo: 'Department Coordinator',
+        department: criteria.title,
+        dueDate: dueDate.toISOString(),
+        impact: `Criterion ${criteria.criteriaNumber}`
+      });
+
+      setNoteTextByCriteria((prev) => ({ ...prev, [criteria.criteriaNumber]: '' }));
+      toast({ title: 'Note sent', description: 'A follow-up action item has been created.' });
+    } catch (error: any) {
+      toast({ title: 'Send failed', description: error?.message || 'Unable to send note.', variant: 'destructive' });
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -162,11 +215,11 @@ export default function IQACCriteria() {
                     <div className="flex gap-2">
                       <Textarea
                         placeholder="E.g., Please update research publications list – discrepancy noted in Criterion 3"
-                        value={noteText}
-                        onChange={(e) => setNoteText(e.target.value)}
+                        value={noteTextByCriteria[c.criteriaNumber] || ''}
+                        onChange={(e) => setNoteTextByCriteria((prev) => ({ ...prev, [c.criteriaNumber]: e.target.value }))}
                         className="min-h-[60px]"
                       />
-                      <Button size="sm" className="self-end">
+                      <Button size="sm" className="self-end" onClick={() => handleSendNote(c)}>
                         <Send className="mr-1 h-4 w-4" /> Send
                       </Button>
                     </div>
@@ -176,6 +229,12 @@ export default function IQACCriteria() {
             </CardContent>
           </Card>
         ))}
+
+        {!apiLoading && criteriaProgress.length === 0 && (
+          <Card>
+            <CardContent className="p-8 text-center text-muted-foreground">No criteria data available.</CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );

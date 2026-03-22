@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,17 +10,81 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   CheckCircle2, Users, Clock, MapPin, Save, UserCheck, UserX, RotateCcw
 } from 'lucide-react';
-import { todaySchedule, sampleStudentRoster, facultyCourses } from '@/data/facultyMockData';
+import { fetchApi, postApi } from '@/lib/apiService';
 import type { StudentAttendanceEntry } from '@/types/faculty';
 import { useToast } from '@/hooks/use-toast';
 
 export default function FacultyAttendance() {
+  const [todaySchedule, setTodaySchedule] = useState<any>([]);
+  const [facultyCourses, setFacultyCourses] = useState<any>([]);
+  const [semesterOptions, setSemesterOptions] = useState<number[]>([]);
+  const [selectedSemester, setSelectedSemester] = useState<string>('');
+  const [originalRoster, setOriginalRoster] = useState<StudentAttendanceEntry[]>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const loadAttendanceData = async (semester?: string) => {
+    const semesterQuery = semester ? `?semester=${semester}` : '';
+    const [sessionsData, coursesData] = await Promise.all([
+      fetchApi(`/faculty/attendance/sessions${semesterQuery}`),
+      fetchApi(`/faculty/courses${semesterQuery}`)
+    ]);
+    setTodaySchedule(Array.isArray(sessionsData) ? sessionsData : []);
+    setFacultyCourses(Array.isArray(coursesData) ? coursesData : []);
+
+    const firstCourseId = Array.isArray(coursesData) && coursesData.length > 0 ? coursesData[0].id : undefined;
+    const rosterQuery = firstCourseId ? `?courseId=${firstCourseId}${semester ? `&semester=${semester}` : ''}` : semesterQuery;
+    const rosterData = await fetchApi(`/faculty/attendance/roster${rosterQuery}`);
+    setOriginalRoster(Array.isArray(rosterData) ? rosterData : []);
+    setRoster(Array.isArray(rosterData) ? rosterData : []);
+  };
+
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        const [allCourses, currentSemesterResponse] = await Promise.all([
+          fetchApi('/faculty/courses'),
+          fetchApi('/faculty/current-semester')
+        ]);
+        const semesters = Array.from(new Set((Array.isArray(allCourses) ? allCourses : []).map((course: any) => Number(course?.semester)).filter((value) => Number.isFinite(value)))).sort((a: any, b: any) => a - b);
+        setSemesterOptions(semesters);
+        const apiCurrentSemester = Number((currentSemesterResponse as any)?.currentSemester);
+        const defaultSemester = Number.isFinite(apiCurrentSemester) && semesters.includes(apiCurrentSemester)
+          ? String(apiCurrentSemester)
+          : (semesters.length > 0 ? String(semesters[semesters.length - 1]) : '');
+        setSelectedSemester(defaultSemester);
+        await loadAttendanceData(defaultSemester);
+      } catch (error) {
+        console.error('API request failed', error);
+      } finally {
+        _setApiLoading(false);
+      }
+    };
+
+    initialize();
+  }, []);
+
+  useEffect(() => {
+    if (_apiLoading) return;
+    loadAttendanceData(selectedSemester).catch((error) => { console.error('API request failed', error); });
+  }, [selectedSemester]);
+
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
-  const [roster, setRoster] = useState<StudentAttendanceEntry[]>(sampleStudentRoster);
+  const [roster, setRoster] = useState<StudentAttendanceEntry[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
+  const [savingAttendance, setSavingAttendance] = useState(false);
   const { toast } = useToast();
 
   const session = todaySchedule.find(s => s.id === selectedSession);
+  const filteredSessions = selectedCourse === 'all' ? todaySchedule : todaySchedule.filter((item: any) => item.courseId === selectedCourse);
+
+  useEffect(() => {
+    if (!session?.courseId) return;
+    const semesterPart = selectedSemester ? `&semester=${selectedSemester}` : '';
+    fetchApi(`/faculty/attendance/roster?courseId=${session.courseId}${semesterPart}`).then((data) => {
+      setOriginalRoster(Array.isArray(data) ? data : []);
+      setRoster(Array.isArray(data) ? data : []);
+    }).catch((error) => { console.error('API request failed', error); });
+  }, [selectedSession]);
 
   const markAll = (status: 'present' | 'absent') => {
     setRoster(prev => prev.map(s => ({ ...s, status })));
@@ -34,9 +98,29 @@ export default function FacultyAttendance() {
     ));
   };
 
-  const saveAttendance = () => {
-    toast({ title: 'Attendance Saved', description: `Attendance recorded for ${session?.courseCode} – ${roster.filter(s => s.status === 'present').length}/${roster.length} present.` });
-    setSelectedSession(null);
+  const saveAttendance = async () => {
+    if (!session) return;
+    try {
+      setSavingAttendance(true);
+      await postApi('/faculty/attendance/mark', {
+        courseId: session.courseId,
+        date: session.date,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        type: session.type,
+        students: roster.map((student) => ({ studentId: student.studentId, status: student.status }))
+      });
+
+      const present = roster.filter((student) => student.status === 'present' || student.status === 'late').length;
+      const absent = roster.length - present;
+      setTodaySchedule((prev: any[]) => prev.map((item) => item.id === session.id ? { ...item, status: 'completed', presentCount: present, absentCount: absent } : item));
+      toast({ title: 'Attendance Saved', description: `Attendance recorded for ${session.courseCode} – ${present}/${roster.length} present.` });
+      setSelectedSession(null);
+    } catch (error: any) {
+      toast({ title: 'Save failed', description: error?.message || 'Unable to save attendance.', variant: 'destructive' });
+    } finally {
+      setSavingAttendance(false);
+    }
   };
 
   const presentCount = roster.filter(s => s.status === 'present' || s.status === 'late').length;
@@ -69,7 +153,7 @@ export default function FacultyAttendance() {
                 <Button size="sm" variant="outline" onClick={() => markAll('absent')}>
                   <UserX className="mr-1 h-4 w-4" />Mark All Absent
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setRoster(sampleStudentRoster)}>
+                <Button size="sm" variant="outline" onClick={() => setRoster(originalRoster)}>
                   <RotateCcw className="mr-1 h-4 w-4" />Reset
                 </Button>
               </div>
@@ -109,8 +193,8 @@ export default function FacultyAttendance() {
               </Table>
               <div className="mt-4 flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setSelectedSession(null)}>Cancel</Button>
-                <Button onClick={saveAttendance}>
-                  <Save className="mr-1 h-4 w-4" />Save Attendance
+                <Button onClick={saveAttendance} disabled={savingAttendance}>
+                  <Save className="mr-1 h-4 w-4" />{savingAttendance ? 'Saving...' : 'Save Attendance'}
                 </Button>
               </div>
             </CardContent>
@@ -125,15 +209,26 @@ export default function FacultyAttendance() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-foreground">Attendance Management</h1>
-          <Select value={selectedCourse} onValueChange={setSelectedCourse}>
-            <SelectTrigger className="w-[220px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Courses</SelectItem>
-              {facultyCourses.map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.code} – {c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2">
+            <Select value={selectedSemester || 'all'} onValueChange={(value) => setSelectedSemester(value === 'all' ? '' : value)}>
+              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Semester" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Semesters</SelectItem>
+                {semesterOptions.map((semester) => (
+                  <SelectItem key={semester} value={String(semester)}>Semester {semester}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedCourse} onValueChange={setSelectedCourse}>
+              <SelectTrigger className="w-[240px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Courses</SelectItem>
+                {facultyCourses.map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.code} – {c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <Tabs defaultValue="today">
@@ -143,7 +238,7 @@ export default function FacultyAttendance() {
           </TabsList>
 
           <TabsContent value="today" className="mt-4 space-y-3">
-            {todaySchedule.map((session) => (
+            {filteredSessions.map((session) => (
               <Card key={session.id} className="border-border">
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-4">
@@ -190,20 +285,14 @@ export default function FacultyAttendance() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[
-                      { date: '2026-03-07', code: 'CS301', type: 'Lecture', present: 60, absent: 5 },
-                      { date: '2026-03-06', code: 'CS501', type: 'Lab', present: 52, absent: 6 },
-                      { date: '2026-03-06', code: 'CS601', type: 'Lecture', present: 30, absent: 2 },
-                      { date: '2026-03-05', code: 'CS301', type: 'Tutorial', present: 58, absent: 7 },
-                      { date: '2026-03-04', code: 'CS501', type: 'Lecture', present: 54, absent: 4 },
-                    ].map((h, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{h.date}</TableCell>
-                        <TableCell className="font-medium">{h.code}</TableCell>
-                        <TableCell><Badge variant="outline" className="text-[10px]">{h.type}</Badge></TableCell>
-                        <TableCell className="text-green-600">{h.present}</TableCell>
-                        <TableCell className="text-destructive">{h.absent}</TableCell>
-                        <TableCell>{Math.round((h.present / (h.present + h.absent)) * 100)}%</TableCell>
+                    {filteredSessions.filter((item: any) => item.status === 'completed').map((h: any) => (
+                      <TableRow key={h.id}>
+                        <TableCell>{h.date ? new Date(h.date).toLocaleDateString('en-IN') : '-'}</TableCell>
+                        <TableCell className="font-medium">{h.courseCode}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-[10px] capitalize">{h.type}</Badge></TableCell>
+                        <TableCell className="text-green-600">{h.presentCount}</TableCell>
+                        <TableCell className="text-destructive">{h.absentCount}</TableCell>
+                        <TableCell>{h.totalStudents > 0 ? Math.round((h.presentCount / h.totalStudents) * 100) : 0}%</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

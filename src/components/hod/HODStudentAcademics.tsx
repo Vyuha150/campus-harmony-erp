@@ -13,16 +13,25 @@ import {
   GraduationCap, Search, Users, AlertTriangle, Eye, Download, TrendingUp, TrendingDown,
   Mail, Phone, Edit, UserCheck, BookOpen
 } from 'lucide-react';
-import { departmentStudents as initialStudents, departmentFaculty } from '@/data/hodMockData';
-import { useState } from 'react';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { DepartmentStudent } from '@/types/hod';
 
 export default function HODStudentAcademics() {
+  const [departmentStudents, setDepartmentStudents] = useState<any>([]);
+  const [departmentFaculty, setDepartmentFaculty] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/hod/departmentstudents').then(d => setDepartmentStudents(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/hod/departmentfaculty').then(d => setDepartmentFaculty(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const [search, setSearch] = useState('');
   const [yearFilter, setYearFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [students, setStudents] = useState<DepartmentStudent[]>(initialStudents);
+  const [students, setStudents] = useState<DepartmentStudent[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<DepartmentStudent | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showAdvisorDialog, setShowAdvisorDialog] = useState(false);
@@ -31,6 +40,10 @@ export default function HODStudentAcademics() {
   const [counselNote, setCounselNote] = useState('');
   const { toast } = useToast();
 
+  useEffect(() => {
+    setStudents(departmentStudents);
+  }, [departmentStudents]);
+
   const filtered = students.filter(s => {
     const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) || s.rollNumber.toLowerCase().includes(search.toLowerCase());
     const matchYear = yearFilter === 'all' || s.year === parseInt(yearFilter);
@@ -38,34 +51,57 @@ export default function HODStudentAcademics() {
     return matchSearch && matchYear && matchStatus;
   });
 
-  const avgCGPA = (students.reduce((s, st) => s + st.cgpa, 0) / students.length).toFixed(2);
-  const avgAttendance = Math.round(students.reduce((s, st) => s + st.attendance, 0) / students.length);
+  const avgCGPA = students.length > 0
+    ? (students.reduce((s, st) => s + st.cgpa, 0) / students.length).toFixed(2)
+    : '0.00';
+  const avgAttendance = students.length > 0
+    ? Math.round(students.reduce((s, st) => s + st.attendance, 0) / students.length)
+    : 0;
   const atRisk = students.filter(s => s.cgpa < 6 || s.attendance < 65);
 
-  const handleChangeAdvisor = () => {
+  const handleChangeAdvisor = async () => {
     if (selectedStudent && newAdvisor) {
-      setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, advisor: newAdvisor } : s));
-      setSelectedStudent(prev => prev ? { ...prev, advisor: newAdvisor } : null);
-      toast({ title: 'Advisor Updated', description: `${selectedStudent.name}'s advisor changed to ${newAdvisor}` });
-      setShowAdvisorDialog(false);
-      setNewAdvisor('');
+      try {
+        await putApi(`/hod/students/${selectedStudent.id}/advisor`, { advisor: newAdvisor });
+        setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, advisor: newAdvisor } : s));
+        setSelectedStudent(prev => prev ? { ...prev, advisor: newAdvisor } : null);
+        toast({ title: 'Advisor Updated', description: `${selectedStudent.name}'s advisor changed to ${newAdvisor}` });
+        setShowAdvisorDialog(false);
+        setNewAdvisor('');
+      } catch (error: any) {
+        toast({ title: 'Update failed', description: error?.message || 'Unable to update advisor', variant: 'destructive' });
+      }
     }
   };
 
-  const handleExport = () => {
-    toast({ title: '📥 Report Exported', description: `${filtered.length} student records exported as CSV` });
+  const handleExport = async () => {
+    try {
+      await postApi('/hod/students/export', { format: 'csv' });
+      toast({ title: '📥 Report Exported', description: `${filtered.length} student records exported as CSV` });
+    } catch (error: any) {
+      toast({ title: 'Export failed', description: error?.message || 'Unable to export student report', variant: 'destructive' });
+    }
   };
 
-  const handleMeritList = () => {
-    const toppers = [...students].sort((a, b) => b.cgpa - a.cgpa).slice(0, 5);
-    toast({ title: '🏆 Merit List Generated', description: `Top 5: ${toppers.map(s => `${s.name} (${s.cgpa})`).join(', ')}` });
+  const handleMeritList = async () => {
+    try {
+      const toppers = await postApi<Array<{ name: string; cgpa: number }>>('/hod/students/merit-list', { limit: 5 });
+      toast({ title: '🏆 Merit List Generated', description: `Top 5: ${toppers.map(s => `${s.name} (${s.cgpa})`).join(', ')}` });
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error?.message || 'Unable to generate merit list', variant: 'destructive' });
+    }
   };
 
-  const handleAddNote = () => {
+  const handleAddNote = async () => {
     if (selectedStudent && counselNote) {
-      toast({ title: 'Counseling Note Added', description: `Note for ${selectedStudent.name}: "${counselNote}"` });
-      setCounselNote('');
-      setShowNoteDialog(false);
+      try {
+        await postApi(`/hod/students/${selectedStudent.id}/counseling-note`, { note: counselNote });
+        toast({ title: 'Counseling Note Added', description: `Note for ${selectedStudent.name}: "${counselNote}"` });
+        setCounselNote('');
+        setShowNoteDialog(false);
+      } catch (error: any) {
+        toast({ title: 'Action failed', description: error?.message || 'Unable to add counseling note', variant: 'destructive' });
+      }
     }
   };
 
@@ -245,10 +281,27 @@ export default function HODStudentAcademics() {
                 <Button size="sm" variant="outline" onClick={() => { setShowDetailDialog(false); setShowNoteDialog(true); }}>
                   <Edit className="mr-1 h-3 w-3" />Add Counseling Note
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => toast({ title: 'Email Sent', description: `Message sent to ${selectedStudent.email}` })}>
+                <Button size="sm" variant="outline" onClick={async () => {
+                  try {
+                    await postApi(`/hod/students/${selectedStudent.id}/email`, {
+                      subject: 'Department Update',
+                      message: 'Please review your student portal for new updates.',
+                    });
+                    toast({ title: 'Email Sent', description: `Message sent to ${selectedStudent.email}` });
+                  } catch (error: any) {
+                    toast({ title: 'Action failed', description: error?.message || 'Unable to send email', variant: 'destructive' });
+                  }
+                }}>
                   <Mail className="mr-1 h-3 w-3" />Email Student
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => toast({ title: 'Report Card Generated', description: `Report card for ${selectedStudent.name} downloaded` })}>
+                <Button size="sm" variant="outline" onClick={async () => {
+                  try {
+                    await postApi(`/hod/students/${selectedStudent.id}/report-card`, {});
+                    toast({ title: 'Report Card Generated', description: `Report card for ${selectedStudent.name} downloaded` });
+                  } catch (error: any) {
+                    toast({ title: 'Action failed', description: error?.message || 'Unable to generate report card', variant: 'destructive' });
+                  }
+                }}>
                   <Download className="mr-1 h-3 w-3" />Report Card
                 </Button>
               </div>

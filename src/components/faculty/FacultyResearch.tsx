@@ -14,10 +14,50 @@ import {
   BookOpen, FileText, Lightbulb, Award, Plus,
   ExternalLink, TrendingUp, BarChart3, IndianRupee
 } from 'lucide-react';
-import { publications, researchProjects, patents } from '@/data/facultyMockData';
+import { useState, useEffect } from 'react';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { useToast } from '@/hooks/use-toast';
 
 export default function FacultyResearch() {
+  const [publications, setPublications] = useState<any>([]);
+  const [researchProjects, setResearchProjects] = useState<any>([]);
+  const [patents, setPatents] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  const [savingPublication, setSavingPublication] = useState(false);
+  const [publicationForm, setPublicationForm] = useState({ title: '', journal: '', year: '', status: 'submitted' });
+  const { toast } = useToast();
+  useEffect(() => {
+    fetchApi('/faculty/research/publications').then(d => setPublications(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/faculty/research/projects').then(d => setResearchProjects(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/faculty/research/patents').then(d => setPatents(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const totalCitations = publications.reduce((sum, p) => sum + p.citations, 0);
+
+  const savePublication = async () => {
+    if (!publicationForm.title.trim() || !publicationForm.journal.trim() || !publicationForm.year) {
+      toast({ title: 'Missing details', description: 'Title, journal, and year are required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setSavingPublication(true);
+      const created = await postApi('/faculty/research/publications', {
+        title: publicationForm.title.trim(),
+        journal: publicationForm.journal.trim(),
+        year: Number(publicationForm.year),
+        status: publicationForm.status
+      });
+      setPublications((prev: any[]) => [{ ...created, authors: ['Primary Author'], indexing: 'Scopus', citations: 0 }, ...prev]);
+      setPublicationForm({ title: '', journal: '', year: '', status: 'submitted' });
+      toast({ title: 'Publication saved' });
+    } catch (error: any) {
+      toast({ title: 'Save failed', description: error?.message || 'Unable to save publication.', variant: 'destructive' });
+    } finally {
+      setSavingPublication(false);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -62,11 +102,11 @@ export default function FacultyResearch() {
                   <DialogContent>
                     <DialogHeader><DialogTitle>Add Publication</DialogTitle></DialogHeader>
                     <div className="space-y-4">
-                      <div><Label>Title</Label><Input placeholder="Paper title" /></div>
-                      <div><Label>Authors</Label><Input placeholder="Author1, Author2, ..." /></div>
-                      <div><Label>Journal / Conference</Label><Input placeholder="Journal name" /></div>
+                      <div><Label>Title</Label><Input placeholder="Paper title" value={publicationForm.title} onChange={(event) => setPublicationForm((prev) => ({ ...prev, title: event.target.value }))} /></div>
+                      <div><Label>Authors</Label><Input placeholder="Author1, Author2, ..." disabled value="Primary Author" /></div>
+                      <div><Label>Journal / Conference</Label><Input placeholder="Journal name" value={publicationForm.journal} onChange={(event) => setPublicationForm((prev) => ({ ...prev, journal: event.target.value }))} /></div>
                       <div className="grid grid-cols-2 gap-4">
-                        <div><Label>Year</Label><Input type="number" placeholder="2026" /></div>
+                        <div><Label>Year</Label><Input type="number" placeholder="2026" value={publicationForm.year} onChange={(event) => setPublicationForm((prev) => ({ ...prev, year: event.target.value }))} /></div>
                         <div><Label>DOI</Label><Input placeholder="10.xxxx/..." /></div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -91,7 +131,7 @@ export default function FacultyResearch() {
                           </Select>
                         </div>
                       </div>
-                      <Button className="w-full">Save Publication</Button>
+                      <Button className="w-full" onClick={savePublication} disabled={savingPublication}>{savingPublication ? 'Saving...' : 'Save Publication'}</Button>
                     </div>
                   </DialogContent>
                 </Dialog>

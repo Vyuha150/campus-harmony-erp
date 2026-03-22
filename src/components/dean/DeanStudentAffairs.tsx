@@ -3,12 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AlertTriangle, Shield, CheckCircle, Clock, Gavel, FileWarning,
-  Send, UserX
+  Send, UserX, Users
 } from 'lucide-react';
-import { disciplinaryCases as initialCases } from '@/data/deanMockData';
-import { useState } from 'react';
+import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { DisciplinaryCase } from '@/types/dean';
 
@@ -23,19 +25,98 @@ const typeIcons: Record<string, React.ElementType> = {
 };
 
 export default function DeanStudentAffairs() {
-  const [cases, setCases] = useState<DisciplinaryCase[]>(initialCases);
+  const [disciplinaryCases, setDisciplinaryCases] = useState<any>([]);
+  const [mentoringData, setMentoringData] = useState<any>({ faculty: [], students: [], assignments: [] });
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [selectedFacultyId, setSelectedFacultyId] = useState('');
+  const [isSavingAssignment, setIsSavingAssignment] = useState(false);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const loadMentoringData = async () => {
+    try {
+      const data = await fetchApi('/dean/mentoring/options');
+      setMentoringData({
+        faculty: Array.isArray(data?.faculty) ? data.faculty : [],
+        students: Array.isArray(data?.students) ? data.students : [],
+        assignments: Array.isArray(data?.assignments) ? data.assignments : []
+      });
+    } catch (error) {
+      console.error('API request failed', error);
+    }
+  };
+
+  useEffect(() => {
+    Promise.allSettled([
+      fetchApi('/dean/student-affairs').then((d: any) => setDisciplinaryCases(d?.disciplinaryCases || [])),
+      loadMentoringData(),
+    ])
+      .catch((error) => { console.error('API request failed', error); })
+      .finally(() => _setApiLoading(false));
+  }, []);
+
+  const [cases, setCases] = useState<DisciplinaryCase[]>([]);
+  useEffect(() => {
+    setCases(Array.isArray(disciplinaryCases) ? disciplinaryCases : []);
+  }, [disciplinaryCases]);
   const [selected, setSelected] = useState<string | null>(null);
   const [decision, setDecision] = useState('');
   const { toast } = useToast();
 
   const item = cases.find(c => c.id === selected);
 
-  const takeAction = (action: string, newStatus: DisciplinaryCase['status']) => {
+  const takeAction = async (action: string, newStatus: DisciplinaryCase['status']) => {
     if (!item) return;
-    setCases(prev => prev.map(c => c.id === item.id ? { ...c, status: newStatus } : c));
-    toast({ title: action, description: `${item.studentName} – ${decision || 'No remarks'}` });
-    setDecision('');
-    setSelected(null);
+    try {
+      await putApi(`/dean/disciplinary/${item.id}`, { status: newStatus });
+      setCases(prev => prev.map(c => c.id === item.id ? { ...c, status: newStatus } : c));
+      toast({ title: action, description: `${item.studentName} – ${decision || 'No remarks'}` });
+      setDecision('');
+      setSelected(null);
+    } catch (error: any) {
+      toast({ title: 'Action failed', description: error?.message || 'Unable to update case', variant: 'destructive' });
+    }
+  };
+
+  const assignMentor = async () => {
+    if (!selectedStudentId || !selectedFacultyId) {
+      toast({ title: 'Missing selection', description: 'Please select both student and faculty.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setIsSavingAssignment(true);
+      const created = await postApi('/dean/mentoring/assignments', {
+        studentId: selectedStudentId,
+        facultyId: selectedFacultyId
+      });
+
+      setMentoringData((prev: any) => {
+        const remaining = (prev.assignments || []).filter((item: any) => item.studentId !== created.studentId);
+        return {
+          ...prev,
+          assignments: [{ ...created }, ...remaining]
+        };
+      });
+
+      toast({ title: 'Mentor assigned', description: 'Assignment saved successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Save failed', description: error?.message || 'Could not assign mentor.', variant: 'destructive' });
+    } finally {
+      setIsSavingAssignment(false);
+    }
+  };
+
+  const removeAssignment = async (studentId: string) => {
+    try {
+      await deleteApi(`/dean/mentoring/assignments/${studentId}`);
+      setMentoringData((prev: any) => ({
+        ...prev,
+        assignments: (prev.assignments || []).filter((item: any) => item.studentId !== studentId)
+      }));
+      toast({ title: 'Assignment removed', description: 'Mentee assignment removed successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Remove failed', description: error?.message || 'Could not remove assignment.', variant: 'destructive' });
+    }
   };
 
   if (item) {
@@ -97,6 +178,71 @@ export default function DeanStudentAffairs() {
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-foreground">Student Affairs</h1>
         <p className="text-muted-foreground">Disciplinary cases, scholarships, and student welfare</p>
+
+        <Card className="border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="h-5 w-5" /> Mentor-Mentee Assignment
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-1">
+                <Label>Select Student</Label>
+                <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose student" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mentoringData.students.map((student: any) => (
+                      <SelectItem key={student.id} value={student.id}>
+                        {student.name} ({student.rollNumber})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Select Faculty Mentor</Label>
+                <Select value={selectedFacultyId} onValueChange={setSelectedFacultyId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose faculty" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mentoringData.faculty.map((faculty: any) => (
+                      <SelectItem key={faculty.id} value={faculty.id}>
+                        {faculty.name} ({faculty.employeeId})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end">
+                <Button className="w-full" onClick={assignMentor} disabled={isSavingAssignment}>
+                  {isSavingAssignment ? 'Saving...' : 'Assign / Modify'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {mentoringData.assignments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No mentee assignments available.</p>
+              ) : (
+                mentoringData.assignments.map((assignment: any) => (
+                  <div key={assignment.id} className="flex flex-col gap-2 rounded-md border border-border p-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-medium text-foreground">{assignment.studentName} ({assignment.rollNumber})</p>
+                      <p className="text-sm text-muted-foreground">Mentor: {assignment.facultyName} • {assignment.facultyEmail}</p>
+                    </div>
+                    <Button variant="outline" className="text-destructive" onClick={() => removeAssignment(assignment.studentId)}>
+                      Remove
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-4 sm:grid-cols-3">
           {[

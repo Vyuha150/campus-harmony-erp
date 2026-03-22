@@ -8,27 +8,86 @@ import {
   BookOpen, ClipboardCheck, FileText, TrendingUp, Calendar,
   MessageSquare, ChevronRight, Brain, BarChart3
 } from 'lucide-react';
-import { todaySchedule, facultyAssignments, menteeStudents, facultyProfile } from '@/data/facultyMockData';
+import { useState, useEffect } from 'react';
+import { fetchApi } from '@/lib/apiService';
 import { Link } from 'react-router-dom';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function FacultyDashboard() {
+  const [todaySchedule, setTodaySchedule] = useState<any>([]);
+  const [facultyAssignments, setFacultyAssignments] = useState<any>([]);
+  const [semesterOptions, setSemesterOptions] = useState<number[]>([]);
+  const [selectedSemester, setSelectedSemester] = useState<string>('');
+  const [menteeStudents, setMenteeStudents] = useState<any>([]);
+  const [facultyProfile, setFacultyProfile] = useState<any>({
+    name: '',
+    designation: '',
+    department: '',
+    coursesThisSemester: 0,
+    totalStudents: 0,
+    weeklyHours: 0,
+    totalPublications: 0
+  });
+  const [announcements, setAnnouncements] = useState<any>([]);
+  const [pendingTasks, setPendingTasks] = useState<any>([]);
+  const [performanceAlerts, setPerformanceAlerts] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const loadDashboardData = async (semester?: string) => {
+    const semesterQuery = semester ? `?semester=${semester}` : '';
+    const [sessions, assignments, tasks] = await Promise.all([
+      fetchApi(`/faculty/attendance/sessions${semesterQuery}`),
+      fetchApi(`/faculty/assignments${semesterQuery}`),
+      fetchApi(`/faculty/dashboard/tasks${semesterQuery}`)
+    ]);
+    setTodaySchedule(Array.isArray(sessions) ? sessions : []);
+    setFacultyAssignments(Array.isArray(assignments) ? assignments : []);
+    setPendingTasks(Array.isArray(tasks) ? tasks : []);
+  };
+
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        const [allCoursesResponse, currentSemesterResponse, menteesResponse, profileResponse, announcementsResponse, alertsResponse] = await Promise.all([
+          fetchApi('/faculty/courses'),
+          fetchApi('/faculty/current-semester'),
+          fetchApi('/faculty/mentees'),
+          fetchApi('/faculty/profile'),
+          fetchApi('/faculty/dashboard/announcements'),
+          fetchApi('/faculty/dashboard/alerts')
+        ]);
+        const semesters = Array.from(new Set((Array.isArray(allCoursesResponse) ? allCoursesResponse : []).map((course: any) => Number(course?.semester)).filter((value) => Number.isFinite(value)))).sort((a: any, b: any) => a - b);
+        setSemesterOptions(semesters);
+        const apiCurrentSemester = Number((currentSemesterResponse as any)?.currentSemester);
+        const defaultSemester = Number.isFinite(apiCurrentSemester) && semesters.includes(apiCurrentSemester)
+          ? String(apiCurrentSemester)
+          : (semesters.length > 0 ? String(semesters[semesters.length - 1]) : '');
+        setSelectedSemester(defaultSemester);
+        setMenteeStudents(Array.isArray(menteesResponse) ? menteesResponse : []);
+        setFacultyProfile(profileResponse || {});
+        setAnnouncements(Array.isArray(announcementsResponse) ? announcementsResponse : []);
+        setPerformanceAlerts(Array.isArray(alertsResponse) ? alertsResponse : []);
+        await loadDashboardData(defaultSemester);
+      } catch (error) {
+        console.error('API request failed', error);
+      } finally {
+        _setApiLoading(false);
+      }
+    };
+
+    initialize();
+  }, []);
+
+  useEffect(() => {
+    if (_apiLoading) return;
+    loadDashboardData(selectedSemester).catch((error) => { console.error('API request failed', error); });
+  }, [selectedSemester]);
+
   const pendingAssignments = facultyAssignments.filter(a => a.pendingEvaluation > 0);
   const atRiskStudents = menteeStudents.filter(m => m.riskLevel === 'high');
-
-  const announcements = [
-    { id: 1, title: 'Submit Mid-Semester Question Papers', detail: 'Deadline: 15 March 2026', priority: 'high' as const },
-    { id: 2, title: 'Faculty Meeting – Academic Council', detail: 'Friday, 14 March at 3:00 PM, Board Room', priority: 'medium' as const },
-    { id: 3, title: 'NAAC Peer Team Visit Preparation', detail: 'Submit department data by 20 March', priority: 'high' as const },
-    { id: 4, title: 'FDP on Outcome-Based Education', detail: '22-24 March, Registration Open', priority: 'low' as const },
-  ];
-
-  const pendingTasks = [
-    { id: 1, task: '18 assignments pending evaluation', course: 'CS301', icon: ClipboardCheck, urgent: true },
-    { id: 2, task: '38 project submissions to grade', course: 'CS501', icon: ClipboardCheck, urgent: true },
-    { id: 3, task: 'Upload lesson plan for Week 8', course: 'CS301', icon: FileText, urgent: false },
-    { id: 4, task: 'Mentee follow-up: Chitra Nair', course: 'Advisory', icon: Users, urgent: true },
-    { id: 5, task: 'IQAC ICT sub-committee report', course: 'Committee', icon: FileText, urgent: false },
-  ];
+  const displayName = facultyProfile.name
+    ? (facultyProfile.name.split('.')[1]?.trim() || facultyProfile.name)
+    : 'Faculty';
 
   return (
     <DashboardLayout>
@@ -36,11 +95,22 @@ export default function FacultyDashboard() {
         {/* Header */}
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold text-foreground">
-            Welcome back, {facultyProfile.name.split('.')[1]?.trim() || facultyProfile.name}
+            Welcome back, {displayName}
           </h1>
           <p className="text-muted-foreground">
             {facultyProfile.designation} • {facultyProfile.department} • {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
+        </div>
+        <div className="w-[220px]">
+          <Select value={selectedSemester || 'all'} onValueChange={(value) => setSelectedSemester(value === 'all' ? '' : value)}>
+            <SelectTrigger><SelectValue placeholder="Semester" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Semesters</SelectItem>
+              {semesterOptions.map((semester) => (
+                <SelectItem key={semester} value={String(semester)}>Semester {semester}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Quick Stats */}
@@ -121,7 +191,7 @@ export default function FacultyDashboard() {
             <CardContent className="space-y-2">
               {pendingTasks.map((task) => (
                 <div key={task.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
-                  <task.icon className={`mt-0.5 h-4 w-4 shrink-0 ${task.urgent ? 'text-destructive' : 'text-muted-foreground'}`} />
+                  <ClipboardCheck className={`mt-0.5 h-4 w-4 shrink-0 ${task.urgent ? 'text-destructive' : 'text-muted-foreground'}`} />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-foreground">{task.task}</p>
                     <p className="text-xs text-muted-foreground">{task.course}</p>
@@ -182,15 +252,15 @@ export default function FacultyDashboard() {
                   </div>
                 </div>
               ))}
-              <div className="rounded-lg border border-amber-300/30 bg-amber-50/50 p-3 dark:bg-amber-900/10">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-amber-600" />
-                  <span className="text-sm font-medium text-foreground">CS501 – Machine Learning</span>
+              {performanceAlerts.map((alert) => (
+                <div key={alert.id} className="rounded-lg border border-amber-300/30 bg-amber-50/50 p-3 dark:bg-amber-900/10">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-amber-600" />
+                    <span className="text-sm font-medium text-foreground">{alert.title}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{alert.description}</p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Class average (68%) is below department average (74%). Consider remedial sessions.
-                </p>
-              </div>
+              ))}
             </CardContent>
           </Card>
         </div>

@@ -2,34 +2,63 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import {
-  Activity, Users, Server, Database, Shield, Clock, AlertTriangle, CheckCircle2,
-  HardDrive, Cpu, MemoryStick, Globe, ArrowUpRight, Bell, Zap, TrendingUp
+  Activity, Users
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area } from 'recharts';
-import { systemHealth, auditLogs, userActivities, systemUsers } from '@/data/adminMockData';
-
-const loginTrend = [
-  { time: '6AM', users: 45 }, { time: '8AM', users: 180 }, { time: '10AM', users: 342 },
-  { time: '12PM', users: 290 }, { time: '2PM', users: 310 }, { time: '4PM', users: 265 },
-  { time: '6PM', users: 190 }, { time: '8PM', users: 120 }, { time: '10PM', users: 80 },
-];
-
-const moduleUsage = [
-  { name: 'Student', usage: 4250 }, { name: 'Faculty', usage: 1890 },
-  { name: 'Finance', usage: 1200 }, { name: 'Exam', usage: 980 },
-  { name: 'Library', usage: 750 }, { name: 'Placement', usage: 520 },
-  { name: 'Research', usage: 380 }, { name: 'Sports', usage: 180 },
-];
-
-const roleDistribution = [
-  { role: 'Students', count: 12458 }, { role: 'Faculty', count: 847 },
-  { role: 'Staff', count: 1240 }, { role: 'Admin', count: 45 },
-  { role: 'Officers', count: 32 }, { role: 'Others', count: 225 },
-];
+import { useState, useEffect } from 'react';
+import { fetchApi } from '@/lib/apiService';
+import { safeArray, safeDate, safeNumber, safeString } from '@/lib/normalize';
 
 export default function SuperAdminDashboard() {
+  const [systemHealth, setSystemHealth] = useState<any>({
+    activeUsers: 0,
+    totalUsers: 0,
+    uptime: '0h',
+  });
+  const [auditLogs, setAuditLogs] = useState<any>([]);
+  const [userActivities, setUserActivities] = useState<any>([]);
+  const [systemUsers, setSystemUsers] = useState<any>([]);
+  const [loginTrend, setLoginTrend] = useState<any>([]);
+  const [moduleUsage, setModuleUsage] = useState<any>([]);
+  const [roleDistribution, setRoleDistribution] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const normalizeAuditLog = (raw: any) => ({
+    id: safeString(raw?.id),
+    details: safeString(raw?.details),
+    userName: safeString(raw?.userName, 'System'),
+    severity: safeString(raw?.severity, 'info'),
+    timestamp: safeDate(raw?.timestamp),
+    action: safeString(raw?.action),
+    module: safeString(raw?.module)
+  });
+
+  useEffect(() => {
+    fetchApi('/admin/dashboard').then((d: any) => {
+      const stats = safeArray(d?.stats);
+      const totalUsers = safeNumber(stats.find((s: any) => safeString(s?.label).toLowerCase() === 'total users')?.value);
+      const students = safeNumber(stats.find((s: any) => safeString(s?.label).toLowerCase() === 'students')?.value);
+      const faculty = safeNumber(stats.find((s: any) => safeString(s?.label).toLowerCase() === 'faculty')?.value);
+      setSystemHealth({
+        ...systemHealth,
+        totalUsers,
+        activeUsers: students + faculty,
+        uptime: safeString(d?.systemHealth?.uptime, '0h')
+      });
+    }).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/admin/audit-logs').then((d: any) => {
+      const logs = safeArray(d).map(normalizeAuditLog);
+      setAuditLogs(logs);
+      setUserActivities(logs);
+    }).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/admin/users').then((d: any) => setSystemUsers(safeArray(d))).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/admin/analytics/login-trend').then((d: any) => setLoginTrend(safeArray(d))).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/admin/analytics/module-usage').then((d: any) => setModuleUsage(safeArray(d))).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/admin/analytics/role-distribution').then((d: any) => setRoleDistribution(safeArray(d))).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const recentLogs = auditLogs.slice(0, 5);
 
   return (
@@ -48,44 +77,7 @@ export default function SuperAdminDashboard() {
           </div>
         </div>
 
-        {/* System Health Metrics */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-primary/10 p-2"><Cpu className="h-5 w-5 text-primary" /></div>
-                <div>
-                  <p className="text-xs text-muted-foreground">CPU Usage</p>
-                  <p className="text-xl font-bold text-foreground">{systemHealth.cpuUsage}%</p>
-                </div>
-              </div>
-              <Progress value={systemHealth.cpuUsage} className="mt-2 h-1.5" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-blue-500/10 p-2"><MemoryStick className="h-5 w-5 text-blue-500" /></div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Memory</p>
-                  <p className="text-xl font-bold text-foreground">{systemHealth.memoryUsage}%</p>
-                </div>
-              </div>
-              <Progress value={systemHealth.memoryUsage} className="mt-2 h-1.5" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-amber-500/10 p-2"><HardDrive className="h-5 w-5 text-amber-500" /></div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Disk</p>
-                  <p className="text-xl font-bold text-foreground">{systemHealth.diskUsage}%</p>
-                </div>
-              </div>
-              <Progress value={systemHealth.diskUsage} className="mt-2 h-1.5" />
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -95,19 +87,15 @@ export default function SuperAdminDashboard() {
                   <p className="text-xl font-bold text-foreground">{systemHealth.activeUsers}</p>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">of {systemHealth.totalUsers.toLocaleString()} total</p>
+              <p className="text-xs text-muted-foreground mt-2">of {systemHealth.totalUsers?.toLocaleString?.() ?? 0} total</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-purple-500/10 p-2"><Zap className="h-5 w-5 text-purple-500" /></div>
-                <div>
-                  <p className="text-xs text-muted-foreground">API Latency</p>
-                  <p className="text-xl font-bold text-foreground">{systemHealth.apiResponseTime}ms</p>
-                </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">System Uptime</p>
+                <p className="text-xl font-bold text-foreground">{systemHealth.uptime}</p>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">Error rate: {systemHealth.errorRate}%</p>
             </CardContent>
           </Card>
         </div>
@@ -145,7 +133,7 @@ export default function SuperAdminDashboard() {
         </div>
 
         {/* Quick Info Cards */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader><CardTitle className="text-base">User Distribution by Role</CardTitle></CardHeader>
             <CardContent className="space-y-2">
@@ -154,24 +142,12 @@ export default function SuperAdminDashboard() {
                   <span className="text-sm text-muted-foreground">{r.role}</span>
                   <div className="flex items-center gap-2">
                     <div className="w-24 bg-secondary rounded-full h-2">
-                      <div className="h-2 rounded-full bg-primary" style={{ width: `${(r.count / 12458) * 100}%` }} />
+                      <div className="h-2 rounded-full bg-primary" style={{ width: `${systemHealth.totalUsers > 0 ? (r.count / systemHealth.totalUsers) * 100 : 0}%` }} />
                     </div>
                     <span className="text-sm font-medium text-foreground w-16 text-right">{r.count.toLocaleString()}</span>
                   </div>
                 </div>
               ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle className="text-base">System Info</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Database Size</span><span className="font-medium text-foreground">{systemHealth.databaseSize}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Last Backup</span><span className="font-medium text-foreground">{systemHealth.lastBackup.toLocaleString('en-IN')}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total Users</span><span className="font-medium text-foreground">{systemHealth.totalUsers.toLocaleString()}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Error Rate</span><span className="font-medium text-foreground">{systemHealth.errorRate}%</span></div>
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">API Avg Latency</span><span className="font-medium text-foreground">{systemHealth.apiResponseTime}ms</span></div>
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Uptime</span><span className="font-medium text-foreground">{systemHealth.uptime}</span></div>
             </CardContent>
           </Card>
 

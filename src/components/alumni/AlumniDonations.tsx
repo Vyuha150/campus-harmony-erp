@@ -8,15 +8,97 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Gift, Plus, Download, IndianRupee, FileText, Eye, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { alumniDonations } from '@/data/alumniMockData';
+import { useEffect, useMemo, useState } from 'react';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { useToast } from '@/hooks/use-toast';
 
-const donationTrend = [
-  { year: '2021', amount: 1200000 }, { year: '2022', amount: 1800000 }, { year: '2023', amount: 2500000 },
-  { year: '2024', amount: 3200000 }, { year: '2025', amount: 4800000 }, { year: '2026', amount: 6000000 },
-];
+const formatDate = (value: unknown) => {
+  if (!value) return '–';
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? '–' : parsed.toLocaleDateString('en-IN');
+};
 
 export default function AlumniDonations() {
-  const totalDonations = alumniDonations.reduce((s, d) => s + d.amount, 0);
+  const { toast } = useToast();
+  const [alumniDonations, setAlumniDonations] = useState<any[]>([]);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [alumniProfileId, setAlumniProfileId] = useState('');
+  const [amount, setAmount] = useState('');
+  const [purpose, setPurpose] = useState('');
+  const [date, setDate] = useState('');
+  const [status, setStatus] = useState('completed');
+
+  const loadData = async () => {
+    const rows = await fetchApi<any[]>('/alumni/donations');
+    setAlumniDonations(Array.isArray(rows) ? rows : []);
+  };
+
+  useEffect(() => {
+    loadData().catch((error) => {
+      console.error('API request failed', error);
+      toast({ title: 'Unable to load donations', description: error?.message || 'Please retry', variant: 'destructive' });
+    });
+  }, []);
+
+  const totalDonations = useMemo(() => alumniDonations.reduce((s, d) => s + Number(d.amount || 0), 0), [alumniDonations]);
+
+  const donationTrend = useMemo(() => {
+    const byMonth = new Map<string, number>();
+    for (const d of alumniDonations) {
+      const parsed = new Date(String(d.donatedAt || d.date));
+      if (Number.isNaN(parsed.getTime())) continue;
+      const key = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+      byMonth.set(key, (byMonth.get(key) || 0) + Number(d.amount || 0));
+    }
+    return Array.from(byMonth.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, amount]) => ({ month, amount }));
+  }, [alumniDonations]);
+
+  const donationStats = useMemo(() => {
+    const donors = new Set(alumniDonations.map((d) => String(d.donorName || '').trim()).filter(Boolean)).size;
+    return {
+      totalDonors: donors,
+      yearOverYearGrowth: 'N/A',
+      receiptsIssued: alumniDonations.filter((d) => String(d.status || '').toLowerCase() === 'completed').length,
+    };
+  }, [alumniDonations]);
+
+  const resetForm = () => {
+    setAlumniProfileId('');
+    setAmount('');
+    setPurpose('');
+    setDate('');
+    setStatus('completed');
+  };
+
+  const handleRecordDonation = async () => {
+    if (!alumniProfileId.trim() || !amount || !purpose.trim()) {
+      toast({ title: 'Missing fields', description: 'Alumni Profile ID, amount and purpose are required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await postApi('/alumni/donations', {
+        alumniProfileId: alumniProfileId.trim(),
+        amount: Number(amount),
+        purpose: purpose.trim(),
+        date: date ? new Date(date).toISOString() : undefined,
+        status,
+      });
+      await loadData();
+      setOpen(false);
+      resetForm();
+      toast({ title: 'Donation recorded', description: 'Donation saved successfully.' });
+    } catch (error: any) {
+      toast({ title: 'Record failed', description: error?.message || 'Unable to record donation.', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -24,56 +106,51 @@ export default function AlumniDonations() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Fundraising & Donations</h1>
-            <p className="text-muted-foreground">Track donations, issue receipts, and manage fundraising campaigns</p>
+            <p className="text-muted-foreground">Track donations and manage alumni fundraising records</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export</Button>
-            <Dialog>
+            <Button variant="outline" size="sm" onClick={loadData}><Download className="mr-2 h-4 w-4" />Refresh</Button>
+            <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild><Button size="sm"><Plus className="mr-2 h-4 w-4" />Record Donation</Button></DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Record Donation</DialogTitle></DialogHeader>
                 <div className="grid gap-4 py-4">
-                  <div><Label>Donor (Alumni)</Label><Input placeholder="Search alumni" /></div>
+                  <div><Label>Donor Alumni Profile ID</Label><Input value={alumniProfileId} onChange={(e) => setAlumniProfileId(e.target.value)} placeholder="Enter AlumniProfile.id" /></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Amount (₹)</Label><Input type="number" /></div>
-                    <div><Label>Payment Method</Label><Select><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="bank">Bank Transfer</SelectItem><SelectItem value="online">Online</SelectItem><SelectItem value="cheque">Cheque</SelectItem><SelectItem value="cash">Cash</SelectItem></SelectContent></Select></div>
+                    <div><Label>Amount (₹)</Label><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+                    <div><Label>Status</Label><Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="completed">Completed</SelectItem><SelectItem value="pending">Pending</SelectItem></SelectContent></Select></div>
                   </div>
-                  <div><Label>Purpose</Label><Input placeholder="e.g. AI Research Lab" /></div>
-                  <div><Label>Campaign (optional)</Label><Input placeholder="e.g. Innovation Drive 2026" /></div>
-                  <div><Label>Donation Type</Label><Select><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="one_time">One-time</SelectItem><SelectItem value="recurring">Recurring</SelectItem><SelectItem value="pledge">Pledge</SelectItem></SelectContent></Select></div>
-                  <div><Label>Date</Label><Input type="date" /></div>
-                  <Button className="w-full">Record & Issue Receipt</Button>
+                  <div><Label>Purpose</Label><Input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="e.g. AI Research Lab" /></div>
+                  <div><Label>Date (optional)</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+                  <Button className="w-full" disabled={saving} onClick={handleRecordDonation}>Record Donation</Button>
                 </div>
               </DialogContent>
             </Dialog>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card><CardContent className="p-4 flex items-center gap-3"><IndianRupee className="h-8 w-8 text-green-600" /><div><p className="text-2xl font-bold text-foreground">₹{(totalDonations / 100000).toFixed(1)} L</p><p className="text-xs text-muted-foreground">Total (FY 2025-26)</p></div></CardContent></Card>
-          <Card><CardContent className="p-4 flex items-center gap-3"><Gift className="h-8 w-8 text-primary" /><div><p className="text-2xl font-bold text-foreground">{alumniDonations.length + 18}</p><p className="text-xs text-muted-foreground">Total Donors</p></div></CardContent></Card>
-          <Card><CardContent className="p-4 flex items-center gap-3"><TrendingUp className="h-8 w-8 text-amber-500" /><div><p className="text-2xl font-bold text-foreground">+25%</p><p className="text-xs text-muted-foreground">YoY Growth</p></div></CardContent></Card>
-          <Card><CardContent className="p-4 flex items-center gap-3"><FileText className="h-8 w-8 text-blue-600" /><div><p className="text-2xl font-bold text-foreground">{alumniDonations.filter(d => d.receiptIssued).length}</p><p className="text-xs text-muted-foreground">Receipts Issued</p></div></CardContent></Card>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <Card><CardContent className="flex items-center gap-3 p-4"><IndianRupee className="h-8 w-8 text-green-600" /><div><p className="text-2xl font-bold text-foreground">₹{(totalDonations / 100000).toFixed(1)} L</p><p className="text-xs text-muted-foreground">Total Donations</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-4"><Gift className="h-8 w-8 text-primary" /><div><p className="text-2xl font-bold text-foreground">{donationStats.totalDonors}</p><p className="text-xs text-muted-foreground">Total Donors</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-4"><TrendingUp className="h-8 w-8 text-amber-500" /><div><p className="text-2xl font-bold text-foreground">{donationStats.yearOverYearGrowth}</p><p className="text-xs text-muted-foreground">YoY Growth</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-4"><FileText className="h-8 w-8 text-blue-600" /><div><p className="text-2xl font-bold text-foreground">{donationStats.receiptsIssued}</p><p className="text-xs text-muted-foreground">Completed Receipts</p></div></CardContent></Card>
         </div>
 
-        {/* Chart */}
         <Card>
           <CardHeader><CardTitle>Donation Trend (₹)</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={donationTrend}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="year" />
-                <YAxis tickFormatter={v => `₹${(v / 100000).toFixed(0)}L`} />
-                <Tooltip formatter={(v: number) => `₹${v.toLocaleString('en-IN')}`} />
+                <XAxis dataKey="month" />
+                <YAxis tickFormatter={(v) => `₹${(Number(v) / 100000).toFixed(0)}L`} />
+                <Tooltip formatter={(v: number) => `₹${Number(v).toLocaleString('en-IN')}`} />
                 <Bar dataKey="amount" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        {/* Donations table */}
         <Card>
           <CardHeader><CardTitle>Recent Donations</CardTitle></CardHeader>
           <CardContent className="p-0">
@@ -82,24 +159,20 @@ export default function AlumniDonations() {
                 <thead><tr className="border-b bg-muted/50">
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Donor</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Purpose</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Campaign</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Amount</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Method</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Date</th>
-                  <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Receipt</th>
+                  <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Status</th>
                   <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Actions</th>
                 </tr></thead>
                 <tbody>
-                  {alumniDonations.map(d => (
+                  {alumniDonations.map((d) => (
                     <tr key={d.id} className="border-b last:border-0 hover:bg-muted/30">
-                      <td className="px-4 py-3 text-sm font-medium text-foreground">{d.alumniName}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">{d.donorName || 'Unknown Donor'}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{d.purpose}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{d.campaign || '–'}</td>
-                      <td className="px-4 py-3 text-right text-sm font-semibold text-foreground">₹{d.amount.toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{d.paymentMethod}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{d.donationDate.toLocaleDateString('en-IN')}</td>
-                      <td className="px-4 py-3"><Badge variant={d.receiptIssued ? 'default' : 'secondary'}>{d.receiptIssued ? 'Issued' : 'Pending'}</Badge></td>
-                      <td className="px-4 py-3"><Button variant="outline" size="sm"><Eye className="mr-1 h-3 w-3" />View</Button></td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold text-foreground">₹{Number(d.amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{formatDate(d.donatedAt || d.date)}</td>
+                      <td className="px-4 py-3"><Badge variant={String(d.status || '').toLowerCase() === 'completed' ? 'default' : 'secondary'} className="capitalize">{d.status || 'completed'}</Badge></td>
+                      <td className="px-4 py-3"><Button variant="outline" size="sm" onClick={loadData}><Eye className="mr-1 h-3 w-3" />View</Button></td>
                     </tr>
                   ))}
                 </tbody>

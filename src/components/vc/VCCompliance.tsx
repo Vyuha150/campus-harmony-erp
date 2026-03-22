@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +13,7 @@ import {
   Award, CheckCircle, AlertTriangle, Clock, FileText,
   Download, Send, BarChart3, TrendingUp, Shield, Edit, Save
 } from 'lucide-react';
-import { complianceReports as initialReports } from '@/data/vcMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { ComplianceReport, CriterionScore } from '@/types/vc';
 
 const frameworkColors: Record<string, string> = {
@@ -38,14 +38,34 @@ const criterionStatusColors: Record<string, string> = {
 };
 
 export default function VCCompliance() {
+  const [complianceReports, setComplianceReports] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/vc/compliancereports').then(d => setComplianceReports(d)).catch((error) => { console.error('API request failed', error); });
+    _setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [reports, setReports] = useState(initialReports);
+  const [reports, setReports] = useState<any[]>([]);
   const [selectedReport, setSelectedReport] = useState<ComplianceReport | null>(null);
   const [reviewComment, setReviewComment] = useState('');
   const [editingNIRF, setEditingNIRF] = useState(false);
   const [nirfScores, setNirfScores] = useState<Record<string, number>>({});
   const [editingNAAC, setEditingNAAC] = useState(false);
   const [naacScores, setNaacScores] = useState<Record<string, number>>({});
+
+  const toDate = (value: any) => {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
+
+  useEffect(() => {
+    setReports((complianceReports || []).map((report: any) => ({
+      ...report,
+      lastUpdated: toDate(report.lastUpdated),
+      criteria: Array.isArray(report.criteria) ? report.criteria : [],
+    })));
+  }, [complianceReports]);
 
   const nirfReport = reports.find(r => r.framework === 'NIRF');
   const naacReport = reports.find(r => r.framework === 'NAAC');
@@ -57,15 +77,36 @@ export default function VCCompliance() {
   const nirfTotal = nirfReport ? nirfReport.criteria.reduce((sum, c) => sum + (getNirfScore(c.id, c.score)), 0) / nirfReport.criteria.length : 0;
   const naacTotal = naacReport ? naacReport.criteria.reduce((sum, c) => sum + getNaacScore(c.id, c.score), 0) / naacReport.criteria.length : 0;
 
-  const handleApproveReport = (id: string) => {
-    setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' as const } : r));
-    toast({ title: 'Report Approved', description: 'Report has been approved and digitally signed by the Vice Chancellor.' });
-    setSelectedReport(null);
+  const handleApproveReport = async (id: string) => {
+    try {
+      const updated = await putApi<any>(`/vc/compliance/${id}`, { status: 'approved', notes: reviewComment });
+      setReports(prev => prev.map(report => report.id === id ? {
+        ...report,
+        ...updated,
+        lastUpdated: toDate(updated.lastUpdated),
+        criteria: Array.isArray(updated.criteria) ? updated.criteria : report.criteria,
+      } : report));
+      toast({ title: 'Report Approved', description: 'Report has been approved and digitally signed by the Vice Chancellor.' });
+      setSelectedReport(null);
+      setReviewComment('');
+    } catch (error: any) {
+      toast({ title: 'Approval failed', description: error.message || 'Could not approve report.', variant: 'destructive' });
+    }
   };
 
-  const handleSubmitReport = (id: string) => {
-    setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'submitted' as const } : r));
-    toast({ title: 'Report Submitted', description: 'Report submitted to the respective authority.' });
+  const handleSubmitReport = async (id: string) => {
+    try {
+      const updated = await putApi<any>(`/vc/compliance/${id}`, { status: 'submitted' });
+      setReports(prev => prev.map(report => report.id === id ? {
+        ...report,
+        ...updated,
+        lastUpdated: toDate(updated.lastUpdated),
+        criteria: Array.isArray(updated.criteria) ? updated.criteria : report.criteria,
+      } : report));
+      toast({ title: 'Report Submitted', description: 'Report submitted to the respective authority.' });
+    } catch (error: any) {
+      toast({ title: 'Submission failed', description: error.message || 'Could not submit report.', variant: 'destructive' });
+    }
   };
 
   const handleSaveNirfSimulation = () => {
@@ -242,7 +283,21 @@ export default function VCCompliance() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setSelectedReport(null)}>Close</Button>
               {selectedReport?.status === 'draft' && (
-                <Button onClick={() => { setReports(prev => prev.map(r => r.id === selectedReport.id ? { ...r, status: 'in_review' as const } : r)); setSelectedReport(null); toast({ title: 'Sent for Review', description: 'Report sent to IQAC for review.' }); }} className="gap-1">
+                <Button onClick={async () => {
+                  try {
+                    const updated = await putApi<any>(`/vc/compliance/${selectedReport.id}`, { status: 'in_review' });
+                    setReports(prev => prev.map(report => report.id === selectedReport.id ? {
+                      ...report,
+                      ...updated,
+                      lastUpdated: toDate(updated.lastUpdated),
+                      criteria: Array.isArray(updated.criteria) ? updated.criteria : report.criteria,
+                    } : report));
+                    setSelectedReport(null);
+                    toast({ title: 'Sent for Review', description: 'Report sent to IQAC for review.' });
+                  } catch (error: any) {
+                    toast({ title: 'Update failed', description: error.message || 'Could not update report.', variant: 'destructive' });
+                  }
+                }} className="gap-1">
                   <Send className="h-4 w-4" /> Send for Review
                 </Button>
               )}

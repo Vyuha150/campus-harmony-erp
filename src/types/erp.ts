@@ -5,6 +5,7 @@ export type UserRole =
   | 'vice_chancellor'
   | 'pro_vc'
   | 'registrar'
+  | 'coe'
   | 'dean'
   | 'hod'
   | 'faculty'
@@ -70,6 +71,14 @@ export const ROLE_INFO: Record<UserRole, RoleInfo> = {
     icon: 'FileText',
     color: 'info',
     modules: ['students', 'examinations', 'certificates', 'approvals'],
+  },
+  coe: {
+    id: 'coe',
+    label: 'Controller Of Examinations',
+    description: 'Exam process management and result publication requests',
+    icon: 'ClipboardList',
+    color: 'warning',
+    modules: ['examinations', 'results', 'approvals'],
   },
   dean: {
     id: 'dean',

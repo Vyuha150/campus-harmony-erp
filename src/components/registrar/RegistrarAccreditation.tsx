@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,7 @@ import {
   Award, CheckCircle, Clock, AlertTriangle, FileText,
   Upload, Send, Eye, Calendar, Building2
 } from 'lucide-react';
-import { accreditationChecklist as initialChecklist } from '@/data/registrarMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { AccreditationChecklist } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
@@ -30,15 +30,36 @@ const frameworkColors: Record<string, string> = {
 };
 
 export default function RegistrarAccreditation() {
+  const [accreditationChecklist, setAccreditationChecklist] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/registrar/accreditation').then(d => setAccreditationChecklist(d)).catch((error) => { console.error('API request failed', error); });
+    setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [checklist, setChecklist] = useState(initialChecklist);
+  const [checklist, setChecklist] = useState<any[]>([]);
   const [selectedItem, setSelectedItem] = useState<AccreditationChecklist | null>(null);
   const [remarks, setRemarks] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  const handleVerify = (id: string) => {
-    setChecklist(prev => prev.map(c => c.id === id ? { ...c, status: 'verified' as const } : c));
-    toast({ title: 'Verified', description: 'Criterion data verified by Registrar.' });
-    setSelectedItem(null);
+  useEffect(() => {
+    setChecklist(accreditationChecklist || []);
+  }, [accreditationChecklist]);
+
+  const handleVerify = async (id: string) => {
+    try {
+      setIsVerifying(true);
+      await putApi(`/registrar/accreditation/${id}`, { status: 'verified', remarks });
+      setChecklist(prev => prev.map(c => c.id === id ? { ...c, status: 'verified' as const } : c));
+      toast({ title: 'Verified', description: 'Criterion data verified by Registrar.' });
+      setSelectedItem(null);
+      setRemarks('');
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const handleSendReminder = (office: string) => {
@@ -119,7 +140,7 @@ export default function RegistrarAccreditation() {
                         <p className="text-xs text-muted-foreground">{item.description}</p>
                         <div className="flex items-center gap-3 text-[10px] text-muted-foreground mt-1">
                           <span className="flex items-center gap-1"><Building2 className="h-3 w-3" /> {item.responsibleOffice}</span>
-                          <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> Deadline: {item.deadline.toLocaleDateString('en-IN')}</span>
+                          <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> Deadline: {new Date(item.deadline).toLocaleDateString('en-IN')}</span>
                           <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> {item.documents.length} docs</span>
                         </div>
                         {item.remarks && <p className="text-xs text-muted-foreground mt-1 italic">Note: {item.remarks}</p>}
@@ -164,7 +185,7 @@ export default function RegistrarAccreditation() {
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">{selectedItem?.description}</p>
               <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-xs text-muted-foreground">Deadline: {selectedItem?.deadline.toLocaleDateString('en-IN')}</p>
+                <p className="text-xs text-muted-foreground">Deadline: {selectedItem?.deadline ? new Date(selectedItem.deadline).toLocaleDateString('en-IN') : 'N/A'}</p>
                 <p className="text-xs text-muted-foreground">Status: {selectedItem?.status.replace(/_/g, ' ')}</p>
                 {selectedItem?.remarks && <p className="text-xs text-muted-foreground mt-1">Remarks: {selectedItem.remarks}</p>}
               </div>
@@ -174,11 +195,24 @@ export default function RegistrarAccreditation() {
                   <p className="text-xs">No documents uploaded yet</p>
                 </div>
               )}
+              {selectedItem?.status === 'submitted' && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium">Verification Remarks</label>
+                  <Textarea
+                    placeholder="Add remarks (optional)"
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    className="text-xs h-20"
+                  />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setSelectedItem(null)}>Close</Button>
               {selectedItem?.status === 'submitted' && (
-                <Button onClick={() => selectedItem && handleVerify(selectedItem.id)}>Verify & Approve</Button>
+                <Button onClick={() => selectedItem && handleVerify(selectedItem.id)} disabled={isVerifying}>
+                  {isVerifying ? 'Verifying...' : 'Verify & Approve'}
+                </Button>
               )}
             </DialogFooter>
           </DialogContent>

@@ -7,6 +7,7 @@ export interface FinancialSnapshot {
   outstandingDues: number;
   cashFlow: CashFlowData[];
   salaryPercentage: number;
+  defaulterCount?: number;
   lastUpdated: Date;
 }
 
@@ -14,25 +15,25 @@ export interface CashFlowData {
   month: string;
   income: number;
   expenses: number;
-  balance: number;
+  balance?: number;
 }
 
 export interface FinanceAlert {
   id: string;
-  type: 'budget_variance' | 'large_payment' | 'fee_default' | 'anomaly';
+  type?: 'budget_variance' | 'large_payment' | 'fee_default' | 'anomaly';
   title: string;
   description: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   department?: string;
   amount?: number;
   threshold?: number;
-  createdAt: Date;
+  createdAt?: Date;
   acknowledged: boolean;
 }
 
 export interface FinanceTask {
   id: string;
-  type: 'purchase_approval' | 'scholarship_approval' | 'fee_waiver' | 'budget_override';
+  type?: 'purchase_approval' | 'scholarship_approval' | 'fee_waiver' | 'budget_override';
   title: string;
   description: string;
   requestedBy: string;
@@ -41,7 +42,7 @@ export interface FinanceTask {
   department: string;
   priority: 'low' | 'medium' | 'high';
   status: 'pending' | 'approved' | 'rejected';
-  documents: string[];
+  documents?: string[];
 }
 
 export interface FeeStructure {
@@ -70,11 +71,11 @@ export interface FeePayment {
   studentName: string;
   program: string;
   amount: number;
-  paymentMethod: 'online' | 'cash' | 'check' | 'dd' | 'bank_transfer';
+  paymentMethod: 'online' | 'offline' | 'cash' | 'check' | 'dd' | 'bank_transfer';
   transactionId?: string;
   paymentDate: Date;
   status: 'successful' | 'failed' | 'pending' | 'cancelled';
-  feeComponents: string[];
+  feeComponents?: string[];
   receivedBy?: string;
   remarks?: string;
 }

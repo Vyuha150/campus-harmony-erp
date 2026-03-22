@@ -1,32 +1,119 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Search, Plus, Filter, Download, Edit, Eye, CheckCircle, XCircle, Merge, Users, MapPin, Briefcase, GraduationCap, Globe } from 'lucide-react';
-import { alumniProfiles } from '@/data/alumniMockData';
+import { Search, Download, Eye, Users, MapPin, Briefcase, Globe, RefreshCw } from 'lucide-react';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { useToast } from '@/hooks/use-toast';
 
 export default function AlumniDirectory() {
+  const { toast } = useToast();
+  const [alumniProfiles, setAlumniProfiles] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [batchFilter, setBatchFilter] = useState('all');
-  const [industryFilter, setIndustryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [programFilter, setProgramFilter] = useState('all');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDetails, setSelectedDetails] = useState<any | null>(null);
+  const [isSyncingGraduates, setIsSyncingGraduates] = useState(false);
 
-  const filtered = alumniProfiles.filter(a => {
-    const matchSearch = `${a.firstName} ${a.lastName}`.toLowerCase().includes(search.toLowerCase()) || a.email.toLowerCase().includes(search.toLowerCase()) || (a.currentCompany || '').toLowerCase().includes(search.toLowerCase());
-    const matchBatch = batchFilter === 'all' || a.graduationYear.toString() === batchFilter;
-    const matchIndustry = industryFilter === 'all' || a.industry === industryFilter;
-    const matchStatus = statusFilter === 'all' || a.verificationStatus === statusFilter;
-    return matchSearch && matchBatch && matchIndustry && matchStatus;
-  });
+  const loadDirectory = async () => {
+    const rows = await fetchApi<any[]>('/alumni/directory');
+    setAlumniProfiles(Array.isArray(rows) ? rows : []);
+  };
 
-  const alumni = selected ? alumniProfiles.find(a => a.id === selected) : null;
+  useEffect(() => {
+    loadDirectory().catch((error) => {
+      console.error('API request failed', error);
+      toast({ title: 'Unable to load directory', description: error?.message || 'Please retry', variant: 'destructive' });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedDetails(null);
+      return;
+    }
+    fetchApi(`/alumni/directory/${selectedId}`)
+      .then((d) => setSelectedDetails(d))
+      .catch((error) => {
+        console.error('API request failed', error);
+        toast({ title: 'Unable to load profile details', description: error?.message || 'Please retry', variant: 'destructive' });
+      });
+  }, [selectedId]);
+
+  const batchOptions = Array.from(new Set<string>(alumniProfiles.map((a: any) => String(a.graduationYear || '')).filter(Boolean))).sort((a, b) => Number(b) - Number(a));
+  const programOptions = Array.from(new Set<string>(alumniProfiles.map((a: any) => String(a.program || '')).filter(Boolean))).sort();
+
+  const stats = useMemo(() => {
+    const totalAlumni = alumniProfiles.length;
+    const withCompany = alumniProfiles.filter((a) => String(a.currentCompany || '').trim().length > 0).length;
+    const countries = new Set(
+      alumniProfiles
+        .map((a) => String(a.currentLocation || '').split(',').pop()?.trim())
+        .filter(Boolean)
+    ).size;
+    const programs = new Set(alumniProfiles.map((a) => String(a.program || '')).filter(Boolean)).size;
+    return { totalAlumni, withCompany, countries, programs };
+  }, [alumniProfiles]);
+
+  const filtered = useMemo(() => {
+    return alumniProfiles.filter((a) => {
+      const matchSearch = String(a.name || '').toLowerCase().includes(search.toLowerCase())
+        || String(a.email || '').toLowerCase().includes(search.toLowerCase())
+        || String(a.currentCompany || '').toLowerCase().includes(search.toLowerCase());
+      const matchBatch = batchFilter === 'all' || String(a.graduationYear) === batchFilter;
+      const matchProgram = programFilter === 'all' || String(a.program) === programFilter;
+      return matchSearch && matchBatch && matchProgram;
+    });
+  }, [alumniProfiles, search, batchFilter, programFilter]);
+
+  const exportCsv = () => {
+    const rows = filtered.map((a: any) => [
+      a.name,
+      a.email,
+      a.program,
+      a.graduationYear,
+      a.currentCompany || '',
+      a.currentRole || '',
+      a.currentLocation || '',
+      a.linkedIn || '',
+    ]);
+    const csv = ['name,email,program,graduationYear,currentCompany,currentRole,currentLocation,linkedIn', ...rows.map((r: any[]) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'alumni-directory.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const syncGraduatedStudents = async () => {
+    setIsSyncingGraduates(true);
+    try {
+      const result = await postApi<{ eligibleCount: number; createdCount: number; skippedCount: number }>(
+        '/alumni/directory/sync-graduates',
+        {}
+      );
+      toast({
+        title: 'Alumni sync completed',
+        description: `Created ${result.createdCount} profiles from ${result.eligibleCount} eligible students.`,
+      });
+      await loadDirectory();
+    } catch (error: any) {
+      console.error('API request failed', error);
+      toast({
+        title: 'Sync failed',
+        description: error?.message || 'Please retry',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSyncingGraduates(false);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -34,124 +121,90 @@ export default function AlumniDirectory() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Alumni Directory</h1>
-            <p className="text-muted-foreground">Search, verify, and manage alumni profiles</p>
+            <p className="text-muted-foreground">Search and manage alumni profiles from the live API directory</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export</Button>
-            <Button variant="outline" size="sm"><Merge className="mr-2 h-4 w-4" />Merge Duplicates</Button>
-            <Dialog>
-              <DialogTrigger asChild><Button size="sm"><Plus className="mr-2 h-4 w-4" />Add Alumni</Button></DialogTrigger>
-              <DialogContent className="max-w-lg">
-                <DialogHeader><DialogTitle>Add Alumni Record</DialogTitle></DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>First Name</Label><Input /></div>
-                    <div><Label>Last Name</Label><Input /></div>
-                  </div>
-                  <div><Label>Email</Label><Input type="email" /></div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Program</Label><Input placeholder="e.g. B.Tech CSE" /></div>
-                    <div><Label>Graduation Year</Label><Input type="number" placeholder="e.g. 2020" /></div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Current Company</Label><Input /></div>
-                    <div><Label>Designation</Label><Input /></div>
-                  </div>
-                  <div><Label>Industry</Label><Input placeholder="e.g. Technology" /></div>
-                  <div><Label>Location</Label><Input placeholder="City, Country" /></div>
-                  <Button className="w-full">Add Alumni</Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <Button size="sm" variant="secondary" onClick={syncGraduatedStudents} disabled={isSyncingGraduates}>
+              <Users className="mr-2 h-4 w-4" />
+              {isSyncingGraduates ? 'Syncing...' : 'Sync Graduated Students'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportCsv}><Download className="mr-2 h-4 w-4" />Export</Button>
+            <Button size="sm" onClick={loadDirectory}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">15,200</p><p className="text-xs text-muted-foreground">Total Alumni</p></CardContent></Card>
-          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-green-600">8,450</p><p className="text-xs text-muted-foreground">Verified Profiles</p></CardContent></Card>
-          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-amber-500">342</p><p className="text-xs text-muted-foreground">Pending Verification</p></CardContent></Card>
-          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">24</p><p className="text-xs text-muted-foreground">Countries</p></CardContent></Card>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">{stats.totalAlumni.toLocaleString('en-IN')}</p><p className="text-xs text-muted-foreground">Total Alumni</p></CardContent></Card>
+          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-green-600">{stats.withCompany.toLocaleString('en-IN')}</p><p className="text-xs text-muted-foreground">With Company Data</p></CardContent></Card>
+          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">{stats.countries.toLocaleString('en-IN')}</p><p className="text-xs text-muted-foreground">Countries</p></CardContent></Card>
+          <Card><CardContent className="p-4 text-center"><p className="text-2xl font-bold text-foreground">{stats.programs.toLocaleString('en-IN')}</p><p className="text-xs text-muted-foreground">Programs</p></CardContent></Card>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="flex flex-wrap gap-3">
+          <div className="relative min-w-[200px] flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Search by name, email, company..." className="pl-10" value={search} onChange={e => setSearch(e.target.value)} />
+            <Input placeholder="Search by name, email, company..." className="pl-10" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <Select value={batchFilter} onValueChange={setBatchFilter}>
-            <SelectTrigger className="w-[130px]"><SelectValue placeholder="Batch" /></SelectTrigger>
-            <SelectContent><SelectItem value="all">All Batches</SelectItem><SelectItem value="2024">2024</SelectItem><SelectItem value="2023">2023</SelectItem><SelectItem value="2020">2020</SelectItem><SelectItem value="2018">2018</SelectItem><SelectItem value="2015">2015</SelectItem><SelectItem value="2010">2010</SelectItem></SelectContent>
+            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Batch" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Batches</SelectItem>
+              {batchOptions.map((batch) => (
+                <SelectItem key={batch} value={batch}>{batch}</SelectItem>
+              ))}
+            </SelectContent>
           </Select>
-          <Select value={industryFilter} onValueChange={setIndustryFilter}>
-            <SelectTrigger className="w-[150px]"><SelectValue placeholder="Industry" /></SelectTrigger>
-            <SelectContent><SelectItem value="all">All Industries</SelectItem><SelectItem value="Technology">Technology</SelectItem><SelectItem value="Consulting">Consulting</SelectItem><SelectItem value="Startups">Startups</SelectItem><SelectItem value="Finance">Finance</SelectItem></SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
-            <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="verified">Verified</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent>
+          <Select value={programFilter} onValueChange={setProgramFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Program" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Programs</SelectItem>
+              {programOptions.map((program) => (
+                <SelectItem key={program} value={program}>{program}</SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
 
-        {/* List + Detail */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-3">
-            {filtered.map(a => (
-              <Card key={a.id} className={`cursor-pointer transition-colors ${selected === a.id ? 'ring-2 ring-primary' : 'hover:bg-muted/30'}`} onClick={() => setSelected(a.id)}>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="space-y-3 lg:col-span-2">
+            {filtered.map((a) => (
+              <Card key={a.id} className={`cursor-pointer transition-colors ${selectedId === a.id ? 'ring-2 ring-primary' : 'hover:bg-muted/30'}`} onClick={() => setSelectedId(a.id)}>
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-lg font-bold text-primary">{a.firstName[0]}{a.lastName[0]}</div>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-lg font-bold text-primary">{String(a.name || 'A').slice(0, 1)}</div>
                     <div>
-                      <p className="font-semibold text-foreground">{a.firstName} {a.lastName}</p>
-                      <p className="text-sm text-muted-foreground">{a.currentDesignation} at {a.currentCompany}</p>
-                      <p className="text-xs text-muted-foreground">{a.program} • Batch {a.graduationYear} • {a.industry}</p>
+                      <p className="font-semibold text-foreground">{a.name}</p>
+                      <p className="text-sm text-muted-foreground">{a.currentRole || 'Role N/A'} at {a.currentCompany || 'Company N/A'}</p>
+                      <p className="text-xs text-muted-foreground">{a.program || 'Program N/A'} • Batch {a.graduationYear || 'N/A'}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {a.verificationStatus === 'verified' ? <CheckCircle className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-amber-500" />}
-                    <Badge variant={a.verificationStatus === 'verified' ? 'default' : 'secondary'} className="capitalize">{a.verificationStatus}</Badge>
-                  </div>
+                  <Badge variant={a.currentCompany ? 'default' : 'secondary'}>{a.currentCompany ? 'active' : 'basic'}</Badge>
                 </CardContent>
               </Card>
             ))}
           </div>
 
           <div>
-            {alumni ? (
+            {selectedDetails ? (
               <Card>
-                <CardHeader><CardTitle className="flex items-center justify-between"><span>{alumni.firstName} {alumni.lastName}</span><Button variant="outline" size="sm"><Edit className="mr-1 h-3 w-3" />Edit</Button></CardTitle></CardHeader>
+                <CardHeader><CardTitle className="flex items-center justify-between"><span>{selectedDetails.user?.name || 'Alumni Profile'}</span><Button variant="outline" size="sm" onClick={() => setSelectedId(selectedDetails.id)}><Eye className="mr-1 h-3 w-3" />Reload</Button></CardTitle></CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><span className="text-muted-foreground">Email:</span><p className="text-foreground font-medium">{alumni.email}</p></div>
-                    <div><span className="text-muted-foreground">Phone:</span><p className="text-foreground font-medium">{alumni.phone || 'N/A'}</p></div>
-                    <div><span className="text-muted-foreground">Program:</span><p className="text-foreground font-medium">{alumni.program}</p></div>
-                    <div><span className="text-muted-foreground">Batch:</span><p className="text-foreground font-medium">{alumni.graduationYear}</p></div>
+                  <div className="grid grid-cols-1 gap-3 text-sm">
+                    <div><span className="text-muted-foreground">Email:</span><p className="font-medium text-foreground">{selectedDetails.user?.email || 'N/A'}</p></div>
+                    <div><span className="text-muted-foreground">Program:</span><p className="font-medium text-foreground">{selectedDetails.program || 'N/A'}</p></div>
+                    <div><span className="text-muted-foreground">Batch:</span><p className="font-medium text-foreground">{selectedDetails.graduationYear || 'N/A'}</p></div>
                   </div>
                   <div className="border-t pt-3">
-                    <h4 className="text-sm font-semibold text-foreground mb-2">Current Position</h4>
-                    <p className="text-sm text-foreground"><Briefcase className="inline h-3 w-3 mr-1" />{alumni.currentDesignation} at {alumni.currentCompany}</p>
-                    <p className="text-sm text-muted-foreground"><MapPin className="inline h-3 w-3 mr-1" />{alumni.workLocation}</p>
-                    <p className="text-sm text-muted-foreground"><Globe className="inline h-3 w-3 mr-1" />{alumni.industry}</p>
+                    <h4 className="mb-2 text-sm font-semibold text-foreground">Current Position</h4>
+                    <p className="text-sm text-foreground"><Briefcase className="mr-1 inline h-3 w-3" />{selectedDetails.currentRole || 'Role N/A'} at {selectedDetails.currentCompany || 'Company N/A'}</p>
+                    <p className="text-sm text-muted-foreground"><MapPin className="mr-1 inline h-3 w-3" />{selectedDetails.currentLocation || 'Location N/A'}</p>
                   </div>
-                  {alumni.achievements.length > 0 && (
-                    <div className="border-t pt-3">
-                      <h4 className="text-sm font-semibold text-foreground mb-2">Achievements</h4>
-                      {alumni.achievements.map((ach, i) => <p key={i} className="text-sm text-muted-foreground">• {ach}</p>)}
-                    </div>
-                  )}
-                  {alumni.linkedInProfile && <a href={alumni.linkedInProfile} target="_blank" className="text-sm text-primary hover:underline">View LinkedIn Profile →</a>}
-                  <div className="flex gap-2">
-                    {alumni.verificationStatus === 'pending' && <>
-                      <Button size="sm" className="flex-1">Verify</Button>
-                      <Button variant="destructive" size="sm" className="flex-1">Reject</Button>
-                    </>}
-                    <Button variant="outline" size="sm" className="flex-1"><Eye className="mr-1 h-3 w-3" />Full Profile</Button>
-                  </div>
+                  {selectedDetails.linkedIn && <a href={selectedDetails.linkedIn} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline"><Globe className="mr-1 inline h-3 w-3" />View LinkedIn Profile</a>}
+                  <Button variant="outline" size="sm" className="w-full" onClick={loadDirectory}><Users className="mr-1 h-3 w-3" />Refresh Directory</Button>
                 </CardContent>
               </Card>
             ) : (
-              <Card><CardContent className="p-8 text-center text-muted-foreground">Select an alumni to view details</CardContent></Card>
+              <Card><CardContent className="p-8 text-center text-muted-foreground">Select an alumni to view API-backed details</CardContent></Card>
             )}
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,7 @@ import {
   Search, Eye, Edit, CheckCircle, XCircle, FileText, Users,
   GraduationCap, Calendar, Mail, Phone, MapPin, AlertTriangle, Download
 } from 'lucide-react';
-import { studentRecords as initialRecords, recordChangeRequests as initialChanges } from '@/data/registrarMockData';
+import { fetchApi, putApi } from '@/lib/apiService';
 import { StudentRecord, RecordChangeRequest } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
@@ -26,13 +26,31 @@ const statusColors: Record<string, string> = {
 };
 
 export default function RegistrarStudentRecords() {
+  const [studentRecords, setStudentRecords] = useState<any>([]);
+  const [recordChangeRequests, setRecordChangeRequests] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+  useEffect(() => {
+    fetchApi('/registrar/students').then(d => setStudentRecords(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/registrar/record-changes').then(d => setRecordChangeRequests(d)).catch((error) => { console.error('API request failed', error); });
+    setApiLoading(false);
+  }, []);
+
   const { toast } = useToast();
-  const [records, setRecords] = useState(initialRecords);
-  const [changes, setChanges] = useState(initialChanges);
+  const [records, setRecords] = useState<any[]>([]);
+  const [changes, setChanges] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedStudent, setSelectedStudent] = useState<StudentRecord | null>(null);
   const [selectedChange, setSelectedChange] = useState<RecordChangeRequest | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    setRecords(studentRecords || []);
+  }, [studentRecords]);
+
+  useEffect(() => {
+    setChanges(recordChangeRequests || []);
+  }, [recordChangeRequests]);
 
   const filtered = records.filter(r => {
     const matchSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -42,16 +60,32 @@ export default function RegistrarStudentRecords() {
     return matchSearch && matchStatus;
   });
 
-  const handleApproveChange = (id: string) => {
-    setChanges(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' as const, approvedBy: 'Registrar' } : c));
-    toast({ title: 'Change Approved', description: 'Student record has been updated.' });
-    setSelectedChange(null);
+  const handleApproveChange = async (id: string) => {
+    try {
+      setIsUpdating(true);
+      await putApi(`/registrar/record-changes/${id}`, { status: 'approved', approvedBy: 'Registrar' });
+      setChanges(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' as const, approvedBy: 'Registrar' } : c));
+      toast({ title: 'Change Approved', description: 'Student record has been updated.' });
+      setSelectedChange(null);
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const handleRejectChange = (id: string) => {
-    setChanges(prev => prev.map(c => c.id === id ? { ...c, status: 'rejected' as const } : c));
-    toast({ title: 'Change Rejected', description: 'Record change request has been denied.' });
-    setSelectedChange(null);
+  const handleRejectChange = async (id: string) => {
+    try {
+      setIsUpdating(true);
+      await putApi(`/registrar/record-changes/${id}`, { status: 'rejected' });
+      setChanges(prev => prev.map(c => c.id === id ? { ...c, status: 'rejected' as const } : c));
+      toast({ title: 'Change Rejected', description: 'Record change request has been denied.' });
+      setSelectedChange(null);
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   return (
@@ -155,11 +189,11 @@ export default function RegistrarStudentRecords() {
                       </div>
                       {change.status === 'pending' && (
                         <div className="flex gap-1">
-                          <Button size="sm" className="h-7 text-xs gap-1" onClick={() => handleApproveChange(change.id)}>
-                            <CheckCircle className="h-3 w-3" /> Approve
+                          <Button size="sm" className="h-7 text-xs gap-1" onClick={() => handleApproveChange(change.id)} disabled={isUpdating}>
+                            <CheckCircle className="h-3 w-3" /> {isUpdating ? 'Approving...' : 'Approve'}
                           </Button>
-                          <Button size="sm" variant="destructive" className="h-7 text-xs gap-1" onClick={() => handleRejectChange(change.id)}>
-                            <XCircle className="h-3 w-3" /> Reject
+                          <Button size="sm" variant="destructive" className="h-7 text-xs gap-1" onClick={() => handleRejectChange(change.id)} disabled={isUpdating}>
+                            <XCircle className="h-3 w-3" /> {isUpdating ? 'Rejecting...' : 'Reject'}
                           </Button>
                         </div>
                       )}
@@ -202,7 +236,7 @@ export default function RegistrarStudentRecords() {
                 <div className="flex items-center gap-2 text-sm"><Phone className="h-4 w-4 text-muted-foreground" /> {selectedStudent?.phone}</div>
                 <div className="flex items-center gap-2 text-sm"><MapPin className="h-4 w-4 text-muted-foreground" /> {selectedStudent?.address}</div>
                 <div className="flex items-center gap-2 text-sm"><Users className="h-4 w-4 text-muted-foreground" /> Father: {selectedStudent?.fatherName}</div>
-                <div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-muted-foreground" /> DOB: {selectedStudent?.dob.toLocaleDateString('en-IN')}</div>
+                <div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-muted-foreground" /> DOB: {selectedStudent?.dob ? new Date(selectedStudent.dob).toLocaleDateString('en-IN') : 'N/A'}</div>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Exported', description: `Student record exported as PDF.` })}>

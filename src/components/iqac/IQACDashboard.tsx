@@ -1,15 +1,77 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Award, CheckCircle2, AlertTriangle, FileText, MessageSquare, BarChart3, Clock, Users, Download, ClipboardList, Star, BookOpen, Send } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { criteriaProgress, iqacActionItems, qualityDocuments, feedbackSummaries, grievanceCases, grievanceTrends, categoryStats } from '@/data/iqacMockData';
+import { Award, AlertTriangle, FileText, BarChart3, Download, ClipboardList, Star, Send } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { createIQACFeedbackForm, fetchIQACActions, fetchIQACCriteriaProgress, fetchIQACDocuments, fetchIQACFeedbackSummaries, generateAQAR } from '@/lib/iqacApi';
+import { useToast } from '@/hooks/use-toast';
 
 export default function IQACDashboard() {
-  const overallProgress = Math.round(criteriaProgress.reduce((a, b) => a + b.dataProgress, 0) / criteriaProgress.length);
+  const { toast } = useToast();
+  const [criteriaProgress, setCriteriaProgress] = useState<any>([]);
+  const [iqacActionItems, setIqacActionItems] = useState<any>([]);
+  const [feedbackSummaries, setFeedbackSummaries] = useState<any>([]);
+  const [qualityDocuments, setQualityDocuments] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+
+  const loadDashboardData = async () => {
+    try {
+      setApiLoading(true);
+      const [criteria, actions, feedback, documents] = await Promise.all([
+        fetchIQACCriteriaProgress(),
+        fetchIQACActions(),
+        fetchIQACFeedbackSummaries(),
+        fetchIQACDocuments()
+      ]);
+      setCriteriaProgress(criteria);
+      setIqacActionItems(actions);
+      setFeedbackSummaries(feedback);
+      setQualityDocuments(documents);
+    } catch (error: any) {
+      toast({ title: 'Unable to load dashboard', description: error?.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setApiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const handleGenerateAQAR = async () => {
+    try {
+      const now = new Date();
+      const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+      const academicYear = `${year}-${String(year + 1).slice(-2)}`;
+      await generateAQAR(academicYear);
+      toast({ title: 'AQAR generated', description: `AQAR draft created for ${academicYear}.` });
+    } catch (error: any) {
+      toast({ title: 'Generation failed', description: error?.message || 'Unable to generate AQAR.', variant: 'destructive' });
+    }
+  };
+
+  const handleSendReminder = async () => {
+    try {
+      const deadline = new Date();
+      deadline.setDate(deadline.getDate() + 7);
+      await createIQACFeedbackForm({
+        title: `Quality Reminder Form - ${new Date().toLocaleDateString('en-IN')}`,
+        deadline: deadline.toISOString(),
+        status: 'open'
+      });
+      toast({ title: 'Reminder sent', description: 'A feedback reminder form has been created.' });
+      await loadDashboardData();
+    } catch (error: any) {
+      toast({ title: 'Reminder failed', description: error?.message || 'Unable to send reminder.', variant: 'destructive' });
+    }
+  };
+
+  const overallProgress = criteriaProgress.length > 0
+    ? Math.round(criteriaProgress.reduce((a, b) => a + b.dataProgress, 0) / criteriaProgress.length)
+    : 0;
 
   return (
     <DashboardLayout>
@@ -20,8 +82,8 @@ export default function IQACDashboard() {
             <p className="text-muted-foreground">Internal Quality Assurance – NAAC/NIRF Compliance Tracking</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Generate AQAR</Button>
-            <Button size="sm"><Send className="mr-2 h-4 w-4" />Send Reminder</Button>
+            <Button variant="outline" size="sm" onClick={handleGenerateAQAR}><Download className="mr-2 h-4 w-4" />Generate AQAR</Button>
+            <Button size="sm" onClick={handleSendReminder}><Send className="mr-2 h-4 w-4" />Send Reminder</Button>
           </div>
         </div>
 
@@ -33,6 +95,10 @@ export default function IQACDashboard() {
           <Card><CardContent className="p-4"><div className="flex items-center gap-3"><ClipboardList className="h-8 w-8 text-blue-600" /><div><p className="text-xs text-muted-foreground">Action Items</p><p className="text-2xl font-bold">{iqacActionItems.length}</p></div></div></CardContent></Card>
           <Card><CardContent className="p-4"><div className="flex items-center gap-3"><FileText className="h-8 w-8 text-purple-600" /><div><p className="text-xs text-muted-foreground">Documents</p><p className="text-2xl font-bold">{qualityDocuments.length}</p></div></div></CardContent></Card>
         </div>
+
+        {!apiLoading && criteriaProgress.length === 0 && (
+          <Card><CardContent className="p-6 text-center text-muted-foreground">No IQAC dashboard data available.</CardContent></Card>
+        )}
 
         <Tabs defaultValue="criteria">
           <TabsList>

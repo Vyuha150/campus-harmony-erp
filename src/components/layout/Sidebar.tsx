@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, GraduationCap, ClipboardList, 
@@ -50,8 +50,11 @@ const facultyMenuItems: MenuItem[] = [
 // HOD-specific menu items
 const hodMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'approvals', label: 'Approvals', icon: Bell, path: '/hod/approvals' },
   { id: 'faculty', label: 'Faculty Management', icon: Users, path: '/hod/faculty' },
   { id: 'workload', label: 'Workload & Timetable', icon: Calendar, path: '/hod/workload' },
+  { id: 'course-management', label: 'Course Management', icon: BookOpen, path: '/hod/courses' },
+  { id: 'facility-management', label: 'Facility Management', icon: Building2, path: '/hod/facilities' },
   { id: 'students', label: 'Student Academics', icon: GraduationCap, path: '/hod/students' },
   { id: 'results', label: 'Results Analysis', icon: BarChart3, path: '/hod/results' },
   { id: 'accreditation', label: 'Accreditation Data', icon: FileText, path: '/hod/accreditation' },
@@ -64,6 +67,10 @@ const hodMenuItems: MenuItem[] = [
 const deanMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { id: 'academics', label: 'Academic Oversight', icon: GraduationCap, path: '/dean/academics' },
+  { id: 'meetings', label: 'Meetings', icon: Calendar, path: '/dean/meetings' },
+  { id: 'course-management', label: 'Course Management', icon: BookOpen, path: '/dean/courses' },
+  { id: 'facility-management', label: 'Facility Management', icon: Building2, path: '/dean/facilities' },
+  { id: 'semester-management', label: 'Semester Management', icon: Calendar, path: '/dean/semesters' },
   { id: 'faculty-hr', label: 'Faculty HR', icon: Users, path: '/dean/faculty-hr' },
   { id: 'student-affairs', label: 'Student Affairs', icon: Shield, path: '/dean/student-affairs' },
   { id: 'results', label: 'Exams & Results', icon: BarChart3, path: '/dean/results' },
@@ -83,6 +90,14 @@ const registrarMenuItems: MenuItem[] = [
   { id: 'hr', label: 'Establishment & HR', icon: Briefcase, path: '/registrar/hr' },
   { id: 'accreditation', label: 'Accreditation', icon: FileBarChart, path: '/registrar/accreditation' },
   { id: 'queries', label: 'Queries & Verification', icon: Search, path: '/registrar/queries' },
+];
+
+// COE-specific menu items
+const coeMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'exam-oversight', label: 'Exam Oversight', icon: ClipboardList, path: '/coe/exam-oversight' },
+  { id: 'results', label: 'Result Submission', icon: ClipboardList, path: '/coe/results' },
+  { id: 'submissions', label: 'Submission Tracker', icon: FileText, path: '/coe/submissions' },
 ];
 
 // VC / Pro-VC specific menu items
@@ -156,20 +171,52 @@ const iqacMenuItems: MenuItem[] = [
 // Grievance Officer menu items
 const grievanceMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { id: 'cases', label: 'Case Management', icon: MessageSquare, path: '/grievance/cases' },
-  { id: 'compliance', label: 'Compliance', icon: ShieldCheck, path: '/grievance/compliance' },
-  { id: 'reports', label: 'Reports', icon: FileBarChart, path: '/grievance/reports' },
+  {
+    id: 'grievance-portal',
+    label: 'Grievance Portal',
+    icon: MessageSquare,
+    path: '/grievance/cases',
+    children: [
+      { id: 'cases', label: 'Case Management', icon: MessageSquare, path: '/grievance/cases' },
+      { id: 'compliance', label: 'Compliance Tracking', icon: ShieldCheck, path: '/grievance/compliance' },
+      { id: 'reports', label: 'Reports & Analytics', icon: FileBarChart, path: '/grievance/reports' },
+    ]
+  },
 ];
 
 // Security Officer menu items
 const securityMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { id: 'incidents', label: 'Incidents', icon: Shield, path: '/security/incidents' },
-  { id: 'visitors', label: 'Visitor Passes', icon: Users, path: '/security/visitors' },
-  { id: 'ids', label: 'ID Management', icon: ClipboardList, path: '/security/ids' },
-  { id: 'vehicles', label: 'Vehicle Passes', icon: Building2, path: '/security/vehicles' },
-  { id: 'audit', label: 'Audit Logs', icon: FileText, path: '/security/audit' },
-  { id: 'vigilance', label: 'Vigilance', icon: ShieldCheck, path: '/security/vigilance' },
+  {
+    id: 'security-operations',
+    label: 'Security Operations',
+    icon: Shield,
+    path: '/security/incidents',
+    children: [
+      { id: 'incidents', label: 'Incident Reporting', icon: Shield, path: '/security/incidents' },
+      { id: 'visitors', label: 'Visitor Management', icon: Users, path: '/security/visitors' },
+      { id: 'ids', label: 'ID Card Requests', icon: ClipboardList, path: '/security/ids' },
+      { id: 'vehicles', label: 'Vehicle Passes', icon: Building2, path: '/security/vehicles' },
+      { id: 'vigilance', label: 'Vigilance Cases', icon: ShieldCheck, path: '/security/vigilance' },
+      { id: 'audit', label: 'Audit & Logs', icon: FileText, path: '/security/audit' },
+    ]
+  },
+];
+
+// Librarian menu items
+const librarianMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  {
+    id: 'library-management',
+    label: 'Library Management',
+    icon: Library,
+    path: '/library/catalog',
+    children: [
+      { id: 'catalog', label: 'Catalog', icon: Library, path: '/library/catalog' },
+      { id: 'circulation', label: 'Circulation & Issues', icon: BookOpen, path: '/library/circulation' },
+      { id: 'acquisitions', label: 'Acquisitions', icon: Package, path: '/library/acquisitions' },
+    ]
+  },
 ];
 
 // Super Admin menu items
@@ -177,7 +224,6 @@ const superAdminMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { id: 'users', label: 'User Management', icon: Users, path: '/admin/users' },
   { id: 'config', label: 'System Config', icon: Settings, path: '/admin/config' },
-  { id: 'modules', label: 'Module Management', icon: Package, path: '/admin/modules' },
   { id: 'audit', label: 'Audit & Monitoring', icon: Shield, path: '/admin/audit' },
   { id: 'notifications', label: 'Notifications', icon: Megaphone, path: '/admin/notifications' },
 ];
@@ -186,6 +232,7 @@ const superAdminMenuItems: MenuItem[] = [
 const studentMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { id: 'profile', label: 'My Profile', icon: Users, path: '/student/profile' },
+  { id: 'mentoring', label: 'Mentoring', icon: Users2, path: '/student/mentoring' },
   { id: 'courses', label: 'My Courses', icon: BookOpen, path: '/student/courses' },
   { id: 'assignments', label: 'Assignments', icon: ClipboardList, path: '/student/assignments' },
   { id: 'attendance', label: 'Attendance', icon: Calendar, path: '/student/attendance' },
@@ -193,6 +240,7 @@ const studentMenuItems: MenuItem[] = [
   { id: 'fees', label: 'Fees & Payments', icon: Wallet, path: '/student/fees' },
   { id: 'library', label: 'Library', icon: Library, path: '/student/library' },
   { id: 'placements', label: 'Placements', icon: Briefcase, path: '/student/placements' },
+  { id: 'communication', label: 'Communication', icon: Megaphone, path: '/student/communication' },
   { id: 'grievances', label: 'Grievances', icon: MessageSquare, path: '/student/grievances' },
 ];
 
@@ -292,14 +340,6 @@ export function Sidebar() {
   const roleInfo = ROLE_INFO[user.role];
   const RoleIcon = iconMap[roleInfo.icon] || Shield;
 
-  const toggleExpanded = (id: string) => {
-    setExpandedItems(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  };
-
-  const isActiveRoute = (path: string) => location.pathname.startsWith(path);
-
   // Use role-specific menus
   const filteredMenuItems = user.role === 'super_admin'
     ? superAdminMenuItems
@@ -315,6 +355,8 @@ export function Sidebar() {
     ? vcMenuItems
     : user.role === 'registrar'
     ? registrarMenuItems
+    : user.role === 'coe'
+    ? coeMenuItems
     : user.role === 'finance_officer'
     ? financeMenuItems
     : user.role === 'placement_officer'
@@ -329,10 +371,45 @@ export function Sidebar() {
     ? grievanceMenuItems
     : user.role === 'security_officer'
     ? securityMenuItems
+    : user.role === 'librarian'
+    ? librarianMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);
       });
+
+  // Auto-expand parent items when navigating to their children
+  useEffect(() => {
+    const pathSegments = location.pathname.split('/').filter(Boolean);
+    
+    filteredMenuItems.forEach((item) => {
+      if (item.children) {
+        const childIsActive = item.children.some(child => 
+          location.pathname === child.path || location.pathname.startsWith(child.path + '/')
+        );
+        if (childIsActive && !expandedItems.includes(item.id)) {
+          setExpandedItems(prev => [...prev, item.id]);
+        }
+      }
+    });
+  }, [location.pathname, expandedItems, filteredMenuItems]);
+
+  const toggleExpanded = (id: string) => {
+    setExpandedItems(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const isActiveRoute = (path: string, hasChildren?: boolean, children?: MenuItem[]) => {
+    if (hasChildren && children) {
+      // If this is a parent with children, check if any child is active
+      return children.some(child => 
+        location.pathname === child.path || location.pathname.startsWith(child.path + '/')
+      );
+    }
+    // Otherwise, check if the path matches the beginning of current location
+    return location.pathname === path || location.pathname.startsWith(path + '/');
+  };
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
@@ -393,9 +470,9 @@ export function Sidebar() {
         <nav className="space-y-1">
           {filteredMenuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = isActiveRoute(item.path);
-            const isExpanded = expandedItems.includes(item.id);
             const hasChildren = item.children && item.children.length > 0;
+            const isActive = isActiveRoute(item.path, hasChildren, item.children);
+            const isExpanded = expandedItems.includes(item.id);
 
             return (
               <div key={item.id}>

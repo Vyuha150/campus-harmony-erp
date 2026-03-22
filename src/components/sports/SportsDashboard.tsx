@@ -5,9 +5,65 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Trophy, Users, Medal, Calendar, MapPin, Search, Plus, Dumbbell, Activity, Package, ClipboardList, Heart } from 'lucide-react';
-import { sportsAthletes, sportsTeams, sportsFacilities, sportsInventory, sportsEvents } from '@/data/sportsMockData';
+import { useState, useEffect } from 'react';
+import { fetchApi, putApi } from '@/lib/apiService';
+import { toast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 export default function SportsDashboard() {
+  const navigate = useNavigate();
+  const [sportsAthletes, setSportsAthletes] = useState<any>([]);
+  const [sportsTeams, setSportsTeams] = useState<any>([]);
+  const [sportsFacilities, setSportsFacilities] = useState<any>([]);
+  const [sportsInventory, setSportsInventory] = useState<any>([]);
+  const [sportsEvents, setSportsEvents] = useState<any>([]);
+  const [_apiLoading, _setApiLoading] = useState(true);
+
+  const loadData = async () => {
+    try {
+      const [athletes, teams, facilities, inventory, events] = await Promise.all([
+        fetchApi('/sports/athletes'),
+        fetchApi('/sports/teams'),
+        fetchApi('/sports/facilities'),
+        fetchApi('/sports/inventory'),
+        fetchApi('/sports/events')
+      ]);
+      setSportsAthletes(athletes);
+      setSportsTeams(teams);
+      setSportsFacilities(facilities);
+      setSportsInventory(inventory);
+      setSportsEvents(events);
+    } catch (error) {
+      console.error('API request failed', error);
+      toast({ title: 'Failed to load sports dashboard', description: String((error as any)?.message || 'Please retry.'), variant: 'destructive' });
+    } finally {
+      _setApiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const bookFacility = async (facilityId: string) => {
+    try {
+      await putApi(`/sports/facilities/${facilityId}/book`, {});
+      toast({ title: 'Facility booked', description: 'Facility status updated to booked.' });
+      await loadData();
+    } catch (error: any) {
+      toast({ title: 'Booking failed', description: String(error?.message || 'Please retry.'), variant: 'destructive' });
+    }
+  };
+
+  const activeAthletes = sportsAthletes.filter((a: any) => String(a.status || '').toLowerCase() === 'active').length;
+  const medalCount = sportsAthletes.reduce((sum: number, a: any) => sum + (Array.isArray(a.achievements) ? a.achievements.length : 0), 0);
+  const teamCount = sportsTeams.length;
+  const now = new Date();
+  const upcomingEvents = sportsEvents.filter((event: any) => {
+    const d = new Date(event.startDate);
+    return !Number.isNaN(d.getTime()) && d >= now;
+  }).length;
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -16,16 +72,16 @@ export default function SportsDashboard() {
             <h1 className="text-3xl font-bold text-foreground">Sports Department</h1>
             <p className="text-muted-foreground">Athlete management, teams, facilities, and events</p>
           </div>
-          <Button size="sm"><Plus className="mr-2 h-4 w-4" />Register Athlete</Button>
+          <Button size="sm" onClick={() => navigate('/sports/athletes')}><Plus className="mr-2 h-4 w-4" />Register Athlete</Button>
         </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Users className="h-8 w-8 text-primary" /><div><p className="text-xs text-muted-foreground">Active Athletes</p><p className="text-2xl font-bold">{sportsAthletes.length + 85}</p></div></div></CardContent></Card>
-          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Trophy className="h-8 w-8 text-amber-500" /><div><p className="text-xs text-muted-foreground">Teams</p><p className="text-2xl font-bold">{sportsTeams.length + 10}</p></div></div></CardContent></Card>
-          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Medal className="h-8 w-8 text-yellow-600" /><div><p className="text-xs text-muted-foreground">Medals This Year</p><p className="text-2xl font-bold">24</p></div></div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Users className="h-8 w-8 text-primary" /><div><p className="text-xs text-muted-foreground">Active Athletes</p><p className="text-2xl font-bold">{activeAthletes}</p></div></div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Trophy className="h-8 w-8 text-amber-500" /><div><p className="text-xs text-muted-foreground">Teams</p><p className="text-2xl font-bold">{teamCount}</p></div></div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Medal className="h-8 w-8 text-yellow-600" /><div><p className="text-xs text-muted-foreground">Medals This Year</p><p className="text-2xl font-bold">{medalCount}</p></div></div></CardContent></Card>
           <Card><CardContent className="p-4"><div className="flex items-center gap-3"><MapPin className="h-8 w-8 text-green-600" /><div><p className="text-xs text-muted-foreground">Facilities</p><p className="text-2xl font-bold">{sportsFacilities.length}</p></div></div></CardContent></Card>
-          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Calendar className="h-8 w-8 text-blue-600" /><div><p className="text-xs text-muted-foreground">Upcoming Events</p><p className="text-2xl font-bold">{sportsEvents.length}</p></div></div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Calendar className="h-8 w-8 text-blue-600" /><div><p className="text-xs text-muted-foreground">Upcoming Events</p><p className="text-2xl font-bold">{upcomingEvents}</p></div></div></CardContent></Card>
         </div>
 
         <Tabs defaultValue="athletes">
@@ -47,13 +103,13 @@ export default function SportsDashboard() {
                   <div>
                     <p className="font-semibold text-foreground">{a.studentName}</p>
                     <p className="text-sm text-muted-foreground">{a.rollNumber} • {a.program} – Year {a.year}</p>
-                    <div className="mt-1 flex gap-2">{a.sports.map((s,i) => <Badge key={i} variant="outline">{s.sport} ({s.level})</Badge>)}</div>
+                    <div className="mt-1 flex gap-2">{(Array.isArray(a.sports) ? a.sports : []).map((s,i) => <Badge key={i} variant="outline">{s.sport} ({s.level})</Badge>)}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {a.achievements.length > 0 && <Badge variant="default"><Medal className="mr-1 h-3 w-3" />{a.achievements.length} medals</Badge>}
+                  {(Array.isArray(a.achievements) ? a.achievements : []).length > 0 && <Badge variant="default"><Medal className="mr-1 h-3 w-3" />{(Array.isArray(a.achievements) ? a.achievements : []).length} medals</Badge>}
                   <Badge variant={a.status === 'active' ? 'default' : a.status === 'injured' ? 'destructive' : 'secondary'} className="capitalize">{a.status}</Badge>
-                  <Button variant="outline" size="sm">Profile</Button>
+                  <Button variant="outline" size="sm" onClick={() => navigate('/sports/athletes')}>Profile</Button>
                 </div>
               </CardContent></Card>
             ))}
@@ -66,10 +122,10 @@ export default function SportsDashboard() {
                   <div>
                     <h3 className="text-lg font-semibold text-foreground">{t.sport} – {t.category === 'men' ? "Men's" : "Women's"} Team</h3>
                     <p className="text-sm text-muted-foreground">Coach: {t.coach} {t.captain && `• Captain: ${t.captain}`}</p>
-                    <p className="text-sm text-muted-foreground">{t.members.length} members • Season: {t.season}</p>
+                    <p className="text-sm text-muted-foreground">{(Array.isArray(t.members) ? t.members.length : 0)} members • Season: {t.season}</p>
                     <div className="mt-2 flex gap-2">
-                      {t.members.slice(0,3).map((m,i) => <Badge key={i} variant="outline">{m.studentName} ({m.position})</Badge>)}
-                      {t.members.length > 3 && <Badge variant="secondary">+{t.members.length-3} more</Badge>}
+                      {(Array.isArray(t.members) ? t.members : []).slice(0,3).map((m,i) => <Badge key={i} variant="outline">{m.studentName} ({m.position})</Badge>)}
+                      {(Array.isArray(t.members) ? t.members.length : 0) > 3 && <Badge variant="secondary">+{(Array.isArray(t.members) ? t.members.length : 0)-3} more</Badge>}
                     </div>
                   </div>
                   <Badge variant={t.status === 'active' ? 'default' : 'secondary'} className="capitalize">{t.status}</Badge>
@@ -86,12 +142,12 @@ export default function SportsDashboard() {
                     <div>
                       <h3 className="font-semibold text-foreground">{f.name}</h3>
                       <p className="text-sm text-muted-foreground capitalize">{f.type} • Capacity: {f.capacity}</p>
-                      <p className="text-sm text-muted-foreground">Sports: {f.sports.join(', ')}</p>
-                      <div className="mt-2 flex flex-wrap gap-1">{f.amenities.map((a,i) => <Badge key={i} variant="outline" className="text-xs">{a}</Badge>)}</div>
+                      <p className="text-sm text-muted-foreground">Sports: {(Array.isArray(f.sports) ? f.sports : []).join(', ')}</p>
+                      <div className="mt-2 flex flex-wrap gap-1">{(Array.isArray(f.amenities) ? f.amenities : []).map((a,i) => <Badge key={i} variant="outline" className="text-xs">{a}</Badge>)}</div>
                     </div>
                     <Badge variant={f.status === 'available' ? 'default' : f.status === 'maintenance' ? 'destructive' : 'secondary'} className="capitalize">{f.status}</Badge>
                   </div>
-                  <Button variant="outline" size="sm" className="mt-3">Book Facility</Button>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => bookFacility(f.id)} disabled={f.status !== 'available'}>Book Facility</Button>
                 </CardContent></Card>
               ))}
             </div>
@@ -125,8 +181,8 @@ export default function SportsDashboard() {
                 <div className="flex items-start justify-between">
                   <div>
                     <h3 className="text-lg font-semibold text-foreground">{e.name}</h3>
-                    <p className="text-sm text-muted-foreground">{e.startDate.toLocaleDateString('en-IN')} – {e.endDate.toLocaleDateString('en-IN')} • {e.venue}</p>
-                    <div className="mt-2 flex flex-wrap gap-1">{e.sports.map((s,i) => <Badge key={i} variant="outline">{s}</Badge>)}</div>
+                    <p className="text-sm text-muted-foreground">{new Date(e.startDate).toLocaleDateString('en-IN')} – {new Date(e.endDate).toLocaleDateString('en-IN')} • {e.venue}</p>
+                    <div className="mt-2 flex flex-wrap gap-1">{(Array.isArray(e.sports) ? e.sports : []).map((s,i) => <Badge key={i} variant="outline">{s}</Badge>)}</div>
                   </div>
                   <Badge variant={e.status === 'ongoing' ? 'default' : 'secondary'} className="capitalize">{e.status}</Badge>
                 </div>
@@ -139,7 +195,7 @@ export default function SportsDashboard() {
               <Heart className="h-16 w-16 text-muted-foreground/30" />
               <h3 className="mt-4 text-lg font-semibold">Health & Fitness Records</h3>
               <p className="text-sm text-muted-foreground">Track fitness tests, medical checkups, and injury records for athletes</p>
-              <Button className="mt-4">View Records</Button>
+              <Button className="mt-4" onClick={() => navigate('/sports/health')}>View Records</Button>
             </CardContent></Card>
           </TabsContent>
         </Tabs>

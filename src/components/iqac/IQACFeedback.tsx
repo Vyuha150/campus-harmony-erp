@@ -5,10 +5,33 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Download, Star, Users, TrendingUp, BarChart3 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend } from 'recharts';
-import { feedbackSummaries } from '@/data/iqacMockData';
+import { useState, useEffect } from 'react';
+import { fetchIQACFeedbackSummaries } from '@/lib/iqacApi';
+import { useToast } from '@/hooks/use-toast';
 
 export default function IQACFeedback() {
-  const avgRating = (feedbackSummaries.reduce((a, b) => a + b.averageRating, 0) / feedbackSummaries.length).toFixed(1);
+  const { toast } = useToast();
+  const [feedbackSummaries, setFeedbackSummaries] = useState<any>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+
+  useEffect(() => {
+    const loadFeedback = async () => {
+      try {
+        setApiLoading(true);
+        const data = await fetchIQACFeedbackSummaries();
+        setFeedbackSummaries(data);
+      } catch (error: any) {
+        toast({ title: 'Unable to load feedback analytics', description: error?.message || 'Please try again.', variant: 'destructive' });
+      } finally {
+        setApiLoading(false);
+      }
+    };
+    loadFeedback();
+  }, []);
+
+  const avgRating = feedbackSummaries.length > 0
+    ? (feedbackSummaries.reduce((a, b) => a + b.averageRating, 0) / feedbackSummaries.length).toFixed(1)
+    : '0.0';
   const totalRespondents = feedbackSummaries.reduce((a, b) => a + b.respondents, 0);
 
   const barData = feedbackSummaries.map(f => ({
@@ -18,13 +41,43 @@ export default function IQACFeedback() {
   }));
 
   const radarData = [
-    { subject: 'Teaching Quality', student: 4.3, alumni: 4.0, employer: 3.8 },
-    { subject: 'Infrastructure', student: 3.8, alumni: 3.5, employer: 3.9 },
-    { subject: 'Placement Support', student: 4.0, alumni: 4.2, employer: 4.1 },
-    { subject: 'Research Exposure', student: 3.5, alumni: 3.3, employer: 3.6 },
-    { subject: 'Communication', student: 3.9, alumni: 3.7, employer: 3.4 },
-    { subject: 'Overall Satisfaction', student: 4.1, alumni: 3.8, employer: 3.9 },
+    {
+      subject: 'Overall Quality',
+      ...Object.fromEntries(feedbackSummaries.map((item) => [item.type, item.averageRating]))
+    },
+    {
+      subject: 'Participation',
+      ...Object.fromEntries(feedbackSummaries.map((item) => [item.type, Math.min(5, Number((item.respondents / 100).toFixed(1)))]))
+    },
+    {
+      subject: 'Satisfaction',
+      ...Object.fromEntries(feedbackSummaries.map((item) => [item.type, item.averageRating]))
+    }
   ];
+
+  const handleExport = () => {
+    if (feedbackSummaries.length === 0) {
+      toast({ title: 'No data to export', description: 'Feedback summaries are empty.', variant: 'destructive' });
+      return;
+    }
+
+    const headers = ['type', 'respondents', 'averageRating', 'satisfactionLevel', 'lastCollected'];
+    const rows = feedbackSummaries.map((item) => [
+      item.type,
+      item.respondents,
+      item.averageRating,
+      item.satisfactionLevel,
+      new Date(item.lastCollected).toISOString()
+    ]);
+    const csv = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `iqac-feedback-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const getSatisfactionColor = (level: string) => {
     switch (level) {
@@ -44,8 +97,8 @@ export default function IQACFeedback() {
             <p className="text-muted-foreground">Comprehensive feedback from students, alumni, employers, and faculty</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export Report</Button>
-            <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Raw Data</Button>
+            <Button variant="outline" size="sm" onClick={handleExport}><Download className="mr-2 h-4 w-4" />Export Report</Button>
+            <Button variant="outline" size="sm" onClick={handleExport}><Download className="mr-2 h-4 w-4" />Raw Data</Button>
           </div>
         </div>
 
@@ -75,7 +128,9 @@ export default function IQACFeedback() {
               <div>
                 <p className="text-xs text-muted-foreground">Highest Rated</p>
                 <p className="text-2xl font-bold text-foreground capitalize">
-                  {feedbackSummaries.reduce((a, b) => a.averageRating > b.averageRating ? a : b).type}
+                  {feedbackSummaries.length > 0
+                    ? feedbackSummaries.reduce((a, b) => a.averageRating > b.averageRating ? a : b).type
+                    : 'n/a'}
                 </p>
               </div>
             </div>
@@ -116,15 +171,28 @@ export default function IQACFeedback() {
                   <PolarGrid className="stroke-border" />
                   <PolarAngleAxis dataKey="subject" className="text-xs" />
                   <PolarRadiusAxis angle={90} domain={[0, 5]} />
-                  <Radar name="Student" dataKey="student" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.2} />
-                  <Radar name="Alumni" dataKey="alumni" stroke="hsl(210, 70%, 50%)" fill="hsl(210, 70%, 50%)" fillOpacity={0.15} />
-                  <Radar name="Employer" dataKey="employer" stroke="hsl(150, 60%, 40%)" fill="hsl(150, 60%, 40%)" fillOpacity={0.15} />
+                  {feedbackSummaries.map((series, index) => (
+                    <Radar
+                      key={series.type}
+                      name={series.type.charAt(0).toUpperCase() + series.type.slice(1)}
+                      dataKey={series.type}
+                      stroke={index === 0 ? 'hsl(var(--primary))' : index === 1 ? 'hsl(210, 70%, 50%)' : 'hsl(150, 60%, 40%)'}
+                      fill={index === 0 ? 'hsl(var(--primary))' : index === 1 ? 'hsl(210, 70%, 50%)' : 'hsl(150, 60%, 40%)'}
+                      fillOpacity={0.15}
+                    />
+                  ))}
                   <Legend />
                 </RadarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         </div>
+
+        {!apiLoading && feedbackSummaries.length === 0 && (
+          <Card>
+            <CardContent className="p-8 text-center text-muted-foreground">No feedback summaries available.</CardContent>
+          </Card>
+        )}
 
         {/* Detailed Feedback Cards */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

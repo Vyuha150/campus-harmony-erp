@@ -27,6 +27,7 @@ export interface CourseSchedule {
 export interface Assignment {
   id: string;
   courseId: string;
+  semester?: number;
   courseName: string;
   courseCode: string;
   title: string;

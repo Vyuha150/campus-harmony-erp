@@ -1,6 +1,8 @@
 import { format } from 'date-fns';
 import { Clock, BookOpen, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useEffect, useState } from 'react';
+import { fetchApi } from '@/lib/apiService';
 
 interface ScheduleItem {
   id: string;
@@ -11,45 +13,6 @@ interface ScheduleItem {
   type: 'class' | 'meeting' | 'exam' | 'event';
   status?: 'upcoming' | 'ongoing' | 'completed';
 }
-
-const mockSchedule: ScheduleItem[] = [
-  {
-    id: '1',
-    title: 'Data Structures & Algorithms',
-    time: '09:00',
-    endTime: '10:30',
-    location: 'Room 301, Block A',
-    type: 'class',
-    status: 'completed',
-  },
-  {
-    id: '2',
-    title: 'Database Management Systems',
-    time: '11:00',
-    endTime: '12:30',
-    location: 'Room 205, Block B',
-    type: 'class',
-    status: 'ongoing',
-  },
-  {
-    id: '3',
-    title: 'Department Meeting',
-    time: '14:00',
-    endTime: '15:00',
-    location: 'Conference Room 2',
-    type: 'meeting',
-    status: 'upcoming',
-  },
-  {
-    id: '4',
-    title: 'Machine Learning Lab',
-    time: '15:30',
-    endTime: '17:30',
-    location: 'AI Lab, Block C',
-    type: 'class',
-    status: 'upcoming',
-  },
-];
 
 const typeColors = {
   class: 'border-info bg-info/10',
@@ -65,9 +28,17 @@ const statusStyles = {
 };
 
 export function ScheduleWidget() {
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+
+  useEffect(() => {
+    fetchApi('/dashboard/schedule')
+      .then((data) => setSchedule(data))
+      .catch((error) => { console.error('API request failed', error); });
+  }, []);
+
   return (
     <div className="space-y-3">
-      {mockSchedule.map((item) => (
+      {schedule.map((item) => (
         <div
           key={item.id}
           className={cn(
