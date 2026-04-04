@@ -125,12 +125,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const showBack = pathSegments.length > 1;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-svh w-full overflow-hidden bg-background">
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <Header />
         {showBack && (
-          <div className="flex items-center gap-3 border-b bg-muted/30 px-6 py-2.5">
+          <div className="flex items-center gap-3 border-b bg-muted/30 px-3 py-2.5 sm:px-6">
             <Button
               variant="ghost"
               size="sm"
@@ -140,8 +140,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               <ArrowLeft className="h-4 w-4" />
               Back
             </Button>
-            <div className="h-4 w-px bg-border" />
-            <Breadcrumb>
+            <div className="hidden h-4 w-px bg-border sm:block" />
+            <Breadcrumb className="hidden sm:block">
               <BreadcrumbList>
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
@@ -172,7 +172,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             </Breadcrumb>
           </div>
         )}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-6">
           {children}
         </main>
       </div>

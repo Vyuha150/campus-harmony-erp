@@ -1,4 +1,4 @@
-import { Bell, Search, HelpCircle, Settings, ChevronDown } from 'lucide-react';
+import { Bell, Search, HelpCircle, Settings, ChevronDown, Menu } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { ROLE_INFO } from '@/types/erp';
 import { Button } from '@/components/ui/button';
@@ -71,11 +71,23 @@ export function Header() {
     return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   };
 
+  const handleOpenSidebar = () => {
+    window.dispatchEvent(new Event('erp:toggle-sidebar'));
+  };
+
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-card px-6">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-card px-3 sm:h-16 sm:px-6">
       {/* Search */}
-      <div className="flex items-center gap-4">
-        <div className="relative w-80">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground lg:hidden"
+          onClick={handleOpenSidebar}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+        <div className="relative hidden w-80 max-w-[60vw] lg:block">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search students, courses, faculty..."
@@ -85,7 +97,7 @@ export function Header() {
       </div>
 
       {/* Right Section */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3">
         {/* Quick Actions */}
         <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
           <HelpCircle className="h-5 w-5" />
@@ -142,7 +154,7 @@ export function Header() {
           </PopoverContent>
         </Popover>
 
-        <Badge variant="secondary" className="font-normal">{roleInfo.label}</Badge>
+        <Badge variant="secondary" className="hidden font-normal sm:inline-flex">{roleInfo.label}</Badge>
 
         {/* User Menu */}
         <DropdownMenu>

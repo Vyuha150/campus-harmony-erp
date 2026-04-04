@@ -332,8 +332,15 @@ const iconMap: Record<string, React.ElementType> = {
 export function Sidebar() {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 1024 : false,
+  );
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 1024 : false,
+  );
   const [expandedItems, setExpandedItems] = useState<string[]>(['academics']);
+  const isDesktopCollapsed = !isMobile && isCollapsed;
 
   if (!user) return null;
 
@@ -394,6 +401,36 @@ export function Sidebar() {
     });
   }, [location.pathname, expandedItems, filteredMenuItems]);
 
+  useEffect(() => {
+    if (isMobile) {
+      setIsMobileOpen(false);
+    }
+  }, [location.pathname, isMobile]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (mobile) {
+        setIsCollapsed(true);
+      }
+    };
+
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    const toggleSidebar = () => {
+      if (!isMobile) return;
+      setIsMobileOpen((prev) => !prev);
+    };
+
+    window.addEventListener('erp:toggle-sidebar', toggleSidebar as EventListener);
+    return () => window.removeEventListener('erp:toggle-sidebar', toggleSidebar as EventListener);
+  }, [isMobile]);
+
   const toggleExpanded = (id: string) => {
     setExpandedItems(prev => 
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
@@ -416,15 +453,25 @@ export function Sidebar() {
   };
 
   return (
-    <aside
+    <>
+      {isMobile && isMobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40"
+          onClick={() => setIsMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <aside
       className={cn(
         'flex h-screen flex-col bg-sidebar text-sidebar-foreground transition-all duration-300',
-        isCollapsed ? 'w-16' : 'w-64'
+        isMobile
+          ? `fixed left-0 top-0 z-50 w-64 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}`
+          : (isDesktopCollapsed ? 'w-16' : 'w-64')
       )}
     >
       {/* Header */}
       <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
-        {!isCollapsed && (
+        {!isDesktopCollapsed && (
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
               <GraduationCap className="h-5 w-5 text-sidebar-primary-foreground" />
@@ -438,15 +485,21 @@ export function Sidebar() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => setIsCollapsed(!isCollapsed)}
+          onClick={() => {
+            if (isMobile) {
+              setIsMobileOpen(false);
+              return;
+            }
+            setIsCollapsed(!isCollapsed);
+          }}
           className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
-          {isCollapsed ? <Menu className="h-4 w-4" /> : <X className="h-4 w-4" />}
+          {isMobile ? <X className="h-4 w-4" /> : isCollapsed ? <Menu className="h-4 w-4" /> : <X className="h-4 w-4" />}
         </Button>
       </div>
 
       {/* User Info */}
-      {!isCollapsed && (
+      {!isDesktopCollapsed && (
         <div className="border-b border-sidebar-border p-4">
           <div className="flex items-center gap-3">
             <Avatar className="h-10 w-10 border-2 border-sidebar-primary">
@@ -476,7 +529,7 @@ export function Sidebar() {
 
             return (
               <div key={item.id}>
-                {hasChildren ? (
+                {hasChildren && !isDesktopCollapsed ? (
                   <button
                     onClick={() => toggleExpanded(item.id)}
                     className={cn(
@@ -509,12 +562,12 @@ export function Sidebar() {
                     )}
                   >
                     <Icon className="h-5 w-5 shrink-0" />
-                    {!isCollapsed && <span>{item.label}</span>}
+                    {!isDesktopCollapsed && <span>{item.label}</span>}
                   </Link>
                 )}
 
                 {/* Children */}
-                {hasChildren && isExpanded && !isCollapsed && (
+                {hasChildren && isExpanded && !isDesktopCollapsed && (
                   <div className="ml-4 mt-1 space-y-1 border-l border-sidebar-border pl-4">
                     {item.children!.map((child) => {
                       const ChildIcon = child.icon;
@@ -552,11 +605,11 @@ export function Sidebar() {
               variant="ghost"
               className={cn(
                 'w-full justify-start gap-2 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                isCollapsed && 'justify-center px-0'
+                isDesktopCollapsed && 'justify-center px-0'
               )}
             >
               <LogOut className="h-4 w-4" />
-              {!isCollapsed && <span>Logout</span>}
+              {!isDesktopCollapsed && <span>Logout</span>}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
@@ -570,5 +623,6 @@ export function Sidebar() {
         </DropdownMenu>
       </div>
     </aside>
+    </>
   );
 }
