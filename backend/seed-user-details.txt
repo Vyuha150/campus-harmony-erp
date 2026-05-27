@@ -1,0 +1,108 @@
+Seed User Details
+=================
+
+Default password used for all seeded users:
+- `Password@123`
+
+
+1. System Administrator
+   - id: seed-user-super-admin
+   - email: superadmin@campusharmony.edu
+   - role: super_admin
+   - designation: Super Admin
+
+2. Ananya Student
+   - id: seed-user-student
+   - email: student@campusharmony.edu
+   - role: student
+   - designation: Student
+
+3. Dr. Ravi Faculty
+   - id: seed-user-faculty
+   - email: faculty@campusharmony.edu
+   - role: faculty
+   - designation: Professor
+
+4. Meera Finance
+   - id: seed-user-finance
+   - email: finance@campusharmony.edu
+   - role: finance_officer
+   - designation: Finance Officer
+
+5. Dr. Kiran HOD
+   - id: seed-user-hod
+   - email: hod@campusharmony.edu
+   - role: hod
+   - designation: Head of Department
+
+6. Dr. Isha Dean
+   - id: seed-user-dean
+   - email: dean@campusharmony.edu
+   - role: dean
+   - designation: Dean Academics
+
+7. Dr. A. Kumar
+   - id: seed-user-vc
+   - email: vc@campusharmony.edu
+   - role: vice_chancellor
+   - designation: Vice Chancellor
+
+8. Dr. P. Nair
+   - id: seed-user-pro-vc
+   - email: provc@campusharmony.edu
+   - role: pro_vc
+   - designation: Pro Vice Chancellor
+
+9. Priya Registrar
+   - id: seed-user-registrar
+   - email: registrar@campusharmony.edu
+   - role: registrar
+   - designation: Registrar
+
+10. Rahul COE
+    - id: seed-user-coe
+    - email: coe@campusharmony.edu
+    - role: coe
+    - designation: Controller of Examinations
+
+11. Rohit Alumni
+    - id: seed-user-alumni-officer
+    - email: alumni@campusharmony.edu
+    - role: alumni_officer
+    - designation: Alumni Relations Officer
+
+12. Farah IQAC
+    - id: seed-user-iqac
+    - email: iqac@campusharmony.edu
+    - role: iqac_coordinator
+    - designation: IQAC Coordinator
+
+13. Nitin Placement
+    - id: seed-user-placement
+    - email: placement@campusharmony.edu
+    - role: placement_officer
+    - designation: Placement Officer
+
+14. Arjun Sports
+    - id: seed-user-sports
+    - email: sports@campusharmony.edu
+    - role: sports_director
+    - designation: Sports Director
+
+15. Leena Grievance
+    - id: seed-user-grievance
+    - email: grievance@campusharmony.edu
+    - role: grievance_officer
+    - designation: Grievance Officer
+
+16. Kabir Security
+    - id: seed-user-security
+    - email: security@campusharmony.edu
+    - role: security_officer
+    - designation: Chief Security Officer
+
+17. Maya Librarian
+    - id: seed-user-librarian
+    - email: librarian@campusharmony.edu
+    - role: librarian
+    - designation: Librarian

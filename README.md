@@ -1,73 +1,106 @@
-# Welcome to your Lovable project
+# Campus Harmony ERP
 
-## Project info
+Campus Harmony ERP is a comprehensive enterprise resource planning (ERP) system designed to streamline and manage various administrative and operational tasks within an educational institution. This project is built using modern web technologies and follows a modular architecture to ensure scalability and maintainability.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+- **Role-Based Access Control (RBAC):**
+  - Admin, Faculty, Students, Alumni, and other roles with specific permissions.
+- **Grievance Management:**
+  - Submit, track, and resolve grievances efficiently.
+- **Academic Management:**
+  - Manage courses, faculty, and student data.
+- **Finance Management:**
+  - Handle fees, budgets, and financial reports.
+- **Library Management:**
+  - Track books, issue/return records, and manage inventory.
+- **Placement Assistance:**
+  - Manage placement drives and student-company interactions.
+- **Sports and Events:**
+  - Organize and manage sports activities and events.
 
-There are several ways of editing your application.
+## Project Structure
 
-**Use Lovable**
+The project is divided into two main parts:
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+### 1. Frontend
+- Built with **React** and **TypeScript**.
+- Uses **Vite** for fast development and build processes.
+- Tailwind CSS for styling.
+- Key directories:
+  - `src/components`: Contains reusable UI components.
+  - `src/pages`: Contains page-level components.
+  - `src/context`: Context providers for global state management.
+  - `src/hooks`: Custom React hooks.
+  - `src/lib`: Utility functions and API services.
 
-Changes made via Lovable will be committed automatically to this repo.
+### 2. Backend
+- Built with **Node.js** and **TypeScript**.
+- Uses **Express.js** for the server.
+- **Prisma** ORM for database management.
+- Key directories:
+  - `backend/src/routes`: Contains route handlers for various modules.
+  - `backend/src/middleware`: Middleware for authentication and other tasks.
+  - `backend/prisma`: Prisma schema and seed scripts.
 
-**Use your preferred IDE**
+## Installation
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Prerequisites
+- Node.js (v16 or later)
+- npm or yarn
+- PostgreSQL (or any other database supported by Prisma)
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Steps
 
-Follow these steps:
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd campus-harmony-erp
+   ```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+3. Set up the database:
+   - Update the `DATABASE_URL` in `.env` file.
+   - Run Prisma migrations:
+     ```bash
+     npx prisma migrate dev
+     ```
+   - Seed the database:
+     ```bash
+     npx ts-node backend/prisma/seed.ts
+     ```
 
-# Step 3: Install the necessary dependencies.
-npm i
+4. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+5. Open the application in your browser at `http://localhost:3000`.
 
-**Edit a file directly in GitHub**
+## Scripts
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+- `npm run dev`: Start the development server.
+- `npm run build`: Build the project for production.
+- `npm run test`: Run tests.
+- `npm run lint`: Lint the codebase.
 
-**Use GitHub Codespaces**
+## Contributing
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Contributions are welcome! Please follow these steps:
 
-## What technologies are used for this project?
+1. Fork the repository.
+2. Create a new branch for your feature or bugfix.
+3. Commit your changes with clear messages.
+4. Submit a pull request.
 
-This project is built with:
+## License
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-## How can I deploy this project?
+## Acknowledgments
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- Thanks to all contributors and open-source libraries used in this project.
