@@ -378,6 +378,7 @@ async function main() {
     },
     create: {
       id: IDS.core.course,
+      institutionId: SEED_INSTITUTION_ID,
       code: 'CSE501',
       name: 'Cloud Computing',
       credits: 4,
@@ -708,6 +709,7 @@ async function main() {
   });
 
   await upsertById(prisma.qualityMetric, 'seed-quality-metric-1', {
+    institutionId: SEED_INSTITUTION_ID,
     category: 'naac',
     metric: 'Graduate Employability',
     currentValue: '82%',
@@ -805,6 +807,7 @@ async function main() {
 
 
   await upsertById(prisma.incidentReport, 'seed-incident-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Unauthorized lab access attempt',
     description: 'Attempted after-hours entry in CSE lab.',
     location: 'CSE Lab 2',
@@ -882,6 +885,7 @@ async function main() {
   });
 
   await upsertById(prisma.meeting, 'seed-meeting-1', {
+    institutionId: SEED_INSTITUTION_ID,
     meetingType: 'academic_council',
     title: 'Semester Performance Review',
     date: daysFromNow(3),
@@ -896,6 +900,7 @@ async function main() {
   });
 
   await upsertById(prisma.broadcastMessage, 'seed-broadcast-message-1', {
+    institutionId: SEED_INSTITUTION_ID,
     subject: 'Campus Closed on Friday',
     content: 'Campus will remain closed for maintenance activities.',
     sender: IDS.users.vc,
@@ -1007,6 +1012,7 @@ async function main() {
     },
     create: {
       id: 'seed-journal-entry-1',
+      institutionId: SEED_INSTITUTION_ID,
       entryNumber: 'JE-2026-0001',
       date: new Date(),
       description: 'Tuition receivable for semester 5',
@@ -1185,6 +1191,7 @@ async function main() {
   });
 
   await upsertById(prisma.alumniEvent, 'seed-alumni-event-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Annual Alumni Meet 2026',
     description: 'Networking and mentorship event for alumni and students.',
     type: 'meetup',
@@ -1231,6 +1238,7 @@ async function main() {
   });
 
   await upsertById(prisma.alumniJobPosting, 'seed-alumni-job-posting-1', {
+    institutionId: SEED_INSTITUTION_ID,
     postedBy: IDS.users.alumniOfficer,
     companyName: 'FutureTech Solutions',
     jobTitle: 'Associate Backend Engineer',
@@ -1410,6 +1418,7 @@ async function main() {
   });
 
   await upsertById(prisma.antiRaggingAffidavit, 'seed-antiragging-1', {
+    institutionId: SEED_INSTITUTION_ID,
     studentId: IDS.student.profile,
     studentName: 'Ananya Student',
     program: 'B.Tech CSE',
@@ -1596,6 +1605,7 @@ async function main() {
   });
 
   await upsertById(prisma.transferRequest, 'seed-transfer-request-1', {
+    institutionId: SEED_INSTITUTION_ID,
     studentId: IDS.student.profile,
     studentName: 'Ananya Student',
     type: 'intra_university',
@@ -1649,6 +1659,7 @@ async function main() {
   });
 
   await upsertById(prisma.vacancy, 'seed-vacancy-1', {
+    institutionId: SEED_INSTITUTION_ID,
     position: 'Assistant Professor',
     department: 'CSE',
     type: 'teaching',
@@ -1661,6 +1672,7 @@ async function main() {
   });
 
   await upsertById(prisma.accreditationChecklist, 'seed-accreditation-checklist-1', {
+    institutionId: SEED_INSTITUTION_ID,
     framework: 'NAAC',
     criterion: 'Criterion 2',
     description: 'Teaching-learning and evaluation evidence collation.',
@@ -1699,6 +1711,7 @@ async function main() {
   });
 
   await upsertById(prisma.examProgress, 'seed-exam-progress-1', {
+    institutionId: SEED_INSTITUTION_ID,
     examName: 'Mid Semester Exam',
     semester: '5',
     program: 'B.Tech CSE',
@@ -1732,6 +1745,7 @@ async function main() {
   // });
 
   await upsertById(prisma.sportsAthlete, 'seed-sports-athlete-1', {
+    institutionId: SEED_INSTITUTION_ID,
     studentId: IDS.student.profile,
     studentName: 'Ananya Student',
     rollNumber: 'CH2024CS001',
@@ -1747,6 +1761,7 @@ async function main() {
   });
 
   await upsertById(prisma.sportsTeam, 'seed-sports-team-1', {
+    institutionId: SEED_INSTITUTION_ID,
     sport: 'Basketball',
     category: 'Men',
     level: 'university',
@@ -1760,6 +1775,7 @@ async function main() {
   });
 
   await upsertById(prisma.sportsFacility, 'seed-sports-facility-1', {
+    institutionId: SEED_INSTITUTION_ID,
     name: 'Main Basketball Court',
     type: 'court',
     sports: ['basketball'],
@@ -1770,6 +1786,7 @@ async function main() {
   });
 
   await upsertById(prisma.sportsInventoryItem, 'seed-sports-inventory-1', {
+    institutionId: SEED_INSTITUTION_ID,
     itemName: 'Basketball',
     category: 'equipment',
     sport: 'basketball',
@@ -1810,6 +1827,7 @@ async function main() {
   });
 
   await upsertById(prisma.sportsAttendance, 'seed-sports-attendance-1', {
+    institutionId: SEED_INSTITUTION_ID,
     teamId: 'seed-sports-team-1',
     date: daysFromNow(-1),
     attendees: ['Ananya Student'],

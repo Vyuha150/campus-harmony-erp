@@ -115,40 +115,77 @@ probe caught it.
 tenant-owned model by id without a tenant filter, with negative controls for both
 false-positive shapes it produced on its first run.
 
-### 2. The mass-assignment pattern is systemic
+### 2. The mass-assignment pattern was systemic — now fixed
 
 `update({ where: { id }, data: req.body })` was not confined to the two handlers
-it was found in. It appears **17 times across 9 route files**:
+it was found in. It appeared **17 times across 9 route files**, and the second
+defect turned out to be worse than the first: **16 of the 17 models had no
+`institutionId` at all**. Sports rosters, incident reports, journal entries,
+anti-ragging affidavits, transfer requests, broadcast messages, quality metrics
+and accreditation checklists were single global tables, readable and writable by
+any authenticated holder of the relevant role from any institution.
 
-| File | Occurrences |
-|---|---|
-| `sports.ts` | 5 |
-| `registrar.ts` | 3 |
-| `alumni.ts` | 2 |
-| `vc.ts` | 2 |
-| `admin.ts` | 1 |
-| `finance.ts` | 1 |
-| `grievances.ts` | 1 |
-| `iqac.ts` | 1 |
-| `security.ts` | 1 |
-| **Total** | **17 across 9 files** |
+| File | Handlers | Models |
+|---|---|---|
+| `sports.ts` | 5 | athletes, teams, attendance, facilities, inventory |
+| `registrar.ts` | 3 | transfers, vacancies, accreditation |
+| `alumni.ts` | 2 | events, job postings |
+| `vc.ts` | 2 | meetings, broadcast messages |
+| `admin.ts` | 1 | courses |
+| `finance.ts` | 1 | journal entries |
+| `grievances.ts` | 1 | anti-ragging affidavits |
+| `iqac.ts` | 1 | quality metrics |
+| `security.ts` | 1 | incident reports |
+| **Total** | **17** | **16 models** |
 
-`grievances.ts` was missing from the first version of this inventory: it was
-compiled with an exact-string grep, and that file spaces the expression
-differently. The count now comes from the same regex the ratchet test uses, so
-the document and the guard cannot disagree.
+All 17 were migrated. What that took:
 
-Every one carries both defects. Each fix needs its own validation schema and
-service — the exam pair alone took a migration, a schema, a service, five
-rewired handlers and a live run.
+- **Migration 0028** — `institutionId` on all 16 models: backfilled from a
+  foreign key where one existed (an affidavit belongs to its student's
+  institution, a journal entry to its author's), and otherwise assigned only to
+  rows whose id marks them as seed data. Anything else aborts, carrying forward
+  the rule from 0027: guessing a tenant is how records end up filed under the
+  wrong university.
+- **Migration 0029** — `Course.institutionId` from nullable to `NOT NULL`. A
+  nullable tenant key is a hole in the filter: a NULL row matches no institution,
+  so it becomes invisible and unrepairable rather than leaking. Applying it
+  **exposed a live bug** — `dean.ts` and `hod.ts` created courses without a
+  tenant key at all, so every course created through those screens was written
+  successfully and then unreachable.
+- **`modules/common/entityUpdate.service.ts`** — one helper rather than 16
+  services. These are plain attribute edits with no cross-entity invariants;
+  sixteen near-identical services would be sixteen places to drift, which is
+  exactly how the same line ended up in both `coe.ts` and `registrar.ts`.
+  Anything with real domain logic still gets its own service.
+- **`modules/common/entityUpdate.schemas.ts`** — a `.strict()` schema per
+  handler. The omissions are the substance: ledger amounts, counters,
+  provenance (`sender`, `sentAt`, `createdBy`, `postedBy`), identity fields, and
+  derived values are all refused. `totalValue` on inventory is recomputed from
+  its operands rather than accepted, so a stored total cannot contradict them.
 
-**These are not fixed.** Claiming otherwise, or quietly excluding them so the
-suite stays green, would both be false. Instead the counts are recorded as a
-ratchet in `serviceScoping.test.ts`:
+Verified live (`verify-3b-mass-assignment.sh`, 14/14): a planted rival-institution
+team is neither listed nor writable; ledger amounts, counters and broadcast
+provenance are all rejected; a legitimate edit still applies and is audited with
+before/after values.
 
-- the total may not **grow**, which stops the pattern spreading;
-- lowering it requires editing the inventory, so a migration is deliberate;
-- the debt shows up in a test run rather than being buried in a document.
+**The ratchet now sits at zero** and was proven to still fail: planting one
+violating handler in `sports.ts` produced
+`sports.ts has 1 handler(s) writing a model from req.body; 0 recorded`, and
+removing it returned the suite to green. A guard at zero that cannot detect a
+reintroduction is decoration.
+
+### 2b. Two more fabrications removed on the way
+
+`iqac.ts` **invented quality metrics** whenever the table was empty — writing a
+NAAC "Overall Score" of `3.24` against a target of `3.5` on first page load.
+Nobody entered those numbers, and once written they were indistinguishable from
+measured figures. This is the `getOrCreate*` pattern Phase 0.2 removed elsewhere,
+surviving in the module whose entire purpose is accreditation evidence. The
+dashboard now reports `N/A` when nothing has been recorded.
+
+The hardcoded `target: "3.5"` in the same response went with it — a goal nobody
+had entered, rendered beside a score that may be unknown. A fabricated target is
+the same defect as a fabricated score, just less conspicuous.
 
 ### 3. Four safe-but-fragile writes, converted anyway
 
@@ -168,8 +205,14 @@ is more expensive to maintain than the fix.
 | `verify-23-workflow-engine.sh` | 15 |
 | `verify-24-result-publication.sh` | 12 |
 | `verify-3a-exam-schedule.sh` | 13 |
+| `verify-3b-mass-assignment.sh` | 14 |
 
-All passing. Backend unit suite: **336 tests, 18 files**.
+All passing — **54 live checks**. Backend unit suite: **404 tests, 19 files**.
+
+`EXPECTED_CHECKS` earned its keep again here: the 3b script initially declared 16
+against 14 real call sites and reported INCOMPLETE. Every check had passed, but
+the run was still treated as failed until the constant was corrected by counting
+the call sites rather than re-estimating them.
 
 Each script declares `EXPECTED_CHECKS` and reports INCOMPLETE if fewer ran —
 added after a broken arithmetic expansion caused one check to abort before
@@ -179,7 +222,8 @@ reporting, and the run printed `ALL CHECKS PASSED` having silently skipped it.
 
 ## What this means for the rest of Phase 3
 
-**Phase 3a is complete and measured. Phases 3b and 3c are not started.**
+**Phase 3a is complete and measured. Phase 3b closed the mass-assignment queue
+(17 handlers, 16 models). The remaining ~430 handlers are not started.**
 
 Around 450 legacy handlers remain. At the rate measured here, and accounting for
 the reading time that does not compress, that is **weeks of work, not a session**
@@ -188,9 +232,8 @@ three times longer than the code alone suggested.
 
 Recommended order, highest risk first:
 
-1. **The 17 mass-assignment handlers.** Each is a live cross-tenant write. This
-   is a security queue, not a refactor queue, and should not wait for its
-   module's turn.
+1. ~~The 17 mass-assignment handlers.~~ **Done** — migrations 0028/0029 and
+   `modules/common/entityUpdate.*`. See section 2 above.
 2. `grievances.ts` (14 handlers) — carries confidential and anonymous
    submissions, so the blast radius of a scoping error is worst here.
 3. The remaining oversight modules (`vc.ts`, `iqac.ts`, `admin.ts`).

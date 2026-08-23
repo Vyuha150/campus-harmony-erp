@@ -4,6 +4,15 @@ import bcrypt from 'bcrypt';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
+import { getTenantContext } from '../lib/tenant.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import {
+  updateIncidentSchema
+} from '../modules/common/entityUpdate.schemas.js';
 
 const router = Router();
 
@@ -124,6 +133,7 @@ router.post('/incidents', authenticate, async (req: Request, res: Response) => {
 
     const incident = await prisma.incidentReport.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         title: String(title),
         description: String(description),
         location: String(location),
@@ -137,15 +147,22 @@ router.post('/incidents', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/incidents/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.incidentReport.update({ where: { id }, data: req.body });
+router.put(
+  '/incidents/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateIncidentSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'incidentReport',
+      entity: 'IncidentReport',
+      module: 'security',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.delete('/incidents/:id', authenticate, async (req: Request, res: Response) => {
   try {

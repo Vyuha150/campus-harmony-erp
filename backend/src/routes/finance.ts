@@ -2,8 +2,16 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { getTenantContext } from '../lib/tenant.js';
 import { sendError } from '../lib/errors.js';
+import { getTenantContext } from '../lib/tenant.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import {
+  updateJournalEntrySchema
+} from '../modules/common/entityUpdate.schemas.js';
 
 const router = Router();
 
@@ -372,15 +380,22 @@ router.post('/journal-entries', authenticate, async (req: Request, res: Response
   }
 });
 
-router.put('/journal-entries/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.journalEntry.update({ where: { id }, data: req.body });
+router.put(
+  '/journal-entries/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateJournalEntrySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'journalEntry',
+      entity: 'JournalEntry',
+      module: 'finance',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Purchase Orders ───
 router.get('/purchase-orders', authenticate, async (req: Request, res: Response) => {

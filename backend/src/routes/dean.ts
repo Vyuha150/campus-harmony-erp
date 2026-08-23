@@ -754,6 +754,7 @@ router.post('/meetings', authenticate, async (req: Request, res: Response) => {
 
     const meeting = await prisma.meeting.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         title: String(title),
         meetingType: String(meetingType),
         date: new Date(date),
@@ -1001,6 +1002,10 @@ router.post('/course-management', authenticate, authorizeRoles('dean', 'hod'), a
 
     const created = await prisma.course.create({
       data: {
+        // Was absent: courses created here landed with a NULL tenant key and
+        // were then invisible to every scoped query — created successfully,
+        // then unreachable. Exposed by migration 0029.
+        institutionId: getTenantContext(req).institutionId,
         code: String(code).toUpperCase(),
         name: String(name),
         credits: Number(credits),

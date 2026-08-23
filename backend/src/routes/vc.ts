@@ -2,8 +2,17 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { getTenantContext } from '../lib/tenant.js';
 import { sendError } from '../lib/errors.js';
+import { getTenantContext } from '../lib/tenant.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import {
+  updateMeetingSchema,
+  updateBroadcastSchema
+} from '../modules/common/entityUpdate.schemas.js';
 
 const router = Router();
 
@@ -261,7 +270,10 @@ router.post('/meetings', authenticate, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const { meetingType, title, date, time, venue, agendaItems, attendees } = req.body;
     const meeting = await prisma.meeting.create({
-      data: { meetingType, title, date: new Date(date), time, venue, agendaItems, attendees, createdBy: userId }
+      data: {
+        institutionId: getTenantContext(req).institutionId,
+        meetingType, title, date: new Date(date), time, venue, agendaItems, attendees, createdBy: userId
+      }
     });
     res.json({ success: true, data: meeting });
   } catch (error: any) {
@@ -269,18 +281,22 @@ router.post('/meetings', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/meetings/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = req.params.id;
-    if (typeof id !== 'string') {
-      return res.status(400).json({ success: false, message: 'Invalid meeting id' });
-    }
-    const updated = await prisma.meeting.update({ where: { id }, data: req.body });
-    res.json({ success: true, data: normalizeMeeting(updated) });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.put(
+  '/meetings/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateMeetingSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'meeting',
+      entity: 'Meeting',
+      module: 'governance',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
+    res.json({ success: true, data: updated });
+  })
+);
 
 router.get('/meetings/:id/minutes', authenticate, async (req: Request, res: Response) => {
   try {
@@ -320,7 +336,11 @@ router.post('/messages', authenticate, async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     const { subject, content, type, recipients, pinned } = req.body;
     const msg = await prisma.broadcastMessage.create({
-      data: { subject, content, sender: user?.name || 'VC', type: type || 'announcement', recipients: recipients || 'all', pinned: pinned || false }
+      data: {
+        institutionId: getTenantContext(req).institutionId,
+        subject, content, sender: user?.name || 'VC', type: type || 'announcement',
+        recipients: recipients || 'all', pinned: pinned || false
+      }
     });
     res.json({ success: true, data: msg });
   } catch (error: any) {
@@ -328,15 +348,22 @@ router.post('/messages', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/messages/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.broadcastMessage.update({ where: { id }, data: req.body });
+router.put(
+  '/messages/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateBroadcastSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'broadcastMessage',
+      entity: 'BroadcastMessage',
+      module: 'governance',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Compliance ───
 router.get('/compliance', authenticate, async (req: Request, res: Response) => {

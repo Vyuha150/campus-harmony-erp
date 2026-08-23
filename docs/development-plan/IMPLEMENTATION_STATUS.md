@@ -1542,3 +1542,68 @@ construction: have `mutate()` open its transaction on the extended client, or ad
 a repository wrapper requiring a `TenantContext`. Until then every new service is
 one forgotten `where` clause away from the breach above, and a test is the only
 thing in the way. Full numbers: `20_PHASE_3_BASELINE.md`.
+
+---
+
+## Checkpoint 23 — Phase 3b: the mass-assignment queue, closed
+
+All **17 handlers across 9 route files** that carried
+`update({ where: { id }, data: req.body })` are migrated. Both defects are gone.
+
+### The second defect was the worse one
+16 of the 17 models had **no `institutionId` at all**. Sports rosters, incident
+reports, journal entries, anti-ragging affidavits, transfer requests, broadcast
+messages, quality metrics and accreditation checklists were single global tables
+— readable and writable by any authenticated holder of the relevant role, from
+any institution. Fixing only the request-body half would have left that open.
+
+- **0028** — tenant keys on all 16, backfilled from a foreign key where one
+  existed, otherwise only for rows whose id marks them as seed data. Anything
+  else aborts, per the rule set in 0027.
+- **0029** — `Course.institutionId` nullable → NOT NULL. A nullable tenant key is
+  a hole in the filter: a NULL row matches no institution and becomes invisible
+  rather than leaking. Applying it **exposed a live bug** — `dean.ts` and
+  `hod.ts` created courses with no tenant key, so every course created through
+  those screens was written successfully and then unreachable.
+- **`modules/common/entityUpdate.*`** — one helper plus a `.strict()` schema per
+  handler. The omissions are the point: ledger amounts, counters, provenance
+  (`sender`, `sentAt`, `createdBy`), identity fields and derived values are all
+  refused. `totalValue` is recomputed from its operands, never accepted.
+
+### Two more fabrications removed
+`iqac.ts` **invented quality metrics** when the table was empty — a NAAC
+"Overall Score" of 3.24 against a target of 3.5, written on first page load and
+thereafter indistinguishable from measured figures. That is the `getOrCreate*`
+pattern Phase 0.2 removed elsewhere, surviving in the module whose whole purpose
+is accreditation evidence. The hardcoded `target: "3.5"` went with it. The
+dashboard now says `N/A` / `Not set` when nothing has been recorded.
+
+### Guards added
+- `serviceScoping.test.ts` ratchet is at **zero**, and was **proven to still
+  fail**: planting one violating handler produced
+  `sports.ts has 1 handler(s) writing a model from req.body; 0 recorded`;
+  removing it returned the suite to green.
+- `seedTenancy.test.ts` — the seed writes most rows through
+  `upsertById(delegate: any, ...)`, which erases the Prisma input type, so a
+  missing required column is invisible to `tsc` and `prisma db seed` exits 0 even
+  when the seed throws. That combination has now bitten this project three times
+  (0022, 0027, and 0028 would have been the third). This checks it without a
+  database.
+
+### Status
+Typecheck **0** (backend + frontend) · Tests **404** (19 files) ·
+Migrations **29** · Live checks **54/54**
+
+### NEXT
+~430 handlers remain, and the security queue is now empty — what is left is
+refactoring rather than exposure. Order: `grievances.ts` (confidential and
+anonymous submissions, worst blast radius), then the oversight modules.
+
+Still outstanding, recorded rather than fixed: **five tenant-owned models keep a
+nullable `institutionId`** — User, StudentProfile, FacultyProfile, Department,
+AcademicYear. All hold zero NULL rows today. Each is load-bearing for
+authentication or enrolment and deserves its own migration with its own
+verification, rather than being swept into a change about something else.
+
+The structural fix remains the highest-value change: make the service layer
+scoped by construction, so a forgotten `where` clause cannot reach production.

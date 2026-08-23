@@ -2,13 +2,20 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { getTenantContext } from '../lib/tenant.js';
 import { sendError } from '../lib/errors.js';
+import * as exams from '../modules/coe/exams.service.js';
+import { updateExamSchema } from '../modules/coe/exams.schema.js';
+import { getTenantContext } from '../lib/tenant.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { z } from 'zod';
-import * as exams from '../modules/coe/exams.service.js';
-import { updateExamSchema } from '../modules/coe/exams.schema.js';
+import { entityId } from '../schemas/common.js';
+import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import {
+  updateTransferRequestSchema,
+  updateVacancySchema,
+  updateAccreditationSchema
+} from '../modules/common/entityUpdate.schemas.js';
 
 const router = Router();
 
@@ -146,15 +153,22 @@ router.post('/transfers', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/transfers/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.transferRequest.update({ where: { id }, data: req.body });
+router.put(
+  '/transfers/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateTransferRequestSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'transferRequest',
+      entity: 'TransferRequest',
+      module: 'registrar',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Certificates ───
 router.get('/certificates', authenticate, async (req: Request, res: Response) => {
@@ -510,6 +524,7 @@ router.post('/hr/vacancies', authenticate, async (req: Request, res: Response) =
     const { position, department, type, sanctioned, filled, status, postedAt, lastDate, applicants } = req.body;
     const vacancy = await prisma.vacancy.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         position,
         department,
         type,
@@ -527,15 +542,22 @@ router.post('/hr/vacancies', authenticate, async (req: Request, res: Response) =
   }
 });
 
-router.put('/hr/vacancies/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.vacancy.update({ where: { id }, data: req.body });
+router.put(
+  '/hr/vacancies/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateVacancySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'vacancy',
+      entity: 'Vacancy',
+      module: 'hr',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.post('/hr/promotions/forward', authenticate, async (req: Request, res: Response) => {
   try {
@@ -575,15 +597,22 @@ router.get('/accreditation', authenticate, async (req: Request, res: Response) =
   }
 });
 
-router.put('/accreditation/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.accreditationChecklist.update({ where: { id }, data: req.body });
+router.put(
+  '/accreditation/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateAccreditationSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'accreditationChecklist',
+      entity: 'AccreditationChecklist',
+      module: 'accreditation',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Queries ───
 router.get('/queries', authenticate, async (req: Request, res: Response) => {

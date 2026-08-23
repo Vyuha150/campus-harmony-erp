@@ -3,6 +3,15 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
+import { z } from 'zod';
+import { getTenantContext } from '../lib/tenant.js';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import {
+  updateQualityMetricSchema
+} from '../modules/common/entityUpdate.schemas.js';
 
 const router = Router();
 
@@ -37,17 +46,23 @@ function toSatisfactionLevel(rating: number): 'excellent' | 'very_good' | 'good'
 // ─── Dashboard ───
 router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
   try {
-    const metrics = await prisma.qualityMetric.findMany();
-    if (metrics.length === 0) {
-      await prisma.qualityMetric.createMany({
-        data: [
-          { category: 'naac', metric: 'Overall Score', currentValue: '3.24', target: '3.5', trend: 'increase', status: 'on_track' },
-          { category: 'internal', metric: 'Feedback Forms Pending', currentValue: '1240', target: '0', trend: 'decrease', status: 'at_risk' }
-        ]
-      });
-    }
+    // REMOVED: an auto-create that invented two quality metrics whenever the
+    // table was empty, including a NAAC "Overall Score" of 3.24 and a target of
+    // 3.5. Nobody entered those numbers. They were written to the database on
+    // first page load and were indistinguishable from measured figures
+    // thereafter — an accreditation-facing score conjured by a dashboard.
+    //
+    // This is the fabrication pattern Phase 0.2 removed elsewhere (getOrCreate*)
+    // and it survived here. An empty dashboard is the honest answer when nothing
+    // has been recorded.
     const finalMetrics = await prisma.qualityMetric.findMany();
-    const naacScore = finalMetrics.find(m => m.category === 'naac' && m.metric.includes('Score'))?.currentValue || 'N/A';
+    // The target is read from the metric row, not asserted here. It used to be
+    // the literal "3.5" in the response below — a goal nobody had entered,
+    // rendered beside a score that may be 'N/A'. A hardcoded target is the same
+    // fabrication as a hardcoded score, just less obvious.
+    const naacMetric = finalMetrics.find(m => m.category === 'naac' && m.metric.includes('Score'));
+    const naacScore = naacMetric?.currentValue || 'N/A';
+    const naacTarget = naacMetric?.target || 'Not set';
     const pendingFeedback = finalMetrics.find(m => m.metric.includes('Feedback'))?.currentValue || '0';
     const actionItems = await prisma.iQACActionItem.count({ where: { status: 'pending' } });
 
@@ -55,7 +70,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       success: true,
       data: {
         stats: [
-          { label: "Overall NAAC Score", value: naacScore, target: "3.5", icon: "Award", color: "text-blue-500" },
+          { label: "Overall NAAC Score", value: naacScore, target: naacTarget, icon: "Award", color: "text-blue-500" },
           { label: "Feedback Forms Pending", value: pendingFeedback, icon: "MessageSquare", color: "text-purple-500" },
           { label: "Pending Actions", value: actionItems.toString(), icon: "ListChecks", color: "text-warning" },
           { label: "AQAR Status", value: "In Progress", icon: "CheckCircle", color: "text-green-500" }
@@ -83,15 +98,22 @@ router.get('/criteria', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/criteria/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.qualityMetric.update({ where: { id }, data: req.body });
+router.put(
+  '/criteria/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateQualityMetricSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'qualityMetric',
+      entity: 'QualityMetric',
+      module: 'quality',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Action Items ───
 router.get('/actions', authenticate, async (req: Request, res: Response) => {

@@ -66,54 +66,70 @@ model Institution {
   academicYears AcademicYear[]
 
   // ── Back-relations added in 0018 ──────────────────────────────────────
-  batches                Batch[]
-  sections               Section[]
-  studentProfiles        StudentProfile[]
-  facultyProfiles        FacultyProfile[]
-  courses                Course[]
-  feeRecords             FeeRecord[]
-  libraryBooks           LibraryBook[]
-  libraryLoans           LibraryLoan[]
-  libraryPolicies        LibraryPolicy[]
-  feeStructures          FeeStructure[]
-  payments               Payment[]
-  receipts               Receipt[]
-  idempotencyKeys        IdempotencyKey[]
-  notificationTemplates  NotificationTemplate[]
-  notificationPolicies   NotificationPolicy[]
-  notificationDeliveries NotificationDelivery[]
-  examSessions           ExamSession[]
-  examSchedules          ExamSchedule[]
-  examRegistrations      ExamRegistration[]
-  hallTickets            HallTicket[]
-  revaluationRequests    RevaluationRequest[]
-  curriculumSchemes      CurriculumScheme[]
-  courseBaskets          CourseBasket[]
-  schemeCourses          SchemeCourse[]
-  coursePrerequisites    CoursePrerequisite[]
-  programmeOutcomes      ProgrammeOutcome[]
-  courseOutcomes         CourseOutcome[]
-  coPoMappings           CoPoMapping[]
-  gradeScales            GradeScale[]
-  courseResults          CourseResult[]
-  semesterResults        SemesterResult[]
-  gradeHistories         GradeHistory[]
-  fileMetadatas          FileMetadata[]
-  admissionCycles        AdmissionCycle[]
-  admissionApplications  AdmissionApplication[]
-  admissionOffers        AdmissionOffer[]
-  governanceCommittees   GovernanceCommittee[]
-  committeeMeetings      CommitteeMeeting[]
-  institutionalPolicies  InstitutionalPolicy[]
-  importJobs             ImportJob[]
-  assessments            Assessment[]
-  assessmentCoMarks      AssessmentCoMark[]
-  indirectAttainments    IndirectAttainment[]
-  obeAttainmentPolicies  ObeAttainmentPolicy[]
-  approvalItems          ApprovalItem[]
-  workflowDefinitions    WorkflowDefinition[]
-  workflowInstances      WorkflowInstance[]
-  examProgress           ExamProgress[]
+  batches                 Batch[]
+  sections                Section[]
+  studentProfiles         StudentProfile[]
+  facultyProfiles         FacultyProfile[]
+  courses                 Course[]
+  feeRecords              FeeRecord[]
+  libraryBooks            LibraryBook[]
+  libraryLoans            LibraryLoan[]
+  libraryPolicies         LibraryPolicy[]
+  feeStructures           FeeStructure[]
+  payments                Payment[]
+  receipts                Receipt[]
+  idempotencyKeys         IdempotencyKey[]
+  notificationTemplates   NotificationTemplate[]
+  notificationPolicies    NotificationPolicy[]
+  notificationDeliveries  NotificationDelivery[]
+  examSessions            ExamSession[]
+  examSchedules           ExamSchedule[]
+  examRegistrations       ExamRegistration[]
+  hallTickets             HallTicket[]
+  revaluationRequests     RevaluationRequest[]
+  curriculumSchemes       CurriculumScheme[]
+  courseBaskets           CourseBasket[]
+  schemeCourses           SchemeCourse[]
+  coursePrerequisites     CoursePrerequisite[]
+  programmeOutcomes       ProgrammeOutcome[]
+  courseOutcomes          CourseOutcome[]
+  coPoMappings            CoPoMapping[]
+  gradeScales             GradeScale[]
+  courseResults           CourseResult[]
+  semesterResults         SemesterResult[]
+  gradeHistories          GradeHistory[]
+  fileMetadatas           FileMetadata[]
+  admissionCycles         AdmissionCycle[]
+  admissionApplications   AdmissionApplication[]
+  admissionOffers         AdmissionOffer[]
+  governanceCommittees    GovernanceCommittee[]
+  committeeMeetings       CommitteeMeeting[]
+  institutionalPolicies   InstitutionalPolicy[]
+  importJobs              ImportJob[]
+  assessments             Assessment[]
+  assessmentCoMarks       AssessmentCoMark[]
+  indirectAttainments     IndirectAttainment[]
+  obeAttainmentPolicies   ObeAttainmentPolicy[]
+  approvalItems           ApprovalItem[]
+  workflowDefinitions     WorkflowDefinition[]
+  workflowInstances       WorkflowInstance[]
+  examProgress            ExamProgress[]
+  alumniEvents            AlumniEvent[]
+  alumniJobPostings       AlumniJobPosting[]
+  journalEntries          JournalEntry[]
+  antiRaggingAffidavits   AntiRaggingAffidavit[]
+  qualityMetrics          QualityMetric[]
+  transferRequests        TransferRequest[]
+  vacancies               Vacancy[]
+  accreditationChecklists AccreditationChecklist[]
+  incidentReports         IncidentReport[]
+  sportsAthletes          SportsAthlete[]
+  sportsTeams             SportsTeam[]
+  sportsAttendance        SportsAttendance[]
+  sportsFacilities        SportsFacility[]
+  sportsInventoryItems    SportsInventoryItem[]
+  meetings                Meeting[]
+  broadcastMessages       BroadcastMessage[]
 
   @@index([isActive])
 }
@@ -633,7 +649,7 @@ model Course {
 
   /// TENANT KEY — blueprint: "every course is linked to the campus/college
   /// that offers it".
-  institutionId String?
+  institutionId String
 
   /// Course code — tenant-scoped, not globally unique (see @@unique below).
   code         String
@@ -658,7 +674,7 @@ model Course {
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
-  institution Institution? @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
   // ── Back-relations added in 0019 ──
   classMessages ClassMessage[]
@@ -1021,13 +1037,21 @@ model ApprovalItem {
 
 // General Administration (Registrar, VC, IQAC)
 model QualityMetric {
-  id           String @id @default(uuid())
-  category     String // 'naac', 'nirf', 'internal'
-  metric       String
-  currentValue String
-  target       String
-  trend        String
-  status       String @default("on_track")
+  id            String @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId String
+  category      String // 'naac', 'nirf', 'internal'
+  metric        String
+  currentValue  String
+  target        String
+  trend         String
+  status        String @default("on_track")
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 model InstitutionKPI {
@@ -1093,13 +1117,21 @@ model VisitorPass {
 }
 
 model IncidentReport {
-  id          String   @id @default(uuid())
-  title       String
-  description String
-  location    String
-  severity    String
-  status      String   @default("pending")
-  reportedAt  DateTime @default(now()) @db.Timestamptz(3)
+  id            String   @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId String
+  title         String
+  description   String
+  location      String
+  severity      String
+  status        String   @default("pending")
+  reportedAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Phase 1 Additional Models //
@@ -1555,32 +1587,47 @@ model InterDeptEvent {
 
 // VC — Meetings & Agenda
 model Meeting {
-  id          String   @id @default(uuid())
-  meetingType String
-  title       String
-  date        DateTime @db.Timestamptz(3)
-  time        String
-  venue       String
-  status      String   @default("upcoming")
-  agendaItems Json?
-  attendees   Json?
-  documents   Json?
-  minutes     String?
-  createdBy   String
+  id            String   @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId String
+  meetingType   String
+  title         String
+  date          DateTime @db.Timestamptz(3)
+  time          String
+  venue         String
+  status        String   @default("upcoming")
+  agendaItems   Json?
+  attendees     Json?
+  documents     Json?
+  minutes       String?
+  createdBy     String
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
   @@index([meetingType])
+  @@index([institutionId])
 }
 
 // VC — Broadcast Messages
 model BroadcastMessage {
-  id         String   @id @default(uuid())
-  subject    String
-  content    String
-  sender     String
-  sentAt     DateTime @default(now()) @db.Timestamptz(3)
-  recipients String
-  type       String   @default("announcement")
-  pinned     Boolean  @default(false)
+  id            String   @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId String
+  subject       String
+  content       String
+  sender        String
+  sentAt        DateTime @default(now()) @db.Timestamptz(3)
+  recipients    String
+  type          String   @default("announcement")
+  pinned        Boolean  @default(false)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // VC — Compliance Reports
@@ -1611,6 +1658,10 @@ model PolicyScenario {
 // Registrar — Transfer Requests
 model TransferRequest {
   id              String   @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId   String
   studentId       String
   studentName     String
   type            String
@@ -1624,6 +1675,10 @@ model TransferRequest {
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Registrar — Degree Records
@@ -1660,21 +1715,33 @@ model AdminDocument {
 
 // Registrar — Vacancies
 model Vacancy {
-  id         String    @id @default(uuid())
-  position   String
-  department String
-  type       String
-  sanctioned Int
-  filled     Int       @default(0)
-  status     String    @default("advertised")
-  postedAt   DateTime  @default(now()) @db.Timestamptz(3)
-  lastDate   DateTime? @db.Timestamptz(3)
-  applicants Int       @default(0)
+  id            String    @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId String
+  position      String
+  department    String
+  type          String
+  sanctioned    Int
+  filled        Int       @default(0)
+  status        String    @default("advertised")
+  postedAt      DateTime  @default(now()) @db.Timestamptz(3)
+  lastDate      DateTime? @db.Timestamptz(3)
+  applicants    Int       @default(0)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Registrar — Accreditation Checklist
 model AccreditationChecklist {
   id                String   @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId     String
   framework         String
   criterion         String
   description       String
@@ -1683,6 +1750,10 @@ model AccreditationChecklist {
   documents         Json?
   deadline          DateTime @db.Timestamptz(3)
   remarks           String?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Registrar — Verification Requests
@@ -1770,17 +1841,25 @@ model FeeStructure {
 
 // Finance — Journal Entries
 model JournalEntry {
-  id          String   @id @default(uuid())
-  entryNumber String   @unique
-  date        DateTime @default(now()) @db.Timestamptz(3)
-  description String
-  reference   String?
-  totalDebit  Float
-  totalCredit Float
-  status      String   @default("draft")
-  createdBy   String
-  approvedBy  String?
-  accounts    Json
+  id            String   @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId String
+  entryNumber   String   @unique
+  date          DateTime @default(now()) @db.Timestamptz(3)
+  description   String
+  reference     String?
+  totalDebit    Float
+  totalCredit   Float
+  status        String   @default("draft")
+  createdBy     String
+  approvedBy    String?
+  accounts      Json
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Finance — Purchase Orders
@@ -1901,6 +1980,10 @@ model PlacementMessage {
 // Sports — Athletes
 model SportsAthlete {
   id               String  @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId    String
   studentId        String  @unique
   studentName      String
   rollNumber       String
@@ -1916,11 +1999,19 @@ model SportsAthlete {
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Sports — Teams (enhanced from existing Team model)
 model SportsTeam {
   id               String  @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId    String
   sport            String
   category         String
   level            String  @default("university")
@@ -1934,11 +2025,19 @@ model SportsTeam {
 
   // ── Back-relations added in 0019 ──
   sportsAttendances SportsAttendance[]
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Sports — Facilities (enhanced from existing Facility model)
 model SportsFacility {
   id                  String @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId       String
   name                String
   type                String
   sports              Json?
@@ -1946,11 +2045,19 @@ model SportsFacility {
   amenities           Json?
   maintenanceSchedule Json?
   status              String @default("available")
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Sports — Inventory
 model SportsInventoryItem {
   id                String    @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId     String
   itemName          String
   category          String
   sport             String
@@ -1963,6 +2070,10 @@ model SportsInventoryItem {
   purchaseDate      DateTime? @db.Timestamptz(3)
   lastMaintenance   DateTime? @db.Timestamptz(3)
   location          String
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Sports — Events
@@ -2001,22 +2112,33 @@ model FitnessRecord {
 
 // Sports — Attendance
 model SportsAttendance {
-  id          String   @id @default(uuid())
-  teamId      String
-  date        DateTime @default(now()) @db.Timestamptz(3)
-  attendees   Json?
-  notes       String?
-  sessionType String   @default("training")
+  id            String   @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId String
+  teamId        String
+  date          DateTime @default(now()) @db.Timestamptz(3)
+  attendees     Json?
+  notes         String?
+  sessionType   String   @default("training")
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   team SportsTeam @relation(fields: [teamId], references: [id], onDelete: Restrict)
 
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
   @@index([teamId])
+  @@index([institutionId])
 }
 
 // Alumni — Events
 model AlumniEvent {
   id                   String    @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId        String
   title                String
   description          String
   type                 String
@@ -2033,6 +2155,10 @@ model AlumniEvent {
   status               String    @default("draft")
   images               Json?
   documents            Json?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Alumni — Mentorship Programs
@@ -2069,6 +2195,10 @@ model AlumniCommunicationRecord {
 // Alumni — Job Postings
 model AlumniJobPosting {
   id                  String   @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId       String
   postedBy            String
   companyName         String
   jobTitle            String
@@ -2083,6 +2213,10 @@ model AlumniJobPosting {
   postedDate          DateTime @default(now()) @db.Timestamptz(3)
   views               Int      @default(0)
   applications        Int      @default(0)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Alumni — Progression Surveys
@@ -2211,6 +2345,10 @@ model ComplianceItem {
 // Grievance — Anti-Ragging Affidavits
 model AntiRaggingAffidavit {
   id               String   @id @default(uuid())
+  /// TENANT KEY, added in 0028. Without it this table was shared across every
+  /// institution, and `update({ where: { id }, data: req.body })` made it
+  /// writable by any authenticated holder of the relevant role, from anywhere.
+  institutionId    String
   studentId        String
   studentName      String
   program          String
@@ -2222,6 +2360,10 @@ model AntiRaggingAffidavit {
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Security — ID Card Requests

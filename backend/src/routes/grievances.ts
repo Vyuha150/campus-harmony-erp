@@ -3,6 +3,15 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
+import { getTenantContext } from '../lib/tenant.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import {
+  updateAffidavitSchema
+} from '../modules/common/entityUpdate.schemas.js';
 
 const router = Router();
 
@@ -340,6 +349,7 @@ router.post('/affidavits', authenticate, async (req: Request, res: Response) => 
 
     const affidavit = await prisma.antiRaggingAffidavit.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         studentId,
         studentName,
         program,
@@ -356,23 +366,22 @@ router.post('/affidavits', authenticate, async (req: Request, res: Response) => 
   }
 });
 
-router.put('/affidavits/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id || '');
-    if (!id) {
-      res.status(400).json({ success: false, message: 'Affidavit id is required' });
-      return;
-    }
-    const updated = await prisma.antiRaggingAffidavit.update({
-      where: { id },
-      data: req.body
+router.put(
+  '/affidavits/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateAffidavitSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'antiRaggingAffidavit',
+      entity: 'AntiRaggingAffidavit',
+      module: 'grievances',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
     });
 
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Reports ───
 router.get('/reports', authenticate, async (req: Request, res: Response) => {

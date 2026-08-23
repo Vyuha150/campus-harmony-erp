@@ -1385,6 +1385,10 @@ router.post('/course-management', authenticate, authorizeRoles('hod', 'dean'), a
 
     const created = await prisma.course.create({
       data: {
+        // Was absent: courses created here landed with a NULL tenant key and
+        // were then invisible to every scoped query — created successfully,
+        // then unreachable. Exposed by migration 0029.
+        institutionId: getTenantContext(req).institutionId,
         code: String(code).toUpperCase(),
         name: String(name),
         credits: Number(credits),

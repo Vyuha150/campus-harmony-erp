@@ -3,6 +3,16 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
+import { z } from 'zod';
+import { getTenantContext } from '../lib/tenant.js';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import {
+  updateAlumniEventSchema,
+  updateAlumniJobSchema
+} from '../modules/common/entityUpdate.schemas.js';
 
 const router = Router();
 const currentYear = new Date().getFullYear();
@@ -186,15 +196,22 @@ router.post('/events', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/events/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.alumniEvent.update({ where: { id }, data: req.body });
+router.put(
+  '/events/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateAlumniEventSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'alumniEvent',
+      entity: 'AlumniEvent',
+      module: 'alumni',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Mentorship ───
 router.get('/mentorship/programs', authenticate, async (req: Request, res: Response) => {
@@ -323,14 +340,21 @@ router.post('/jobs', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/jobs/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.alumniJobPosting.update({ where: { id }, data: req.body });
+router.put(
+  '/jobs/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateAlumniJobSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'alumniJobPosting',
+      entity: 'AlumniJobPosting',
+      module: 'alumni',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 export default router;

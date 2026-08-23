@@ -3,6 +3,19 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
+import { z } from 'zod';
+import { getTenantContext } from '../lib/tenant.js';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import {
+  updateAthleteSchema,
+  updateTeamSchema,
+  updateAttendanceSchema,
+  updateFacilitySchema,
+  updateInventorySchema
+} from '../modules/common/entityUpdate.schemas.js';
 
 const router = Router();
 
@@ -49,15 +62,22 @@ router.post('/athletes', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/athletes/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.sportsAthlete.update({ where: { id }, data: req.body });
+router.put(
+  '/athletes/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateAthleteSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'sportsAthlete',
+      entity: 'SportsAthlete',
+      module: 'sports',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.delete('/athletes/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -88,15 +108,22 @@ router.post('/teams', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/teams/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.sportsTeam.update({ where: { id }, data: req.body });
+router.put(
+  '/teams/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateTeamSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'sportsTeam',
+      entity: 'SportsTeam',
+      module: 'sports',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.delete('/teams/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -131,15 +158,22 @@ router.post('/attendance', authenticate, async (req: Request, res: Response) => 
   }
 });
 
-router.put('/attendance/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.sportsAttendance.update({ where: { id }, data: req.body });
+router.put(
+  '/attendance/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateAttendanceSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'sportsAttendance',
+      entity: 'SportsAttendance',
+      module: 'sports',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.delete('/attendance/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -171,15 +205,22 @@ router.put('/facilities/:id/book', authenticate, async (req: Request, res: Respo
   }
 });
 
-router.put('/facilities/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.sportsFacility.update({ where: { id }, data: req.body });
+router.put(
+  '/facilities/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateFacilitySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'sportsFacility',
+      entity: 'SportsFacility',
+      module: 'sports',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.delete('/facilities/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -210,15 +251,37 @@ router.post('/inventory', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/inventory/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.sportsInventoryItem.update({ where: { id }, data: req.body });
+router.put(
+  '/inventory/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateInventorySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // `totalValue` is derived (quantity x unitPrice) and is NOT accepted from the
+    // client. Recomputed here from whichever operand changed, so the stored total
+    // can never contradict its own operands.
+    const patch: Record<string, unknown> = { ...req.body };
+    if (patch.quantity !== undefined || patch.unitPrice !== undefined) {
+      const current = await prisma.sportsInventoryItem.findFirst({
+        where: { id: String(req.params.id), institutionId: getTenantContext(req).institutionId }
+      });
+      if (current) {
+        const qty = patch.quantity !== undefined ? Number(patch.quantity) : current.quantity;
+        const price = patch.unitPrice !== undefined ? Number(patch.unitPrice) : current.unitPrice;
+        patch.totalValue = Number((qty * price).toFixed(2));
+      }
+    }
+
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'sportsInventoryItem',
+      entity: 'SportsInventoryItem',
+      module: 'sports',
+      id: String(req.params.id),
+      data: patch as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.delete('/inventory/:id', authenticate, async (req: Request, res: Response) => {
   try {

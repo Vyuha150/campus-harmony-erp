@@ -12,6 +12,14 @@ import {
   assertSameInstitution,
   assertCampusAccess
 } from '../lib/tenant.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import {
+  updateCourseSchema
+} from '../modules/common/entityUpdate.schemas.js';
 
 const router = Router();
 const db: any = prisma;
@@ -495,15 +503,23 @@ router.post('/courses', authenticate, authorizeRoles('hod', 'dean'), async (req:
   }
 });
 
-router.put('/courses/:id', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.course.update({ where: { id }, data: req.body });
+router.put(
+  '/courses/:id',
+  authenticate,
+  authorizeRoles('hod', 'dean'),
+  validate({ params: z.object({ id: entityId }), body: updateCourseSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await updateTenantEntity(getTenantContext(req), {
+      model: 'course',
+      entity: 'Course',
+      module: 'academics',
+      id: String(req.params.id),
+      data: req.body as Record<string, unknown>
+    });
+
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.delete('/courses/:id', authenticate, async (req: Request, res: Response) => {
   try {

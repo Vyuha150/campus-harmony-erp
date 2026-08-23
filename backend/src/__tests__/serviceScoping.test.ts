@@ -182,38 +182,32 @@ describe('the examination schedule is tenant-owned', () => {
 });
 
 /**
- * A RATCHET, not a clean bill of health.
+ * A RATCHET that has reached zero.
  *
  * Migrating the exam schedule exposed that `update({ where: { id }, data: req.body })`
- * is not confined to the two handlers it was found in. It appears 16 more times
- * across 8 route files. Every one carries both defects: a unique-key update the
- * tenant extension cannot constrain, and an unfiltered request body that makes
- * every column writable.
+ * was not confined to the two handlers it was found in: it appeared 17 times
+ * across 9 route files. Every one carried both defects — a unique-key update the
+ * tenant extension cannot constrain, and an unfiltered request body making every
+ * column writable — and 16 of the 17 models had no `institutionId` at all, so
+ * those tables were shared across every institution in the deployment.
  *
- * Each fix needs its own validation schema and service — the exam pair took a
- * migration, a schema, a service, two rewired routes and a live run. Claiming
- * they are fixed, or quietly excluding them so the suite stays green, would both
- * be false. So the count is recorded here instead:
+ * All 17 were migrated in Phase 3b (migrations 0028 and 0029, plus
+ * `modules/common/entityUpdate.*`). The inventory below is now empty and the
+ * ratchet is what keeps it that way: reintroducing the pattern anywhere exceeds
+ * a recorded count of zero and fails the build.
  *
- *   - the total may not GROW, which stops the pattern spreading;
- *   - lowering it requires editing this file, so a migration is deliberate;
- *   - the debt is visible in a test run rather than buried in a document.
- *
- * Current inventory is in docs/development-plan/20_PHASE_3_BASELINE.md.
+ * Detail: docs/development-plan/20_PHASE_3_BASELINE.md.
  */
 describe('mass-assignment debt does not grow', () => {
   /** Files still writing a model directly from `req.body`, with counts. */
-  const KNOWN_MASS_ASSIGNMENT: Record<string, number> = {
-    'admin.ts': 1,
-    'alumni.ts': 2,
-    'finance.ts': 1,
-    'grievances.ts': 1,
-    'iqac.ts': 1,
-    'registrar.ts': 3,
-    'security.ts': 1,
-    'sports.ts': 5,
-    'vc.ts': 2
-  };
+  /**
+   * EMPTY, and that is the point.
+   *
+   * All 17 handlers were migrated in Phase 3b. The inventory stays here rather
+   * than being deleted so the ratchet keeps working: any file that reintroduces
+   * the pattern now exceeds its recorded count of zero and fails the build.
+   */
+  const KNOWN_MASS_ASSIGNMENT: Record<string, number> = {};
 
   const pattern = /\.update\s*\(\s*\{\s*where:\s*\{\s*id\s*\}\s*,\s*data:\s*req\.body/g;
 

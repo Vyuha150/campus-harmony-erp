@@ -110,6 +110,25 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   'ApprovalItem',
   // 0027 — the examination schedule was shared across every institution.
   'ExamProgress',
+  // 0028 — the 16 models behind the mass-assignment handlers. Every one of
+  // these tables was global: any authenticated holder of the relevant role
+  // could read and write every institution's rows.
+  'AlumniEvent',
+  'AlumniJobPosting',
+  'JournalEntry',
+  'AntiRaggingAffidavit',
+  'QualityMetric',
+  'TransferRequest',
+  'Vacancy',
+  'AccreditationChecklist',
+  'IncidentReport',
+  'SportsAthlete',
+  'SportsTeam',
+  'SportsAttendance',
+  'SportsFacility',
+  'SportsInventoryItem',
+  'Meeting',
+  'BroadcastMessage',
   // Workflow engine (0024). WorkflowStep and WorkflowTransition are NOT listed:
   // they carry no institutionId and are scoped through their parent.
   'WorkflowDefinition',
