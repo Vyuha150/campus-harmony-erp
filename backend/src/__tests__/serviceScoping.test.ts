@@ -1,26 +1,34 @@
 /**
- * Service-layer tenant scoping (Phase 3a).
+ * Service-layer tenant scoping.
  *
- * THE HAZARD THIS GUARDS
+ * THE HAZARD THIS ONCE GUARDED, AND WHAT CHANGED
  *
  * Automatic scoping comes from the Prisma extension, which wraps `prisma`. The
- * service layer does not use it:
+ * service layer used not to benefit from it: services import `basePrisma`, the
+ * UNSCOPED client, and `mutate()` opened its transaction there — so the `tx`
+ * handed to every service operation was unscoped too. Tenant safety inside a
+ * service was not structural. It depended on the author writing
+ * `institutionId: context.institutionId` into each `where`, and nothing in the
+ * type system noticed when they didn't.
  *
- *   - services import `basePrisma`, the UNSCOPED client;
- *   - `mutate()` opens its transaction on `basePrisma`, so the `tx` handed to
- *     every service operation is unscoped too.
- *
- * So inside a service, tenant safety is not structural. It depends on the author
- * writing `institutionId: context.institutionId` into each `where`. Nothing in
- * the type system notices when they don't.
- *
- * That is not hypothetical. The first version of `modules/coe/exams.service.ts`
+ * That was not hypothetical. The first version of `modules/coe/exams.service.ts`
  * used `basePrisma` without the filter, and live verification showed another
  * institution's exam listed and then successfully renamed through
  * `PUT /coe/exams/:id` — the same authority breach as the pre-0022 approvals
- * routes, reintroduced through the service layer that was supposed to prevent it.
+ * routes, reintroduced through the layer meant to prevent it, with a green unit
+ * suite throughout.
  *
- * These tests make that failure loud at build time.
+ * `mutate()` now opens its transaction on the EXTENDED client, so `tx` carries
+ * the scope. A service that forgets its filter reads and writes nothing outside
+ * the caller's institution — proven in
+ * `scripts/verify/verify-service-scoping.ts`, which plants a rival row and shows
+ * a filter-less `updateMany` affecting zero rows.
+ *
+ * THESE TESTS ARE THEREFORE A SECOND LAYER, NOT THE ONLY ONE.
+ *
+ * They are kept because the explicit filters remain the right posture for tenant
+ * isolation: two independent mechanisms, either of which alone would hold. The
+ * last describe block guards the single line that makes the first one work.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -277,5 +285,42 @@ describe('mass-assignment debt does not grow', () => {
   it('NEGATIVE CONTROL: the req.body matcher still works', () => {
     const bad = 'prisma.examProgress.update({ where: { id }, data: req.body });';
     expect(bad).toMatch(/\.update\s*\(\s*\{\s*where:\s*\{\s*id\s*\}\s*,\s*data:\s*req\.body/);
+  });
+});
+
+/**
+ * `mutate()` must open its transaction on the EXTENDED client.
+ *
+ * This one line is what makes the service layer scoped by construction. Moving
+ * it back to `basePrisma` would silently restore the Phase 3a hazard: every
+ * service would again depend on its author remembering a `where` clause, and
+ * nothing would fail until a real tenant boundary was crossed.
+ *
+ * Proven live by scripts/verify/verify-service-scoping.ts, which plants a rival
+ * row and confirms a filter-less updateMany writes zero rows. This static check
+ * exists because that script needs a database and so does not run in CI.
+ */
+describe('mutate() is scoped by construction', () => {
+  const serviceSrc = stripComments(
+    readFileSync(fileURLToPath(new URL('../lib/service.ts', import.meta.url)), 'utf8')
+  );
+
+  it('opens its transaction on the extended client', () => {
+    expect(serviceSrc).toMatch(/return\s+prisma\.\$transaction\(/);
+  });
+
+  it('does NOT open it on basePrisma', () => {
+    expect(
+      serviceSrc,
+      'mutate() is back on basePrisma — the transaction client is unscoped again, ' +
+        'and every service silently depends on hand-written institutionId filters.'
+    ).not.toMatch(/return\s+basePrisma\.\$transaction\(/);
+  });
+
+  it('NEGATIVE CONTROL: the matchers distinguish the two clients', () => {
+    expect('  return prisma.$transaction(async (tx) => {').toMatch(/return\s+prisma\.\$transaction\(/);
+    expect('  return basePrisma.$transaction(async (tx) => {').toMatch(/return\s+basePrisma\.\$transaction\(/);
+    // `basePrisma` must not satisfy the `prisma` matcher.
+    expect('  return basePrisma.$transaction(async (tx) => {').not.toMatch(/return\s+prisma\.\$transaction\(/);
   });
 });

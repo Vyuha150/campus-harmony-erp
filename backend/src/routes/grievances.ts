@@ -12,6 +12,13 @@ import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
 import {
   updateAffidavitSchema
 } from '../modules/common/entityUpdate.schemas.js';
+import * as grievanceService from '../modules/grievances/grievances.service.js';
+import {
+  createCaseSchema,
+  updateCaseSchema,
+  addActivitySchema,
+  listCasesQuery
+} from '../modules/grievances/grievances.schema.js';
 
 const router = Router();
 
@@ -43,190 +50,93 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
 
 // ─── Cases ───
 // List all cases with optional filters
-router.get('/cases', authenticate, async (req: Request, res: Response) => {
-  try {
-    const query = req.query as Record<string, string | undefined>;
-    const { status, severity, category, page = '1', limit = '20' } = query;
-    const where: any = {};
-    if (status) where.status = status;
-    if (severity) where.severity = severity;
-    if (category) where.category = category;
-
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 20;
-    const skip = (pageNum - 1) * limitNum;
-
-    const [cases, total] = await Promise.all([
-      prisma.grievanceCase.findMany({
-        where,
-        orderBy: { submissionDate: 'desc' },
-        skip,
-        take: limitNum
-      }),
-      prisma.grievanceCase.count({ where })
-    ]);
-
-    res.json({
-      success: true,
-      data: cases,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        pages: Math.ceil(total / limitNum)
-      }
-    });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.get(
+  '/cases',
+  authenticate,
+  validate({ query: listCasesQuery }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = req.query as unknown as {
+      page: number; pageSize: number; status?: string; severity?: string; category?: string;
+    };
+    const result = await grievanceService.listCases(
+      getTenantContext(req),
+      { page: q.page, pageSize: q.pageSize },
+      { status: q.status, severity: q.severity, category: q.category }
+    );
+    res.json({ success: true, ...result });
+  })
+);
 
 // Get single case by ID
-router.get('/cases/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id || '');
-    if (!id) {
-      res.status(400).json({ success: false, message: 'Case id is required' });
-      return;
-    }
-    const grievance = await prisma.grievanceCase.findUnique({ where: { id } });
-
-    if (!grievance) {
-      res.status(404).json({ success: false, message: 'Grievance case not found' });
-      return;
-    }
-
-    res.json({ success: true, data: grievance });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.get(
+  '/cases/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }) }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const found = await grievanceService.getCase(getTenantContext(req), String(req.params.id));
+    res.json({ success: true, data: found });
+  })
+);
 
 // Create new grievance case
-router.post('/cases', authenticate, async (req: Request, res: Response) => {
-  try {
-    const {
-      complainantName,
-      complainantType,
-      complainantId,
-      category,
-      subcategory,
-      subject,
-      description,
-      severity = 'medium',
-      isAnonymous = false,
-      evidenceFiles
-    } = req.body;
-
-    if (!complainantName || !category || !subject || !description) {
-      res.status(400).json({ success: false, message: 'Missing required fields' });
-      return;
-    }
-
-    // Generate grievance number
-    const grievanceNumber = `GR-${Date.now()}`;
-
-    const grievance = await prisma.grievanceCase.create({
-      data: {
-        grievanceNumber,
-        complainantName,
-        complainantType: complainantType || 'anonymous',
-        complainantId: isAnonymous ? undefined : complainantId,
-        category,
-        subcategory,
-        subject,
-        description,
-        severity,
-        isAnonymous,
-        evidenceFiles: evidenceFiles || [],
-        status: 'received',
-        timeline: [
-          {
-            date: new Date().toISOString(),
-            action: 'Case Created',
-            by: (req as any).user?.id || 'system',
-            notes: 'Grievance case submitted'
-          }
-        ]
-      }
-    });
-
-    res.status(201).json({ success: true, data: grievance });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * File a grievance.
+ *
+ * The old handler read `complainantId` from the REQUEST BODY, so a caller could
+ * attribute a complaint to somebody else. Worse, for an anonymous submission it
+ * omitted `complainantId` and then wrote `by: req.user?.id` into the timeline on
+ * the same row — recording the identity it had just promised to withhold.
+ *
+ * Both are fixed in the service: the complainant is the authenticated caller or
+ * nobody, and an anonymous case records `anonymous` as the timeline actor.
+ */
+router.post(
+  '/cases',
+  authenticate,
+  validate({ body: createCaseSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const created = await grievanceService.fileCase(getTenantContext(req), req.body);
+    res.status(201).json({ success: true, data: created });
+  })
+);
 
 // Update grievance case
-router.put('/cases/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id || '');
-    if (!id) {
-      res.status(400).json({ success: false, message: 'Case id is required' });
-      return;
-    }
-    const updateData: any = { ...req.body, lastUpdated: new Date() };
-
-    if (req.body.status === 'resolved') {
-      updateData.actualResolutionDate = new Date();
-    }
-
-    const updated = await prisma.grievanceCase.update({
-      where: { id },
-      data: updateData
-    });
-
+/**
+ * Update a case.
+ *
+ * `isAnonymous`, `complainantId`, `complainantName` and `complainantType` are
+ * NOT accepted. Allowing `isAnonymous` to be flipped would be the most damaging
+ * write in this module: it converts a protected submission into an attributable
+ * one after the fact.
+ */
+router.put(
+  '/cases/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateCaseSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await grievanceService.updateCase(
+      getTenantContext(req),
+      String(req.params.id),
+      req.body
+    );
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // Add activity/timeline entry to a case
-router.post('/cases/:id/activity', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id || '');
-    if (!id) {
-      res.status(400).json({ success: false, message: 'Case id is required' });
-      return;
-    }
-    const { action, notes, status } = req.body;
-    const userId = (req as any).user?.id || 'system';
-
-    if (!action) {
-      res.status(400).json({ success: false, message: 'Action is required' });
-      return;
-    }
-
-    const grievance = await prisma.grievanceCase.findUnique({ where: { id } });
-
-    if (!grievance) {
-      res.status(404).json({ success: false, message: 'Case not found' });
-      return;
-    }
-
-    const existingTimeline = (grievance.timeline as any[]) || [];
-    existingTimeline.push({
-      date: new Date().toISOString(),
-      action,
-      by: userId,
-      notes
-    });
-
-    const updated = await prisma.grievanceCase.update({
-      where: { id },
-      data: {
-        timeline: existingTimeline,
-        lastUpdated: new Date(),
-        ...(status && { status })
-      }
-    });
-
+router.post(
+  '/cases/:id/activity',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: addActivitySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await grievanceService.addActivity(
+      getTenantContext(req),
+      String(req.params.id),
+      req.body
+    );
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Compliance ───
 router.get('/compliance', authenticate, async (req: Request, res: Response) => {
@@ -282,6 +192,7 @@ router.post('/compliance', authenticate, async (req: Request, res: Response) => 
 
     const item = await prisma.complianceItem.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         title,
         type,
         description,

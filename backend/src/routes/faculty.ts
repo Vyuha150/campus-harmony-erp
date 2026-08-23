@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { toRoleGrievanceStatus } from '../lib/grievanceStatus.js';
 import { authenticate } from '../middleware/auth.js';
 import { NotFoundError , sendError} from '../lib/errors.js';
+import { getTenantContext } from '../lib/tenant.js';
 import { recordFromRequest } from '../lib/audit.js';
 
 const router = Router();
@@ -1421,6 +1422,7 @@ router.post('/grievances', authenticate, async (req: Request, res: Response) => 
 
     const grievance = await prisma.grievanceCase.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         grievanceNumber,
         complainantId: userId,
         complainantName: user?.name || 'Faculty',

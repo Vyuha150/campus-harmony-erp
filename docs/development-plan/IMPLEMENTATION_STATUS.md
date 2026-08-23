@@ -1768,3 +1768,76 @@ in Phase 3 is refactoring, not exposure: roughly 430 legacy handlers, with
 
 The structural fix is still the highest-value change: make the service layer
 scoped by construction, so a forgotten `where` clause cannot reach production.
+
+---
+
+## Checkpoint 26 — scoped by construction, and the grievance module
+
+### The structural fix
+`mutate()` now opens its transaction on the **extended** client. That one line
+makes the service layer scoped by construction: the `tx` handed to every service
+carries tenant scoping and soft-delete filtering, so isolation no longer depends
+on each author remembering a `where` clause.
+
+**Measured before changing it**, because the answer was not obvious. With a rival
+row planted directly in the database:
+
+```
+prisma.$transaction     -> 1 row, rival NOT visible
+basePrisma.$transaction -> 2 rows, rival visible
+```
+
+**Proven after**: a service that deliberately omits `institutionId` — the exact
+Phase 3a mistake — now writes **0 rows** and reads **0 rows**, and the rival row
+is byte-for-byte unchanged. `scripts/verify/verify-service-scoping.ts`.
+
+The explicit filters already written across the services are kept. They are now
+redundant rather than load-bearing, which is the right posture for tenant
+isolation: two independent mechanisms, either of which alone would hold.
+
+### Grievances — the highest blast radius, and it showed
+`GrievanceCase` and `ComplianceItem` had **no tenant key** and were absent from
+`TENANT_OWNED_MODELS`. Both tables were global: every grievance officer in the
+deployment could read and write every institution's harassment and ragging
+complaints, complainant identities, evidence references and investigation
+timelines. Closed by migration **0031**.
+
+Three more defects, all in the handling of identity:
+
+| Defect | What it meant |
+|---|---|
+| **Anonymity defeated by the timeline** | The handler correctly omitted `complainantId` for an anonymous case, then wrote `by: req.user?.id` into the timeline **on the same row**. The identity it promised to withhold was stored anyway. The option offered the appearance of protection. |
+| **Impersonation** | `complainantId` was read from the **request body**, so a caller could file a complaint attributed to another person — in the module where the complainant's identity is the most consequential field. |
+| **Named anonymous cases** | `complainantName` was required even when anonymous, so a real name was stored on a submission that had asked not to be identified. |
+
+Now: the complainant is the authenticated caller or nobody; an anonymous case
+records `anonymous` as the timeline actor and a placeholder name; and
+`isAnonymous`, `complainantId`, `complainantName` and `complainantType` cannot be
+changed after filing — flipping `isAnonymous` would be the single most damaging
+write in this module.
+
+Also fixed: `grievanceNumber` was **globally unique**, so two universities each
+numbering a case GRV-2026-0001 would collide and the second could not file it.
+
+**Stated, not implied:** anonymity here protects the *case record*. Uploaded
+evidence still carries its own object-store metadata, so this is not an
+unlinkability guarantee against someone with database and file-store access.
+
+### A guard caught a bug in the guards
+The check-counter added after checkpoint 22 had an arithmetic flaw: when MORE
+checks ran than declared, it **subtracted** the difference from the failure
+count. In the grievance run that turned a genuine failure into
+`ALL CHECKS PASSED`. Fixed in all six scripts — the adjustment can now only ever
+add, and an over-count is reported as `MISCOUNTED`.
+
+`seedTenancy.test.ts` also earned its place again, catching a `ComplianceItem`
+seeded without a tenant key that `tsc` could not see.
+
+### Status
+Typecheck **0** (backend + frontend) · Tests **471** (20 files) ·
+Migrations **31** · Live checks **85/85** across 7 scripts
+
+### Remaining
+No known nullable tenant keys, no known `data: req.body` writes, no known
+globally-unique columns that should be per-tenant. ~415 legacy handlers remain;
+what is left is refactoring rather than exposure.

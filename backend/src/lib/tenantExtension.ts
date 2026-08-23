@@ -129,6 +129,10 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   'SportsInventoryItem',
   'Meeting',
   'BroadcastMessage',
+  // 0031 - the grievance module. Anonymous and confidential complaints were
+  // in a globally shared table.
+  'GrievanceCase',
+  'ComplianceItem',
   // Workflow engine (0024). WorkflowStep and WorkflowTransition are NOT listed:
   // they carry no institutionId and are scoped through their parent.
   'WorkflowDefinition',

@@ -130,6 +130,8 @@ model Institution {
   sportsInventoryItems    SportsInventoryItem[]
   meetings                Meeting[]
   broadcastMessages       BroadcastMessage[]
+  grievanceCases          GrievanceCase[]
+  complianceItems         ComplianceItem[]
 
   @@index([isActive])
 }
@@ -2314,7 +2316,16 @@ model AQARRecord {
 // Grievance — Enhanced Cases
 model GrievanceCase {
   id                     String    @id @default(uuid())
-  grievanceNumber        String    @unique
+  /// TENANT KEY, added in 0031. Both tables were GLOBAL. GrievanceCase holds
+  /// harassment and ragging complaints, complainant identity (or its
+  /// deliberate absence), evidence references and investigation timelines —
+  /// every grievance officer in the deployment could read and write every
+  /// institution's cases.
+  institutionId          String
+  /// Unique PER INSTITUTION (0031). It was globally unique, so two
+  /// universities each numbering a case GRV-2026-001 would collide and the
+  /// second could not file it.
+  grievanceNumber        String
   complainantId          String?
   complainantName        String
   complainantType        String
@@ -2338,11 +2349,22 @@ model GrievanceCase {
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   complainant User? @relation(fields: [complainantId], references: [id], onDelete: SetNull)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@unique([institutionId, grievanceNumber])
+  @@index([institutionId])
 }
 
 // Grievance — Compliance Items
 model ComplianceItem {
   id                 String    @id @default(uuid())
+  /// TENANT KEY, added in 0031. Both tables were GLOBAL. GrievanceCase holds
+  /// harassment and ragging complaints, complainant identity (or its
+  /// deliberate absence), evidence references and investigation timelines —
+  /// every grievance officer in the deployment could read and write every
+  /// institution's cases.
+  institutionId      String
   title              String
   type               String
   description        String
@@ -2352,6 +2374,10 @@ model ComplianceItem {
   completionTracking Json?
   documents          Json?
   status             String    @default("active")
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Grievance — Anti-Ragging Affidavits

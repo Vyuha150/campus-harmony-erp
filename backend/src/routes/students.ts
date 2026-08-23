@@ -1226,6 +1226,7 @@ router.post('/grievances', authenticate, async (req: Request, res: Response) => 
 
     const grievance = await prisma.grievanceCase.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         grievanceNumber,
         complainantId: userId,
         complainantName: user?.name || 'Student',

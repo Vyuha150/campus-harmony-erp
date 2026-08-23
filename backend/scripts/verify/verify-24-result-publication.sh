@@ -110,9 +110,16 @@ UPD=$($PSQL $DB -c "UPDATE \"WorkflowTransition\" SET note='tampered' WHERE \"in
 
 echo
 echo "=============================================="
-if [ "$CHECKS" -ne "$EXPECTED_CHECKS" ]; then
-  echo " INCOMPLETE — $CHECKS of $EXPECTED_CHECKS checks executed. Treat as FAILED."
+if [ "$CHECKS" -lt "$EXPECTED_CHECKS" ]; then
+  # A check aborted before reporting. Only ever ADDS to the failure count.
+  echo " INCOMPLETE - $CHECKS of $EXPECTED_CHECKS checks executed. Treat as FAILED."
   FAILURES=$((FAILURES + EXPECTED_CHECKS - CHECKS))
+elif [ "$CHECKS" -gt "$EXPECTED_CHECKS" ]; then
+  # More checks ran than declared. This is a bookkeeping error, not a pass:
+  # an earlier version SUBTRACTED the difference from FAILURES here, which
+  # turned a real failure into "ALL CHECKS PASSED". Never reduce the count.
+  echo " MISCOUNTED - $CHECKS checks ran, $EXPECTED_CHECKS declared. Update EXPECTED_CHECKS."
+  FAILURES=$((FAILURES + 1))
 fi
 if [ "$FAILURES" -eq 0 ]; then echo " ALL $CHECKS CHECKS PASSED"; else echo " $FAILURES CHECK(S) FAILED"; fi
 echo "=============================================="

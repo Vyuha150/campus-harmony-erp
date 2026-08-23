@@ -1358,7 +1358,12 @@ async function main() {
   });
 
   await prisma.grievanceCase.upsert({
-    where: { grievanceNumber: 'GRV-2026-0001' },
+    where: {
+      institutionId_grievanceNumber: {
+        institutionId: SEED_INSTITUTION_ID,
+        grievanceNumber: 'GRV-2026-0001'
+      }
+    },
     update: {
       id: 'seed-grievance-case-1',
       complainantId: IDS.users.student,
@@ -1384,6 +1389,7 @@ async function main() {
     },
     create: {
       id: 'seed-grievance-case-1',
+      institutionId: SEED_INSTITUTION_ID,
       grievanceNumber: 'GRV-2026-0001',
       complainantId: IDS.users.student,
       complainantName: 'Ananya Student',
@@ -1409,6 +1415,7 @@ async function main() {
   });
 
   await upsertById(prisma.complianceItem, 'seed-compliance-item-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Anti-ragging compliance renewal',
     type: 'regulatory',
     description: 'Annual anti-ragging compliance submission.',

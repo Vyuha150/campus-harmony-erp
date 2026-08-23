@@ -20,7 +20,7 @@
  * never allow.
  */
 
-import { basePrisma } from './prisma.js';
+import { prisma, basePrisma } from './prisma.js';
 import { recordInTransaction, type AuditAction, type AuditSeverity } from './audit.js';
 import { currentTenant } from './tenantStore.js';
 import { AuthorizationError, ValidationError, NotFoundError } from './errors.js';
@@ -49,13 +49,41 @@ export interface AuditSpec {
  * If the audit write fails, the business change is rolled back. That trade-off
  * is deliberate for institutional records: an untraceable grade or payroll
  * change is worse than a failed request the user can retry.
+ *
+ * SCOPED BY CONSTRUCTION
+ *
+ * The transaction is opened on `prisma`, the EXTENDED client, so the `tx` handed
+ * to every service operation carries tenant scoping and soft-delete filtering.
+ *
+ * It used to be opened on `basePrisma`. That made the service layer the one
+ * place in the system where isolation was not structural: it depended on each
+ * author remembering to write `institutionId: context.institutionId` into every
+ * `where`. Nothing in the type system noticed when they did not, and in Phase 3a
+ * I proved the hazard by falling into it myself — `exams.service.ts` shipped
+ * without the filter and a rival institution's exam was listed and renamed
+ * through the API, while the unit suite stayed green.
+ *
+ * Measured before changing it, because the answer was not obvious. With a rival
+ * row planted directly in the database:
+ *
+ *   prisma.$transaction     -> 1 row, rival NOT visible
+ *   basePrisma.$transaction -> 2 rows, rival visible
+ *
+ * The explicit `institutionId` filters already written across the services are
+ * kept. They are now redundant rather than load-bearing, and redundancy is the
+ * right posture for tenant isolation — two independent mechanisms, either of
+ * which alone would hold.
+ *
+ * `basePrisma` remains the escape hatch for genuinely cross-tenant work
+ * (authentication before a tenant is known, migrations, maintenance) and for
+ * `runUnscoped()`, which is deliberately explicit and greppable.
  */
 export async function mutate<T>(
   context: TenantContext,
   audit: AuditSpec,
   operation: (tx: TransactionClient) => Promise<T>
 ): Promise<T> {
-  return basePrisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     const result = await operation(tx);
 
     await recordInTransaction(tx as never, {
