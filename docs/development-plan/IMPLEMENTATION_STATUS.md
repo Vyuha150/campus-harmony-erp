@@ -1704,3 +1704,67 @@ not see:
 Header now reads **"B.Tech Computer Science • Semester 5 • CH2024CS001"**. With
 two published semesters planted, both CGPA displays showed **8.15** with
 **46/48 credits** and **96% completion**; the probe rows were then removed.
+
+---
+
+## Checkpoint 25 — the last nullable tenant keys, and what they exposed
+
+The five models recorded as outstanding in checkpoint 23 are done: **User,
+StudentProfile, FacultyProfile, Department and AcademicYear** now require
+`institutionId` (migration **0030**). Every tenant-owned model in the system now
+has a non-null tenant key.
+
+For `User` this was more than tidiness. `resolveTenantContext` derives the
+request's institution *from the user row*, so a user with a NULL institution
+could authenticate and then be rejected by every tenant-scoped route — an account
+that logs in and can do nothing.
+
+### Tightening them exposed four more defects
+
+| Where | Defect |
+|---|---|
+| `security.ts` `POST /guards` | Created accounts with the **hardcoded password `'Guard@123'`** when none was supplied. The literal is in a public repository, the accounts are real, and nothing forced a change at first login. It survived Phase 0.4 because it calls `bcrypt.hash` directly instead of `hashPassword()`, which is where the policy check lives. Also set **no institution**. |
+| `admin.ts` `POST /departments` | `create({ data: req.body })` — every column writable **including `institutionId`**, so a caller could plant a department inside another institution by naming it. |
+| `students.ts` `PUT /profile` | `update({ data: req.body })` on the student's **own** record. The row was correctly theirs; the columns were not. A student could set their own `cgpa`, `semester`, `rollNumber`, `earnedCredits` or `institutionId` from the profile screen. |
+| 9 more handlers | `create({ data: req.body })` across alumni, finance, registrar and sports. |
+
+### The ratchet was too narrow, and said so
+Phase 3b's guard banned `update({ where: { id }, data: req.body })` and reported
+**zero**. It never looked at `create`. Widening it to
+`create|createMany|update|updateMany` found **10 more sites** — the 9 above plus
+the student self-profile one.
+
+A guard is only as wide as the shape it was written against, and I wrote it
+against the shape I had just finished fixing.
+
+### One good result worth stating precisely
+Tenancy on the create path was **already safe**. Routes use the extended client,
+and the Prisma extension injects `institutionId` on create and **overrides** a
+client-supplied one. Verified live: posting `institutionId: <rival>` to
+`POST /sports/teams` produced a row in the caller's own institution. What the
+9 creates leaked was ordinary mass assignment, not tenancy.
+
+### Second dead matcher in two checkpoints
+The widened pattern initially used `[^{}]*`, which cannot cross the `{ id }` in
+`where: { id }` — so it matched `create` but silently stopped matching `update`,
+the shape the ratchet existed for. That is the **second** `[^…]*` dead matcher in
+this suite (the first was `: 100` in `noFabricatedMetrics.test.ts`). Both were
+caught only by their negative controls.
+
+A verification check also passed **for the wrong reason** and was corrected: the
+"transfer cannot be created pre-approved" check used 1-character institution
+names, so it passed on a length error rather than on `status` being refused.
+
+### Status
+Typecheck **0** (backend + frontend) · Tests **465** (20 files) ·
+Migrations **30** · Live checks **66/66** across 5 scripts
+
+Seed runs clean; all **19** seeded role logins verified after the User change.
+
+### Remaining
+No known nullable tenant keys and no known `data: req.body` writes. What is left
+in Phase 3 is refactoring, not exposure: roughly 430 legacy handlers, with
+`grievances.ts` first on blast radius (confidential and anonymous submissions).
+
+The structural fix is still the highest-value change: make the service layer
+scoped by construction, so a forgotten `where` clause cannot reach production.

@@ -16,6 +16,9 @@ import {
   updateVacancySchema,
   updateAccreditationSchema
 } from '../modules/common/entityUpdate.schemas.js';
+import {
+  createTransferSchema
+} from '../modules/common/entityCreate.schemas.js';
 
 const router = Router();
 
@@ -144,14 +147,24 @@ router.get('/transfers', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/transfers', authenticate, async (req: Request, res: Response) => {
-  try {
-    const transfer = await prisma.transferRequest.create({ data: req.body });
-    res.json({ success: true, data: transfer });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/transfers',
+  authenticate,
+  validate({ body: createTransferSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
+    // so it compiled cleanly while accepting every column. The tenant key is
+    // injected by the Prisma extension and is NOT read from the body.
+    const body = req.body as z.infer<typeof createTransferSchema>;
+    const record = await prisma.transferRequest.create({
+      data: {
+        ...body,
+      } as any
+    });
+
+    res.status(201).json({ success: true, data: record });
+  })
+);
 
 router.put(
   '/transfers/:id',

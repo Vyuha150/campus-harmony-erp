@@ -309,6 +309,7 @@ async function main() {
     },
     create: {
       id: IDS.student.profile,
+      institutionId: SEED_INSTITUTION_ID,
       userId: IDS.users.student,
       rollNumber: 'CH2024CS001',
       program: 'B.Tech',
@@ -339,6 +340,7 @@ async function main() {
     },
     create: {
       id: IDS.faculty.profile,
+      institutionId: SEED_INSTITUTION_ID,
       userId: IDS.users.faculty,
       employeeId: 'EMP-CSE-1001',
       qualification: 'Ph.D. in Computer Science',
@@ -762,6 +764,7 @@ async function main() {
     },
     create: {
       id: 'seed-academic-year-1',
+      institutionId: SEED_INSTITUTION_ID,
       year: '2025-26',
       startDate: new Date('2025-07-01T00:00:00.000Z'),
       endDate: new Date('2026-06-30T00:00:00.000Z'),

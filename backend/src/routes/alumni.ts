@@ -13,6 +13,10 @@ import {
   updateAlumniEventSchema,
   updateAlumniJobSchema
 } from '../modules/common/entityUpdate.schemas.js';
+import {
+  createCommunicationSchema,
+  createDonationSchema
+} from '../modules/common/entityCreate.schemas.js';
 
 const router = Router();
 const currentYear = new Date().getFullYear();
@@ -161,14 +165,24 @@ router.get('/communications', authenticate, async (req: Request, res: Response) 
   }
 });
 
-router.post('/communications', authenticate, async (req: Request, res: Response) => {
-  try {
-    const comm = await prisma.alumniCommunicationRecord.create({ data: req.body });
-    res.json({ success: true, data: comm });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/communications',
+  authenticate,
+  validate({ body: createCommunicationSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
+    // so it compiled cleanly while accepting every column. The tenant key is
+    // injected by the Prisma extension and is NOT read from the body.
+    const body = req.body as z.infer<typeof createCommunicationSchema>;
+    const record = await prisma.alumniCommunicationRecord.create({
+      data: {
+        ...body,
+      } as any
+    });
+
+    res.status(201).json({ success: true, data: record });
+  })
+);
 
 // ─── Events ───
 router.get('/events', authenticate, async (req: Request, res: Response) => {
@@ -263,14 +277,24 @@ router.get('/donations', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/donations', authenticate, async (req: Request, res: Response) => {
-  try {
-    const donation = await prisma.donation.create({ data: req.body });
-    res.json({ success: true, data: donation });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/donations',
+  authenticate,
+  validate({ body: createDonationSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
+    // so it compiled cleanly while accepting every column. The tenant key is
+    // injected by the Prisma extension and is NOT read from the body.
+    const body = req.body as z.infer<typeof createDonationSchema>;
+    const record = await prisma.donation.create({
+      data: {
+        ...body,
+      } as any
+    });
+
+    res.status(201).json({ success: true, data: record });
+  })
+);
 
 // ─── Progression ───
 router.get('/progression/surveys', authenticate, async (req: Request, res: Response) => {

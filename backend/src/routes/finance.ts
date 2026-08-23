@@ -12,6 +12,10 @@ import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
 import {
   updateJournalEntrySchema
 } from '../modules/common/entityUpdate.schemas.js';
+import {
+  createPayrollSchema,
+  createVendorSchema
+} from '../modules/common/entityCreate.schemas.js';
 
 const router = Router();
 
@@ -447,14 +451,24 @@ router.get('/vendors', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/vendors', authenticate, async (req: Request, res: Response) => {
-  try {
-    const vendor = await prisma.vendor.create({ data: req.body });
-    res.json({ success: true, data: vendor });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/vendors',
+  authenticate,
+  validate({ body: createVendorSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
+    // so it compiled cleanly while accepting every column. The tenant key is
+    // injected by the Prisma extension and is NOT read from the body.
+    const body = req.body as z.infer<typeof createVendorSchema>;
+    const record = await prisma.vendor.create({
+      data: {
+        ...body,
+      } as any
+    });
+
+    res.status(201).json({ success: true, data: record });
+  })
+);
 
 // ─── Payroll ───
 router.get('/payroll', authenticate, async (req: Request, res: Response) => {
@@ -505,14 +519,39 @@ router.post('/payroll/disburse', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.post('/payroll/process', authenticate, async (req: Request, res: Response) => {
-  try {
-    const record = await prisma.payrollRecord.create({ data: req.body });
-    res.json({ success: true, data: record });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/payroll/process',
+  authenticate,
+  validate({ body: createPayrollSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
+    // so it compiled cleanly while accepting every column. The tenant key is
+    // injected by the Prisma extension and is NOT read from the body.
+    const body = req.body as z.infer<typeof createPayrollSchema>;
+
+    // grossSalary / netSalary are DERIVED and are not accepted from the client.
+    // A payroll row whose stated net contradicts its own components is not a
+    // record of anything.
+    const sum = (v: unknown) =>
+      v && typeof v === 'object'
+        ? Object.values(v as Record<string, unknown>).reduce<number>(
+            (a, b) => a + (Number(b) || 0),
+            0
+          )
+        : 0;
+    const gross = body.basicSalary + sum(body.allowances);
+    const net = gross - sum(body.deductions);
+    const record = await prisma.payrollRecord.create({
+      data: {
+        ...body,
+        grossSalary: Number(gross.toFixed(2)),
+        netSalary: Number(net.toFixed(2)),
+      } as any
+    });
+
+    res.status(201).json({ success: true, data: record });
+  })
+);
 
 router.get('/payroll/:id', authenticate, async (req: Request, res: Response) => {
   try {

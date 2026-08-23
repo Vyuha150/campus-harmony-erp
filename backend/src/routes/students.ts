@@ -5,9 +5,39 @@ import { toRoleGrievanceStatus } from '../lib/grievanceStatus.js';
 import { authenticate } from '../middleware/auth.js';
 import { NotFoundError , sendError} from '../lib/errors.js';
 import { getTenantContext } from '../lib/tenant.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
 import * as libraryService from '../modules/library/library.service.js';
 
 const router = Router();
+
+/**
+ * Personal details a student may edit about themselves.
+ *
+ * Deliberately excludes every academic and administrative column: cgpa,
+ * semester, rollNumber, program, branch, section, batch, admissionYear,
+ * totalCredits, earnedCredits, programmeId, batchId, sectionId, campusId and
+ * institutionId. Those belong to the offices that maintain them.
+ */
+const updateOwnStudentProfileSchema = z
+  .object({
+    gender: z.string().trim().max(30).nullable().optional(),
+    dateOfBirth: z
+      .string()
+      .trim()
+      .refine((v) => !Number.isNaN(Date.parse(v)), 'must be a valid date')
+      .nullable()
+      .optional(),
+    category: z.string().trim().max(40).nullable().optional(),
+    domicileState: z.string().trim().max(80).nullable().optional(),
+    nationality: z.string().trim().max(60).nullable().optional(),
+    isDifferentlyAbled: z.boolean().optional(),
+    isHosteller: z.boolean().optional()
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update.' });
+
 const db: any = prisma;
 // Get Faculty Class Messages for the Student
 router.get('/messages', authenticate, async (req: Request, res: Response) => {
@@ -621,19 +651,57 @@ router.get('/current-semester', authenticate, async (req: Request, res: Response
 });
 
 // Update Profile
-router.put('/profile', authenticate, async (req: Request, res: Response) => {
-  try {
+/**
+ * A student updating their own profile.
+ *
+ * WHAT THIS REPLACES: `prisma.studentProfile.update({ where: { id: profile.id }, data: req.body })`.
+ *
+ * The row was correctly the caller's own — `profile.id` comes from their token,
+ * not the request. The defect was WHICH COLUMNS they could write. `req.body`
+ * reached Prisma unfiltered, so a student could set their own `cgpa`,
+ * `semester`, `rollNumber`, `earnedCredits`, `admissionYear`, `programmeId` or
+ * `institutionId` with a single request — rewriting their own academic record
+ * and standing from the profile screen.
+ *
+ * `tsc` could not see this: `req.body` is `any`.
+ *
+ * The schema below is an allow-list of genuinely personal details. Everything
+ * academic or administrative is set by the office that owns it: results by the
+ * examination flow, semester by progression, roll number and programme by
+ * admissions.
+ */
+router.put(
+  '/profile',
+  authenticate,
+  validate({ body: updateOwnStudentProfileSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
-    const updated = await prisma.studentProfile.update({
-      where: { id: profile.id },
-      data: req.body
+    const body = req.body as z.infer<typeof updateOwnStudentProfileSchema>;
+
+    // updateMany with the tenant filter, not update-by-id: the same rule applied
+    // everywhere else, so this path cannot drift away from it.
+    await prisma.studentProfile.updateMany({
+      where: { id: profile.id, institutionId: getTenantContext(req).institutionId },
+      data: {
+        ...(body.gender !== undefined ? { gender: body.gender } : {}),
+        ...(body.dateOfBirth !== undefined
+          ? { dateOfBirth: body.dateOfBirth === null ? null : new Date(body.dateOfBirth) }
+          : {}),
+        ...(body.category !== undefined ? { category: body.category } : {}),
+        ...(body.domicileState !== undefined ? { domicileState: body.domicileState } : {}),
+        ...(body.nationality !== undefined ? { nationality: body.nationality } : {}),
+        ...(body.isDifferentlyAbled !== undefined
+          ? { isDifferentlyAbled: body.isDifferentlyAbled }
+          : {}),
+        ...(body.isHosteller !== undefined ? { isHosteller: body.isHosteller } : {})
+      }
     });
+
+    const updated = await prisma.studentProfile.findFirst({ where: { id: profile.id } });
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // Get Assignments
 router.get('/assignments', authenticate, async (req: Request, res: Response) => {

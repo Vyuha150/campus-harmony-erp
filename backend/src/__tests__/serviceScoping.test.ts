@@ -209,7 +209,25 @@ describe('mass-assignment debt does not grow', () => {
    */
   const KNOWN_MASS_ASSIGNMENT: Record<string, number> = {};
 
-  const pattern = /\.update\s*\(\s*\{\s*where:\s*\{\s*id\s*\}\s*,\s*data:\s*req\.body/g;
+  /**
+   * Any write whose `data` is the raw request body.
+   *
+   * WIDENED after 0030. The original pattern only matched
+   * `update({ where: { id }, data: req.body })`, so a sweep reported ZERO while
+   * NINE `create({ data: req.body })` handlers sat untouched — a guard is only
+   * as wide as the shape it was written against, and I wrote it against the
+   * shape I had just finished fixing.
+   */
+  //
+  // The middle must span NESTED braces. `[^{}]*` cannot cross the `{ id }` in
+  // `where: { id }`, so a first attempt at this widened pattern matched `create`
+  // but silently stopped matching `update` — the shape the ratchet was
+  // originally built for. That is the SECOND time a `[^…]*` class has produced a
+  // dead matcher in this suite (see EMPTY_MEANS_FULL in
+  // noFabricatedMetrics.test.ts). The negative control below is the only reason
+  // either was caught.
+  const pattern =
+    /\.(?:create|createMany|update|updateMany)\s*\(\s*\{[\s\S]{0,200}?data:\s*req\.body/g;
 
   function countIn(file: string): number {
     const src = stripComments(readFileSync(join(routesDir(), file), 'utf8'));
@@ -244,9 +262,16 @@ describe('mass-assignment debt does not grow', () => {
     }
   });
 
-  it('NEGATIVE CONTROL: the pattern matches the shape it counts', () => {
-    const bad = 'const x = await prisma.thing.update({ where: { id }, data: req.body });';
-    expect((bad.match(pattern) ?? []).length).toBe(1);
+  it('NEGATIVE CONTROL: the pattern matches every shape it counts', () => {
+    const update = 'await prisma.thing.update({ where: { id }, data: req.body });';
+    const create = 'await prisma.thing.create({ data: req.body });';
+    const many = 'await prisma.thing.updateMany({ where: { id }, data: req.body });';
+    for (const bad of [update, create, many]) {
+      expect((bad.match(new RegExp(pattern.source, 'g')) ?? []).length, bad).toBe(1);
+    }
+    // A validated body must NOT trip it.
+    const good = 'await prisma.thing.create({ data: { ...body, institutionId: ctx.institutionId } });';
+    expect((good.match(new RegExp(pattern.source, 'g')) ?? []).length).toBe(0);
   });
 
   it('NEGATIVE CONTROL: the req.body matcher still works', () => {

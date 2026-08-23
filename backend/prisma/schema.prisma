@@ -354,7 +354,10 @@ model User {
 
   /// TENANT KEY. Nullable only during the tenancy backfill migration; it is
   /// populated for every row and treated as required by application code.
-  institutionId String?
+  /// Required since 0030. A NULLABLE tenant key is a hole in the filter: a
+  /// NULL row matches no institution, so it becomes invisible and
+  /// unrepairable rather than leaking.
+  institutionId String
   /// Campus assignment. Null means the user is institution-wide (VC, Registrar).
   campusId      String?
 
@@ -373,7 +376,7 @@ model User {
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
-  institution    Institution?    @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Restrict)
   campusRef      Campus?         @relation(fields: [campusId], references: [id], onDelete: SetNull)
   department     Department?     @relation(name: "UserDepartment", fields: [departmentId], references: [id])
   studentProfile StudentProfile?
@@ -414,7 +417,10 @@ model StudentProfile {
 
   /// TENANT KEY — blueprint: "Every student and staff profile is tagged with
   /// their respective campus".
-  institutionId String?
+  /// Required since 0030. A NULLABLE tenant key is a hole in the filter: a
+  /// NULL row matches no institution, so it becomes invisible and
+  /// unrepairable rather than leaking.
+  institutionId String
   campusId      String?
 
   /// Structured hierarchy references, superseding the free-text fields below.
@@ -476,7 +482,7 @@ model StudentProfile {
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
-  institution Institution? @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   batchRef Batch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
@@ -528,7 +534,10 @@ model FacultyProfile {
   userId String @unique
 
   /// TENANT KEY.
-  institutionId String?
+  /// Required since 0030. A NULLABLE tenant key is a hole in the filter: a
+  /// NULL row matches no institution, so it becomes invisible and
+  /// unrepairable rather than leaking.
+  institutionId String
   campusId      String?
 
   /// Employee id — tenant-scoped, not globally unique.
@@ -575,7 +584,7 @@ model FacultyProfile {
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
-  institution Institution? @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   campus Campus? @relation(fields: [campusId], references: [id], onDelete: SetNull)
@@ -597,7 +606,10 @@ model Department {
   id String @id @default(uuid())
 
   /// TENANT KEY — nullable only during the backfill migration.
-  institutionId String?
+  /// Required since 0030. A NULLABLE tenant key is a hole in the filter: a
+  /// NULL row matches no institution, so it becomes invisible and
+  /// unrepairable rather than leaking.
+  institutionId String
   campusId      String?
   schoolId      String?
 
@@ -607,9 +619,9 @@ model Department {
   hodUserId String?
   isActive  Boolean @default(true)
 
-  institution Institution? @relation(fields: [institutionId], references: [id], onDelete: Restrict)
-  campus      Campus?      @relation(fields: [campusId], references: [id], onDelete: SetNull)
-  school      School?      @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  campus      Campus?     @relation(fields: [campusId], references: [id], onDelete: SetNull)
+  school      School?     @relation(fields: [schoolId], references: [id], onDelete: SetNull)
 
   users       User[]               @relation("UserDepartment")
   courses     Course[]
@@ -2535,7 +2547,10 @@ model AcademicYear {
 
   /// TENANT KEY — blueprint: "The ERP can maintain multiple calendars…"
   /// per campus, so academic years are per-institution, not global.
-  institutionId String?
+  /// Required since 0030. A NULLABLE tenant key is a hole in the filter: a
+  /// NULL row matches no institution, so it becomes invisible and
+  /// unrepairable rather than leaking.
+  institutionId String
 
   year      String
   startDate DateTime @db.Timestamptz(3)
@@ -2544,7 +2559,7 @@ model AcademicYear {
   semesters Json?
   status    String   @default("upcoming")
 
-  institution Institution? @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
   @@unique([institutionId, year])
   @@index([institutionId])

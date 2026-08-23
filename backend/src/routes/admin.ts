@@ -245,14 +245,68 @@ router.get('/departments', authenticate, async (req: Request, res: Response) => 
   }
 });
 
-router.post('/departments', authenticate, async (req: Request, res: Response) => {
-  try {
-    const dept = await prisma.department.create({ data: req.body });
-    res.json({ success: true, data: dept });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+const createDepartmentSchema = z
+  .object({
+    name: z.string().trim().min(2).max(160),
+    code: z.string().trim().min(1).max(20),
+    campusId: z.string().trim().min(1).max(80).nullable().optional(),
+    schoolId: z.string().trim().min(1).max(80).nullable().optional(),
+    hodUserId: z.string().trim().min(1).max(80).nullable().optional(),
+    isActive: z.boolean().optional()
+  })
+  .strict();
+
+/**
+ * Create a department.
+ *
+ * WHAT THIS REPLACES: `prisma.department.create({ data: req.body })`.
+ *
+ * Two defects, and neither was visible to the type checker — `req.body` is
+ * `any`, so this compiled cleanly while accepting anything:
+ *
+ *   1. Unrestricted mass assignment. Every column was writable, including
+ *      `institutionId` itself, so a caller could create a department inside
+ *      ANOTHER institution simply by naming it. That is the reverse of the
+ *      cross-tenant read problem and strictly worse, because it plants a row
+ *      rather than reading one.
+ *
+ *   2. No tenant key was set when the caller did not supply one, so departments
+ *      were created with a NULL institution and then invisible to every scoped
+ *      query. Impossible after migration 0030, which is what surfaced this.
+ *
+ * The institution now comes from the creator's own context and is never read
+ * from the request.
+ */
+router.post(
+  '/departments',
+  authenticate,
+  validate({ body: createDepartmentSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = getTenantContext(req);
+    const body = req.body as z.infer<typeof createDepartmentSchema>;
+
+    const dept = await prisma.department.create({
+      data: withInstitution(ctx, {
+        name: body.name,
+        code: body.code,
+        campusId: ctx.scopeLevel === 'CAMPUS' ? ctx.campusId : (body.campusId ?? null),
+        schoolId: body.schoolId ?? null,
+        hodUserId: body.hodUserId ?? null,
+        ...(body.isActive !== undefined ? { isActive: body.isActive } : {})
+      })
+    });
+
+    await recordFromRequest(req, {
+      action: 'CREATE',
+      module: 'admin',
+      resource: `Department:${dept.id}`,
+      details: `Created department ${dept.code} - ${dept.name}`,
+      newValue: { name: dept.name, code: dept.code }
+    });
+
+    res.status(201).json({ success: true, data: dept });
+  })
+);
 
 // ─── Academic Years ───
 router.get('/academic-years', authenticate, async (req: Request, res: Response) => {

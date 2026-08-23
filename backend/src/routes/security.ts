@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
+import { hashPassword } from '../lib/password.js';
 import { getTenantContext } from '../lib/tenant.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
@@ -302,11 +303,36 @@ router.post('/guards', authenticate, async (req: Request, res: Response) => {
       return res.status(409).json({ success: false, message: 'A user with this email already exists' });
     }
 
-    const tempPassword = password ? String(password) : 'Guard@123';
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+    // REMOVED: `password ? String(password) : 'Guard@123'`.
+    //
+    // A guard account created without a password got a KNOWN one. The literal
+    // sits in a public repository, the accounts are real, and nothing forced a
+    // change at first login — so every such account shared one published
+    // credential. Phase 0.4 removed default passwords elsewhere; this call
+    // survived because it hashes with bcrypt directly instead of going through
+    // `hashPassword()`, which is where the policy check lives.
+    //
+    // A password is now required, and is validated by the same policy as every
+    // other account rather than by this handler's own judgement.
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'A password is required. Guard accounts are no longer created with a default.'
+        }
+      });
+    }
+    const hashedPassword = await hashPassword(String(password));
 
     const created = await prisma.user.create({
       data: {
+        // Was absent: a guard account was created with NO institution. Since
+        // `resolveTenantContext` derives the request's institution from the user
+        // row, that account could authenticate and then be rejected by every
+        // tenant-scoped route — and after 0030 the row cannot be written at all.
+        // Taken from the creator's context, never from the request body.
+        institutionId: getTenantContext(req).institutionId,
         name: String(name),
         email: String(email),
         password: hashedPassword,

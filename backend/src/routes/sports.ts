@@ -16,6 +16,12 @@ import {
   updateFacilitySchema,
   updateInventorySchema
 } from '../modules/common/entityUpdate.schemas.js';
+import {
+  createAthleteSchema,
+  createAttendanceSchema,
+  createInventorySchema,
+  createTeamSchema
+} from '../modules/common/entityCreate.schemas.js';
 
 const router = Router();
 
@@ -53,14 +59,24 @@ router.get('/athletes', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/athletes', authenticate, async (req: Request, res: Response) => {
-  try {
-    const athlete = await prisma.sportsAthlete.create({ data: req.body });
-    res.json({ success: true, data: athlete });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/athletes',
+  authenticate,
+  validate({ body: createAthleteSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
+    // so it compiled cleanly while accepting every column. The tenant key is
+    // injected by the Prisma extension and is NOT read from the body.
+    const body = req.body as z.infer<typeof createAthleteSchema>;
+    const record = await prisma.sportsAthlete.create({
+      data: {
+        ...body,
+      } as any
+    });
+
+    res.status(201).json({ success: true, data: record });
+  })
+);
 
 router.put(
   '/athletes/:id',
@@ -99,14 +115,24 @@ router.get('/teams', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/teams', authenticate, async (req: Request, res: Response) => {
-  try {
-    const team = await prisma.sportsTeam.create({ data: req.body });
-    res.json({ success: true, data: team });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/teams',
+  authenticate,
+  validate({ body: createTeamSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
+    // so it compiled cleanly while accepting every column. The tenant key is
+    // injected by the Prisma extension and is NOT read from the body.
+    const body = req.body as z.infer<typeof createTeamSchema>;
+    const record = await prisma.sportsTeam.create({
+      data: {
+        ...body,
+      } as any
+    });
+
+    res.status(201).json({ success: true, data: record });
+  })
+);
 
 router.put(
   '/teams/:id',
@@ -149,14 +175,24 @@ router.get('/attendance', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/attendance', authenticate, async (req: Request, res: Response) => {
-  try {
-    const record = await prisma.sportsAttendance.create({ data: req.body });
-    res.json({ success: true, data: record });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/attendance',
+  authenticate,
+  validate({ body: createAttendanceSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
+    // so it compiled cleanly while accepting every column. The tenant key is
+    // injected by the Prisma extension and is NOT read from the body.
+    const body = req.body as z.infer<typeof createAttendanceSchema>;
+    const record = await prisma.sportsAttendance.create({
+      data: {
+        ...body,
+      } as any
+    });
+
+    res.status(201).json({ success: true, data: record });
+  })
+);
 
 router.put(
   '/attendance/:id',
@@ -242,14 +278,29 @@ router.get('/inventory', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/inventory', authenticate, async (req: Request, res: Response) => {
-  try {
-    const item = await prisma.sportsInventoryItem.create({ data: req.body });
-    res.json({ success: true, data: item });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/inventory',
+  authenticate,
+  validate({ body: createInventorySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
+    // so it compiled cleanly while accepting every column. The tenant key is
+    // injected by the Prisma extension and is NOT read from the body.
+    const body = req.body as z.infer<typeof createInventorySchema>;
+
+    // totalValue is DERIVED from quantity x unitPrice.
+    const totalValue = Number((body.quantity * body.unitPrice).toFixed(2));
+    const record = await prisma.sportsInventoryItem.create({
+      data: {
+        ...body,
+        totalValue,
+        availableQuantity: body.availableQuantity ?? body.quantity,
+      } as any
+    });
+
+    res.status(201).json({ success: true, data: record });
+  })
+);
 
 router.put(
   '/inventory/:id',
