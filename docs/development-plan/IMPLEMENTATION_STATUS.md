@@ -1905,3 +1905,64 @@ Not an estimate — counted across all 17 legacy route files:
 ### Status
 Typecheck **0** (backend + frontend) · Tests **472** · Migrations **31** ·
 Live checks **88/88** across 7 scripts
+
+---
+
+## Checkpoint 28 — Phase 2 audited, and actually completed
+
+### The audit found Phase 2 incomplete
+I had reported Phase 2 done. Checking it against its own written exit criteria —
+"three real approval flows run on the engine end-to-end, each transition audited,
+and an institution can change routing without code" — showed two gaps:
+
+1. **One flow, not three.** Only `RESULT_PUBLICATION` was migrated.
+   `FEE_WAIVER` in the database was my own test fixture, not a real flow.
+2. **Escalation was never built.** Item 2.2 listed it in the model. Steps carried
+   `slaHours`, and the inbox used it to compute an `overdue` flag that nothing
+   acted on. A deadline nobody enforces is a comment.
+
+### Both closed
+**Two more real flows**, both cross-module and previously ad-hoc status flips:
+
+- **PURCHASE_REQUEST** — HOD raises (`hod.ts`), Dean sanctions (`dean.ts`). The
+  two handlers did not know about each other and both wrote `status` directly,
+  so for a request that commits money "who approved this" was answerable only by
+  guessing from the last write.
+- **CURRICULUM_PROPOSAL** — HOD raises, Dean decides. The decision handler was
+  `update({ where: { id }, data: { status } })` with **no validation at all**.
+
+**I modelled both as ONE step, not two.** My first draft gave each an extra
+approval stage that the handler names implied. Reading them showed
+`hod.ts PUT /purchaserequests/:id/status` is a 403 stub saying only the Dean may
+approve. Inventing that second stage would have put a governance step in the
+record that nobody sits in — the exact mistake the approval catalogue warned
+about.
+
+**`bosApproved` is no longer accepted from the request body.** It was
+`Boolean(req.body.bosApproved)`: the proposer asserting that the Board of Studies
+had approved their own proposal. An institution wanting a real BoS stage defines
+one through `POST /workflow/definitions` — which is the "change routing without
+code" criterion, used for its intended purpose.
+
+**Escalation (migration 0032)** — `escalationRole` on the step, `escalatedAt` and
+`escalatedFromRole` on the instance, and `POST /workflow/escalate`.
+
+It **widens who may act; it decides nothing.** The approval stays at the same
+step, still pending, and the original assignee keeps access. A system that
+auto-approved on a deadline would record decisions nobody made. Steps with no
+escalation role are reported and left alone — escalating to someone without the
+standing to decide is worse than leaving it late.
+
+### Two things the test told me
+- My own **append-only trigger blocked the test** from backdating a transition.
+  That is the guarantee working. The test now builds an aged instance by INSERT
+  instead of rewriting history.
+- The **purchase flow was unreachable on a fresh database**: no lab `Facility`
+  exists, so every request was refused with "Please select a valid lab". Seeded.
+
+### Status
+Typecheck **0** · Tests **472** · Migrations **32** ·
+Live checks **103/103** across 8 scripts
+
+**Phase 2 now meets its exit criteria.** Verified by
+`verify-2-exit-criteria.sh`, which checks the wording literally: 15/15.

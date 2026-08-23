@@ -43,7 +43,8 @@ const defineSchema = z
             sequence: z.number().int().min(1).max(50),
             name: z.string().trim().min(2).max(80),
             assigneeRole: z.string().trim().min(2).max(40),
-            slaHours: z.number().int().min(1).max(8760).optional()
+            slaHours: z.number().int().min(1).max(8760).optional(),
+            escalationRole: z.string().trim().min(2).max(40).optional()
           })
           .strict()
       )
@@ -144,6 +145,29 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const result = await service.history(getTenantContext(req), pathParam(req, 'instanceId'));
     res.json({ success: true, data: result });
+  })
+);
+
+/**
+ * Escalate every approval past its SLA.
+ *
+ * A called sweep, not a timer: there is no scheduler in this system, and a
+ * `POST` that reports exactly what moved is more honest than a background job
+ * nobody can see. Point a cron entry at it if you want it periodic.
+ *
+ * It widens who may act; it decides nothing.
+ */
+router.post(
+  '/escalate',
+  WORKFLOW_ADMIN,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await service.escalateOverdue(getTenantContext(req));
+    res.json({
+      success: true,
+      message:
+        `${result.escalated} escalated, ${result.overdueWithoutRole} overdue with no escalation role.`,
+      data: result
+    });
   })
 );
 

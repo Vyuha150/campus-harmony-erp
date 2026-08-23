@@ -54,4 +54,91 @@ export const RESULT_PUBLICATION: BuiltinWorkflow = {
   steps: [{ sequence: 1, name: 'Dean publication', assigneeRole: 'dean', slaHours: 72 }]
 };
 
-export const BUILTIN_WORKFLOWS: readonly BuiltinWorkflow[] = [RESULT_PUBLICATION];
+
+/**
+ * Purchase requests.
+ *
+ * Raised in a department (`hod.ts POST /inventory/purchase-request`), then
+ * approved in two places that did not know about each other:
+ * `hod.ts PUT /purchaserequests/:id/status` and
+ * `dean.ts PUT /inventory/purchase-requests/:id/status`. Both wrote `status`
+ * directly, so either could approve alone and neither recorded the other's
+ * decision. For a request that commits money, "who approved this" was answerable
+ * only by guessing from the last write.
+ *
+ * Two steps, because that is what the two handlers imply: the HOD endorses the
+ * departmental need, the Dean sanctions the spend.
+ */
+export const PURCHASE_REQUEST: BuiltinWorkflow = {
+  code: 'PURCHASE_REQUEST',
+  name: 'Purchase request approval',
+  description:
+    'A department raises a purchase request; the HOD endorses it and the Dean ' +
+    'sanctions the spend. Neither step can be skipped.',
+  entityType: 'PurchaseRequest',
+  // ONE step, not two.
+  //
+  // I first modelled this as HOD endorsement -> Dean sanction, which is what the
+  // two handler names suggest. Reading them showed otherwise:
+  // `hod.ts PUT /purchaserequests/:id/status` is a 403 stub that says "only Dean
+  // can approve". The HOD RAISES the request, which is the `started` transition,
+  // and the Dean is the only decision.
+  //
+  // Modelling the second step anyway would have invented a governance stage the
+  // institution does not have — the exact mistake the approval catalogue warned
+  // about when it found records born `approved`.
+  //
+  // Escalates to the principal: a purchase request that sits past its SLA blocks
+  // a department, and the principal is the next authority who can sanction spend.
+  steps: [
+    {
+      sequence: 1,
+      name: 'Dean sanction',
+      assigneeRole: 'dean',
+      slaHours: 120,
+      escalationRole: 'principal'
+    }
+  ]
+};
+
+/**
+ * Curriculum proposals.
+ *
+ * `CurriculumProposal` carries BOTH a `status` defaulting to `pending_dean` and
+ * a separate `bosApproved` boolean. Two fields describing one process, updated
+ * independently, is how a proposal ends up simultaneously approved and pending.
+ *
+ * The engine holds the sequence; the two columns become a projection of it.
+ */
+export const CURRICULUM_PROPOSAL: BuiltinWorkflow = {
+  code: 'CURRICULUM_PROPOSAL',
+  name: 'Curriculum proposal approval',
+  description:
+    'A department proposes a curriculum change; the Board of Studies reviews it ' +
+    'and the Dean approves it.',
+  entityType: 'CurriculumProposal',
+  // Also ONE step, for the same reason: `hod.ts POST /curriculum-proposals`
+  // raises it and `dean.ts PUT /curriculum-proposals/:id` decides it. There is
+  // no Board of Studies step in the code.
+  //
+  // `bosApproved` was taken from the REQUEST BODY — the proposer asserting that
+  // a governance body had approved their own proposal. It is no longer accepted
+  // (see hod.ts). An institution that wants a real BoS stage can define one
+  // through POST /workflow/definitions without code, which is what the engine is
+  // for; inventing it here would put a stage in the record that nobody sits in.
+  steps: [
+    {
+      sequence: 1,
+      name: 'Dean approval',
+      assigneeRole: 'dean',
+      slaHours: 168,
+      escalationRole: 'vice_chancellor'
+    }
+  ]
+};
+
+export const BUILTIN_WORKFLOWS: readonly BuiltinWorkflow[] = [
+  RESULT_PUBLICATION,
+  PURCHASE_REQUEST,
+  CURRICULUM_PROPOSAL
+];

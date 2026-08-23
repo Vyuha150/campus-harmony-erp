@@ -710,6 +710,16 @@ async function main() {
     status: 'pending',
   });
 
+  // A lab facility. Without one, `POST /hod/purchaserequests` refuses every
+  // request with "Please select a valid lab from Facility Management" — the
+  // purchase-approval flow was unreachable on a freshly seeded database.
+  await upsertById(prisma.facility, 'seed-facility-lab-1', {
+    name: 'Signals and Systems Lab',
+    type: 'Laboratory',
+    capacity: 40,
+    status: 'available',
+  });
+
   await upsertById(prisma.qualityMetric, 'seed-quality-metric-1', {
     institutionId: SEED_INSTITUTION_ID,
     category: 'naac',

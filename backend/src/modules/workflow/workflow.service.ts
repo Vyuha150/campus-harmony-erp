@@ -35,6 +35,8 @@ export interface StepInput {
   name: string;
   assigneeRole: string;
   slaHours?: number | undefined;
+  /** Who the step falls to on SLA breach. Omit for "does not escalate". */
+  escalationRole?: string | undefined;
 }
 
 /**
@@ -118,7 +120,8 @@ export async function defineWorkflow(
               sequence: step.sequence,
               name: step.name,
               assigneeRole: step.assigneeRole,
-              slaHours: step.slaHours ?? null
+              slaHours: step.slaHours ?? null,
+              escalationRole: step.escalationRole ?? null
             }
           })
         );
@@ -293,10 +296,20 @@ export async function act(
 
   // Role gate. `super_admin` is permitted throughout, matching how every other
   // module treats it.
-  if (context.role !== 'super_admin' && context.role !== currentStep.assigneeRole) {
+  //
+  // Once an instance has ESCALATED, the escalation role may act as well. The
+  // original assignee is NOT locked out: escalation exists so a late approval
+  // still happens, not to punish whoever was slow, and removing their access
+  // would strand any decision they were mid-way through.
+  const permitted = new Set([currentStep.assigneeRole]);
+  if (instance.escalatedAt && currentStep.escalationRole) {
+    permitted.add(currentStep.escalationRole);
+  }
+
+  if (context.role !== 'super_admin' && !permitted.has(context.role)) {
     throw new BusinessRuleError(
-      `This approval is waiting on ${currentStep.assigneeRole}, not ${context.role}. Step: "${currentStep.name}".`,
-      { requiredRole: currentStep.assigneeRole, step: currentStep.name }
+      `This approval is waiting on ${[...permitted].join(' or ')}, not ${context.role}. Step: "${currentStep.name}".`,
+      { requiredRole: [...permitted].join(' or '), step: currentStep.name }
     );
   }
 
@@ -496,4 +509,124 @@ export async function history(
       occurredAt: t.occurredAt
     }))
   };
+}
+
+/**
+ * Escalate every instance whose current step has passed its SLA.
+ *
+ * WHY THIS IS A CALLED SWEEP AND NOT A TIMER
+ *
+ * There is no scheduler in this system. Rather than pretend otherwise, this is
+ * an explicit operation: an operator or a cron entry calls
+ * `POST /workflow/escalate` and gets told exactly what moved. The inbox
+ * previously reported `overdue` and carried a comment saying escalation does not
+ * happen by itself — that was honest, and it stayed true until now because
+ * nothing acted on the flag.
+ *
+ * WHAT ESCALATION DOES AND DOES NOT DO
+ *
+ * It widens WHO MAY ACT; it does not decide anything. The approval stays at the
+ * same step, still pending, and the original assignee keeps their access. A
+ * system that auto-approved on a deadline would be recording decisions nobody
+ * made, which is the failure this whole engine exists to prevent.
+ *
+ * Steps with no `escalationRole` are reported as overdue and left alone.
+ * Escalating a decision to someone without the standing to make it is worse than
+ * leaving it late.
+ */
+export async function escalateOverdue(
+  context: TenantContext
+): Promise<{ escalated: number; overdueWithoutRole: number; details: Record<string, unknown>[] }> {
+  const open = await basePrisma.workflowInstance.findMany({
+    where: { institutionId: context.institutionId, status: 'pending', escalatedAt: null },
+    include: {
+      definition: { include: { steps: true } },
+      transitions: { orderBy: { occurredAt: 'desc' }, take: 1 }
+    }
+  });
+
+  const now = Date.now();
+  const details: Record<string, unknown>[] = [];
+  let escalated = 0;
+  let overdueWithoutRole = 0;
+
+  for (const instance of open) {
+    const step = instance.definition.steps.find((st) => st.id === instance.currentStepId);
+    if (!step?.slaHours) continue;
+
+    const since = instance.transitions[0]?.occurredAt ?? instance.startedAt;
+    const overdueBy = now - since.getTime() - step.slaHours * 3600_000;
+    if (overdueBy <= 0) continue;
+
+    if (!step.escalationRole) {
+      overdueWithoutRole += 1;
+      details.push({
+        instanceId: instance.id,
+        step: step.name,
+        overdueHours: Math.floor(overdueBy / 3600_000),
+        action: 'reported only — this step has no escalation role'
+      });
+      continue;
+    }
+
+    await mutate(
+      context,
+      {
+        action: 'UPDATE',
+        module: 'workflow',
+        resource: `WorkflowInstance:${instance.id}`,
+        details:
+          `Escalated "${step.name}" from ${step.assigneeRole} to ${step.escalationRole} ` +
+          `after ${Math.floor(overdueBy / 3600_000)}h past a ${step.slaHours}h SLA`,
+        severity: 'warning'
+      },
+      async (tx) => {
+        // Guarded on currentStepId: if someone acted between the read above and
+        // this write, the step has moved and there is nothing to escalate.
+        const moved = await tx.workflowInstance.updateMany({
+          where: {
+            id: instance.id,
+            institutionId: context.institutionId,
+            currentStepId: step.id,
+            status: 'pending',
+            escalatedAt: null
+          },
+          data: { escalatedAt: new Date(), escalatedFromRole: step.assigneeRole }
+        });
+
+        if (moved.count === 0) return;
+
+        // The escalation is itself a transition. An approval that widened who
+        // could decide it, with no record of when or why, is exactly the gap the
+        // transition log exists to close.
+        await tx.workflowTransition.create({
+          data: {
+            // No institutionId: WorkflowTransition carries none and is scoped
+            // through its parent instance. See tenantExtension.ts.
+            instanceId: instance.id,
+            fromStepId: step.id,
+            toStepId: step.id,
+            action: 'escalated',
+            actorId: context.userId,
+            actorRole: context.role,
+            note:
+              `SLA of ${step.slaHours}h breached by ${Math.floor(overdueBy / 3600_000)}h; ` +
+              `${step.escalationRole} may now act alongside ${step.assigneeRole}`
+          }
+        });
+      }
+    );
+
+    escalated += 1;
+    details.push({
+      instanceId: instance.id,
+      step: step.name,
+      from: step.assigneeRole,
+      to: step.escalationRole,
+      overdueHours: Math.floor(overdueBy / 3600_000),
+      action: 'escalated'
+    });
+  }
+
+  return { escalated, overdueWithoutRole, details };
 }

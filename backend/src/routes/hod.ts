@@ -5,6 +5,9 @@ import { fromRoleGrievanceStatus, toRoleGrievanceStatus } from '../lib/grievance
 import { authenticate, authorizeRoles } from '../middleware/auth.js';
 import { sendError, NotFoundError } from '../lib/errors.js';
 import { getTenantContext } from '../lib/tenant.js';
+import * as workflow from '../modules/workflow/workflow.service.js';
+import { openInstanceFor, ensureDefinition } from '../modules/workflow/bridge.js';
+import { PURCHASE_REQUEST, CURRICULUM_PROPOSAL } from '../modules/workflow/builtins.js';
 
 const router = Router();
 const db: any = prisma;
@@ -1277,18 +1280,23 @@ router.get('/purchaserequests', authenticate, async (req: Request, res: Response
   }
 });
 
+/**
+ * Raise a purchase request (Phase 2.4 — engine-backed).
+ *
+ * Raising is the `started` transition. The Dean's sanction is the only decision,
+ * and it now runs on the engine, so "who approved this spend" is answerable from
+ * the transition log rather than inferred from whoever wrote `status` last.
+ */
 router.post('/purchaserequests', authenticate, async (req: Request, res: Response) => {
   try {
+    const ctx = getTenantContext(req);
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
     if (!department) throw new Error('Department unassigned');
     const { itemName, lab, quantity, estimatedCost, justification } = req.body;
 
     const targetFacility = await prisma.facility.findFirst({
-      where: {
-        name: String(lab),
-        type: { contains: 'lab', mode: 'insensitive' }
-      }
+      where: { name: String(lab), type: { contains: 'lab', mode: 'insensitive' } }
     });
 
     if (!targetFacility) {
@@ -1299,7 +1307,19 @@ router.post('/purchaserequests', authenticate, async (req: Request, res: Respons
     const request = await db.purchaseRequest.create({
       data: { itemName, lab, requestedBy: userId, quantity, estimatedCost, justification, departmentId: department.id }
     });
-    res.json({ success: true, data: request });
+
+    await ensureDefinition(ctx, PURCHASE_REQUEST);
+    const instance = await workflow.startWorkflow(ctx, {
+      code: PURCHASE_REQUEST.code,
+      entityType: PURCHASE_REQUEST.entityType,
+      entityId: request.id,
+      context: { itemName, estimatedCost, department: department.name, raisedBy: userId }
+    });
+
+    res.status(201).json({
+      success: true,
+      data: { ...request, instanceId: instance.instanceId, waitingOn: instance.assigneeRole }
+    });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1491,13 +1511,23 @@ router.get('/curriculum-proposals', authenticate, async (req: Request, res: Resp
   }
 });
 
+/**
+ * Raise a curriculum proposal (Phase 2.4 — engine-backed).
+ *
+ * `bosApproved` is NO LONGER ACCEPTED from the request body. It was
+ * `Boolean(req.body.bosApproved)` — the proposer asserting that the Board of
+ * Studies had approved their own proposal, with nothing recording who on that
+ * body decided anything. It is created `false`; an institution that wants a real
+ * BoS stage defines one through POST /workflow/definitions, without code.
+ */
 router.post('/curriculum-proposals', authenticate, authorizeRoles('hod'), async (req: Request, res: Response) => {
   try {
+    const ctx = getTenantContext(req);
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
     if (!department) throw new Error('Department unassigned');
 
-    const { type, title, description, bosApproved } = req.body ?? {};
+    const { type, title, description } = req.body ?? {};
     if (!type || !title || !description) {
       res.status(400).json({ success: false, message: 'type, title and description are required' });
       return;
@@ -1516,26 +1546,22 @@ router.post('/curriculum-proposals', authenticate, authorizeRoles('hod'), async 
         type: String(type),
         title: String(title),
         description: String(description),
-        bosApproved: Boolean(bosApproved),
+        bosApproved: false,
         status: 'pending_dean'
       }
     });
 
-    const proposer = await prisma.user.findUnique({ where: { id: userId } });
+    await ensureDefinition(ctx, CURRICULUM_PROPOSAL);
+    const instance = await workflow.startWorkflow(ctx, {
+      code: CURRICULUM_PROPOSAL.code,
+      entityType: CURRICULUM_PROPOSAL.entityType,
+      entityId: created.id,
+      context: { title: String(title), type: String(type), department: department.name }
+    });
 
-    res.json({
+    res.status(201).json({
       success: true,
-      data: {
-        id: created.id,
-        department: department.name,
-        proposedBy: proposer?.name || proposer?.email || userId,
-        type: created.type,
-        title: created.title,
-        description: created.description,
-        submittedAt: new Date(created.submittedAt).toLocaleDateString('en-IN'),
-        bosApproved: created.bosApproved,
-        status: created.status
-      }
+      data: { ...created, instanceId: instance.instanceId, waitingOn: instance.assigneeRole }
     });
   } catch (error: any) {
     sendError(res, error);

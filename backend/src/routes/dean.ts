@@ -4,9 +4,10 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.js';
 import { sendError, NotFoundError } from '../lib/errors.js';
 import { getTenantContext } from '../lib/tenant.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
 import * as workflow from '../modules/workflow/workflow.service.js';
 import { openInstanceFor, projectOntoQueue } from '../modules/workflow/bridge.js';
-import { RESULT_PUBLICATION } from '../modules/workflow/builtins.js';
+import { RESULT_PUBLICATION, PURCHASE_REQUEST, CURRICULUM_PROPOSAL } from '../modules/workflow/builtins.js';
 
 const router = Router();
 
@@ -112,16 +113,49 @@ router.get('/curriculum-proposals', authenticate, async (req: Request, res: Resp
   }
 });
 
-router.put('/curriculum-proposals/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const { status } = req.body;
-    const updated = await prisma.curriculumProposal.update({ where: { id }, data: { status } });
-    res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
+/**
+ * Decide a curriculum proposal (Phase 2.4 — engine-backed).
+ *
+ * Was `update({ where: { id }, data: { status } })` with `status` straight from
+ * the body and no validation at all — any string, including one that skipped the
+ * process entirely.
+ */
+router.put('/curriculum-proposals/:id', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const ctx = getTenantContext(req);
+  const id = String(req.params.id);
+  const decision = String(req.body?.status || '').toLowerCase();
+
+  if (!['approved', 'rejected'].includes(decision)) {
+    res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'status must be approved or rejected.' }
+    });
+    return;
   }
-});
+
+  const instance = await openInstanceFor(ctx, CURRICULUM_PROPOSAL.entityType, id);
+  if (!instance) {
+    res.status(409).json({
+      success: false,
+      error: {
+        code: 'BUSINESS_RULE_VIOLATION',
+        message: 'No curriculum proposal is awaiting a decision with that id. It may already have been decided.'
+      }
+    });
+    return;
+  }
+
+  const note = typeof req.body?.note === 'string' ? req.body.note.slice(0, 500) : undefined;
+  const result = await workflow.act(ctx, instance.id, decision === 'approved' ? 'approved' : 'rejected', note);
+
+  await prisma.curriculumProposal.updateMany({
+    where: { id },
+    data: { status: decision === 'approved' ? 'approved' : 'rejected' }
+  });
+  const updated = await prisma.curriculumProposal.findFirst({ where: { id } });
+
+  res.json({ success: true, data: { ...updated, workflowStatus: result.status, instanceId: instance.id } });
+}));
 
 // ─── Faculty & HR ───
 router.get('/faculty', authenticate, async (req: Request, res: Response) => {
@@ -1253,30 +1287,46 @@ router.get('/inventory/purchase-requests', authenticate, async (req: Request, re
   }
 });
 
-router.put('/inventory/purchase-requests/:id/status', authenticate, authorizeRoles('dean'), async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
+/**
+ * Sanction or refuse a purchase request (Phase 2.4 — engine-backed).
+ *
+ * Was `prisma.purchaseRequest.update({ where: { id }, data: { status } })` after
+ * a department check. The decision is now recorded as a transition, so the
+ * approver, the moment and any note survive; the `status` column becomes a
+ * projection of that.
+ */
+router.put('/inventory/purchase-requests/:id/status', authenticate, authorizeRoles('dean'), asyncHandler(async (req: Request, res: Response) => {
+  const ctx = getTenantContext(req);
+  const id = String(req.params.id);
+  const status = String(req.body?.status || '').toLowerCase();
 
-    const id = String(req.params.id);
-    const status = String(req.body?.status || 'pending').toLowerCase();
-    if (!['pending', 'approved', 'rejected'].includes(status)) {
-      res.status(400).json({ success: false, message: 'Invalid status value' });
-      return;
-    }
-
-    const existing = await prisma.purchaseRequest.findFirst({ where: { id, departmentId: department.id } });
-    if (!existing) {
-      res.status(404).json({ success: false, message: 'Purchase request not found' });
-      return;
-    }
-
-    const updated = await prisma.purchaseRequest.update({ where: { id }, data: { status } });
-    res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
+  if (!['approved', 'rejected'].includes(status)) {
+    res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'status must be approved or rejected.' }
+    });
+    return;
   }
-});
+
+  const instance = await openInstanceFor(ctx, PURCHASE_REQUEST.entityType, id);
+  if (!instance) {
+    res.status(409).json({
+      success: false,
+      error: {
+        code: 'BUSINESS_RULE_VIOLATION',
+        message: 'No purchase request is awaiting sanction with that id. It may already have been decided.'
+      }
+    });
+    return;
+  }
+
+  const note = typeof req.body?.note === 'string' ? req.body.note.slice(0, 500) : undefined;
+  const result = await workflow.act(ctx, instance.id, status === 'approved' ? 'approved' : 'rejected', note);
+
+  await prisma.purchaseRequest.updateMany({ where: { id }, data: { status } });
+  const updated = await prisma.purchaseRequest.findFirst({ where: { id } });
+
+  res.json({ success: true, data: { ...updated, workflowStatus: result.status, instanceId: instance.id } });
+}));
 
 export default router;

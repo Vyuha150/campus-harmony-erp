@@ -4649,6 +4649,12 @@ model WorkflowStep {
   /// process pinned to an individual stops working when they leave.
   assigneeRole String
 
+  /// Who this step falls to when `slaHours` is breached. NULL means it does not
+  /// escalate: the deadline is still reported, but the approval stays put.
+  /// Escalating a decision to someone without the standing to make it is worse
+  /// than leaving it late.
+  escalationRole String?
+
   /// Where an approval goes next. NULL means this step completes the workflow.
   onApproveStepId String?
   /// Where a rejection goes. NULL means the workflow ends as rejected.
@@ -4688,6 +4694,11 @@ model WorkflowInstance {
   startedBy String
   startedAt DateTime  @default(now()) @db.Timestamptz(3)
   endedAt   DateTime? @db.Timestamptz(3)
+
+  /// Recorded on the INSTANCE, not the step: escalation is a fact about this
+  /// particular approval, not about the process definition.
+  escalatedAt       DateTime? @db.Timestamptz(3)
+  escalatedFromRole String?
 
   /// Free-form context for the approver — amount, reason, links.
   context Json?
