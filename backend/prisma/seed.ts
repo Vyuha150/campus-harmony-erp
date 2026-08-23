@@ -962,6 +962,7 @@ async function main() {
   });
 
   await upsertById(prisma.vendor, 'seed-vendor-1', {
+    institutionId: SEED_INSTITUTION_ID,
     name: 'Tech Supplies Pvt Ltd',
     contactPerson: 'Vikram Rao',
     email: 'vendor@techsupplies.example',
@@ -974,7 +975,12 @@ async function main() {
   });
 
   await prisma.purchaseOrder.upsert({
-    where: { poNumber: 'PO-2026-0001' },
+    where: {
+      institutionId_poNumber: {
+        institutionId: SEED_INSTITUTION_ID,
+        poNumber: 'PO-2026-0001'
+      }
+    },
     update: {
       id: 'seed-po-1',
       department: 'CSE',
@@ -990,6 +996,7 @@ async function main() {
       paymentDate: null,
     },
     create: {
+      institutionId: SEED_INSTITUTION_ID,
       id: 'seed-po-1',
       poNumber: 'PO-2026-0001',
       department: 'CSE',
@@ -1064,6 +1071,7 @@ async function main() {
       paymentMethod: 'bank_transfer',
     },
     create: {
+      institutionId: SEED_INSTITUTION_ID,
       id: 'seed-payroll-record-1',
       employeeId: 'EMP-CSE-1001',
       employeeName: 'Dr. Ravi Faculty',
@@ -1098,6 +1106,7 @@ async function main() {
       lastUpdated: new Date(),
     },
     create: {
+      institutionId: SEED_INSTITUTION_ID,
       id: 'seed-budget-allocation-1',
       department: 'CSE',
       category: 'infrastructure',

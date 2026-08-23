@@ -16,6 +16,19 @@ import {
   createPayrollSchema,
   createVendorSchema
 } from '../modules/common/entityCreate.schemas.js';
+import * as legacy from '../modules/finance/legacy.service.js';
+import {
+  createFeeStructureSchema,
+  createJournalEntrySchema,
+  createPurchaseOrderSchema,
+  updatePurchaseOrderSchema,
+  createBudgetSchema,
+  updateBudgetSchema,
+  updatePayrollSchema,
+  disbursePayrollSchema,
+  financePage,
+  payrollQuery
+} from '../modules/finance/legacy.schemas.js';
 
 const router = Router();
 
@@ -233,23 +246,30 @@ router.put('/tasks/:id', authenticate, async (req: Request, res: Response) => {
 });
 
 // ─── Fee Structures ───
-router.get('/fee-structures', authenticate, async (req: Request, res: Response) => {
-  try {
-    const structures = await prisma.feeStructure.findMany({ orderBy: { academicYear: 'desc' } });
-    res.json({ success: true, data: structures });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.get(
+  '/fee-structures',
+  authenticate,
+  validate({ query: financePage }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = req.query as unknown as { page: number; pageSize: number };
+    const result = await legacy.listFeeStructures(getTenantContext(req), q);
+    res.json({ success: true, ...result });
+  })
+);
 
-router.post('/fee-structures', authenticate, async (req: Request, res: Response) => {
-  try {
-    const structure = await prisma.feeStructure.create({ data: { ...req.body, dueDate: new Date(req.body.dueDate) } });
-    res.json({ success: true, data: structure });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `create({ data: { ...req.body, dueDate } })` — mass assignment with a
+ * decoration on top, and unaudited in the module that sets what students owe.
+ */
+router.post(
+  '/fee-structures',
+  authenticate,
+  validate({ body: createFeeStructureSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const created = await legacy.createFeeStructure(getTenantContext(req), req.body);
+    res.status(201).json({ success: true, data: created });
+  })
+);
 
 // ─── Payments ───
 router.get('/payments', authenticate, async (req: Request, res: Response) => {
@@ -362,27 +382,30 @@ router.get('/defaulters', authenticate, async (req: Request, res: Response) => {
 });
 
 // ─── Journal Entries ───
-router.get('/journal-entries', authenticate, async (req: Request, res: Response) => {
-  try {
-    const entries = await prisma.journalEntry.findMany({ orderBy: { date: 'desc' }, take: 100 });
-    res.json({ success: true, data: entries });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.get(
+  '/journal-entries',
+  authenticate,
+  validate({ query: financePage }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = req.query as unknown as { page: number; pageSize: number };
+    const result = await legacy.listJournalEntries(getTenantContext(req), q);
+    res.json({ success: true, ...result });
+  })
+);
 
-router.post('/journal-entries', authenticate, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.id;
-    const count = await prisma.journalEntry.count();
-    const entry = await prisma.journalEntry.create({
-      data: { ...req.body, entryNumber: `JE-${(count + 1).toString().padStart(5, '0')}`, createdBy: userId, date: new Date(req.body.date || Date.now()) }
-    });
-    res.json({ success: true, data: entry });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * A journal entry whose debits and credits disagree is not an entry; the schema
+ * now refuses it. `status` is forced to `draft` — posting is a separate act.
+ */
+router.post(
+  '/journal-entries',
+  authenticate,
+  validate({ body: createJournalEntrySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const created = await legacy.createJournalEntry(getTenantContext(req), req.body);
+    res.status(201).json({ success: true, data: created });
+  })
+);
 
 router.put(
   '/journal-entries/:id',
@@ -402,44 +425,40 @@ router.put(
 );
 
 // ─── Purchase Orders ───
-router.get('/purchase-orders', authenticate, async (req: Request, res: Response) => {
-  try {
-    const orders = await prisma.purchaseOrder.findMany({ include: { vendor: true }, orderBy: { orderDate: 'desc' } });
-    res.json({ success: true, data: orders });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.get(
+  '/purchase-orders',
+  authenticate,
+  validate({ query: financePage }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = req.query as unknown as { page: number; pageSize: number };
+    const result = await legacy.listPurchaseOrders(getTenantContext(req), q);
+    res.json({ success: true, ...result });
+  })
+);
 
-router.post('/purchase-orders', authenticate, async (req: Request, res: Response) => {
-  try {
-    const count = await prisma.purchaseOrder.count();
-    const order = await prisma.purchaseOrder.create({
-      data: {
-        ...req.body,
-        poNumber: `PO-${(count + 1).toString().padStart(5, '0')}`,
-        orderDate: new Date(req.body.orderDate || Date.now()),
-        expectedDelivery: new Date(req.body.expectedDelivery)
-      }
-    });
-    res.json({ success: true, data: order });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/purchase-orders',
+  authenticate,
+  validate({ body: createPurchaseOrderSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const created = await legacy.createPurchaseOrder(getTenantContext(req), req.body);
+    res.status(201).json({ success: true, data: created });
+  })
+);
 
-router.put('/purchase-orders/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const payload = { ...req.body } as any;
-    if (payload.deliveredDate) payload.deliveredDate = new Date(payload.deliveredDate);
-    if (payload.paymentDate) payload.paymentDate = new Date(payload.paymentDate);
-    const updated = await prisma.purchaseOrder.update({ where: { id }, data: payload });
+router.put(
+  '/purchase-orders/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updatePurchaseOrderSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await legacy.updatePurchaseOrder(
+      getTenantContext(req),
+      String(req.params.id),
+      req.body
+    );
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Vendors ───
 router.get('/vendors', authenticate, async (req: Request, res: Response) => {
@@ -471,53 +490,56 @@ router.post(
 );
 
 // ─── Payroll ───
-router.get('/payroll', authenticate, async (req: Request, res: Response) => {
-  try {
-    const query = req.query as Record<string, string | undefined>;
-    const { month, year } = query;
-    const where: any = {};
-    if (month) where.month = month;
-    if (year) where.year = parseInt(year);
+router.get(
+  '/payroll',
+  authenticate,
+  validate({ query: payrollQuery }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = req.query as unknown as { page: number; pageSize: number; month?: string; year?: number };
+    const result = await legacy.listPayroll(
+      getTenantContext(req),
+      { page: q.page, pageSize: q.pageSize },
+      { month: q.month, year: q.year }
+    );
+    res.json({ success: true, ...result });
+  })
+);
 
-    const records = await prisma.payrollRecord.findMany({ where, orderBy: { employeeName: 'asc' } });
-    res.json({ success: true, data: records });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
-
-router.put('/payroll/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const payload = { ...req.body } as any;
-    if (payload.paymentDate) payload.paymentDate = new Date(payload.paymentDate);
-    const updated = await prisma.payrollRecord.update({ where: { id }, data: payload });
+/**
+ * `grossSalary` and `netSalary` are recomputed from the components; a paid
+ * record can no longer be edited at all.
+ */
+router.put(
+  '/payroll/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updatePayrollSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await legacy.updatePayroll(
+      getTenantContext(req),
+      String(req.params.id),
+      req.body
+    );
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
-router.post('/payroll/disburse', authenticate, async (req: Request, res: Response) => {
-  try {
-    const { month, year } = req.body;
-    const where: any = { status: { in: ['approved', 'draft'] } };
-    if (month) where.month = month;
-    if (year) where.year = Number(year);
-
-    const result = await prisma.payrollRecord.updateMany({
-      where,
-      data: {
-        status: 'paid',
-        paymentDate: new Date(),
-      }
+/**
+ * One transaction for the whole run, and already-paid records are skipped
+ * rather than paid twice. The previous handler had no such guard.
+ */
+router.post(
+  '/payroll/disburse',
+  authenticate,
+  validate({ body: disbursePayrollSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await legacy.disbursePayroll(getTenantContext(req), req.body);
+    res.json({
+      success: true,
+      message: `Disbursed ${result.disbursed} record(s), total net ${result.totalNet}. ${result.skipped} already paid.`,
+      data: result
     });
-
-    res.json({ success: true, data: { updatedCount: result.count } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.post(
   '/payroll/process',
@@ -647,35 +669,45 @@ router.get('/reports/summary', authenticate, async (_req: Request, res: Response
 });
 
 // ─── Budgets ───
-router.get('/budgets', authenticate, async (req: Request, res: Response) => {
-  try {
-    const budgets = await prisma.budgetAllocation.findMany();
-    res.json({ success: true, data: budgets });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.get(
+  '/budgets',
+  authenticate,
+  validate({ query: financePage }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = req.query as unknown as { page: number; pageSize: number };
+    const result = await legacy.listBudgets(getTenantContext(req), q);
+    res.json({ success: true, ...result });
+  })
+);
 
-router.post('/budgets', authenticate, async (req: Request, res: Response) => {
-  try {
-    const budget = await prisma.budgetAllocation.create({
-      data: { ...req.body, availableAmount: req.body.allocatedAmount - (req.body.spentAmount || 0) }
-    });
-    res.json({ success: true, data: budget });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * `availableAmount` and `utilizationPercentage` are DERIVED and no longer
+ * accepted. They used to arrive in the body, so a budget could report headroom
+ * it did not have.
+ */
+router.post(
+  '/budgets',
+  authenticate,
+  validate({ body: createBudgetSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const created = await legacy.createBudget(getTenantContext(req), req.body);
+    res.status(201).json({ success: true, data: created });
+  })
+);
 
-router.put('/budgets/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.budgetAllocation.update({ where: { id }, data: { ...req.body, lastUpdated: new Date() } });
+router.put(
+  '/budgets/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateBudgetSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await legacy.updateBudget(
+      getTenantContext(req),
+      String(req.params.id),
+      req.body
+    );
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 router.get('/expenditure-trend', authenticate, async (_req: Request, res: Response) => {
   try {

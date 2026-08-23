@@ -215,7 +215,18 @@ describe('mass-assignment debt does not grow', () => {
    * than being deleted so the ratchet keeps working: any file that reintroduces
    * the pattern now exceeds its recorded count of zero and fails the build.
    */
-  const KNOWN_MASS_ASSIGNMENT: Record<string, number> = {};
+  const KNOWN_MASS_ASSIGNMENT: Record<string, number> = {
+    // The SPREAD form, `data: { ...req.body }`, surfaced when the pattern was
+    // widened a third time. Being worked down module by module in Phase 3b;
+    // finance.ts is first because it moves money.
+    'admin.ts': 2,
+    'alumni.ts': 4,
+    'hod.ts': 2,
+    'iqac.ts': 4,
+    'security.ts': 2,
+    'sports.ts': 2,
+    'vc.ts': 1
+  };
 
   /**
    * Any write whose `data` is the raw request body.
@@ -234,8 +245,19 @@ describe('mass-assignment debt does not grow', () => {
   // dead matcher in this suite (see EMPTY_MEANS_FULL in
   // noFabricatedMetrics.test.ts). The negative control below is the only reason
   // either was caught.
+  //
+  // Matches BOTH forms:
+  //   data: req.body            — the original
+  //   data: { ...req.body, x }  — the spread, which the first two versions of
+  //                               this pattern missed entirely
+  //
+  // That spread form accounts for 22 further sites, found only when a finance
+  // handler was read by hand. This is the THIRD time this guard has been too
+  // narrow: first it saw only `update`, then only the non-spread form. Each time
+  // it reported zero while real instances sat untouched, because a guard only
+  // covers the shape its author had in mind.
   const pattern =
-    /\.(?:create|createMany|update|updateMany)\s*\(\s*\{[\s\S]{0,200}?data:\s*req\.body/g;
+    /\.(?:create|createMany|update|updateMany|upsert)\s*\(\s*\{[\s\S]{0,200}?data:\s*\{?\s*(?:\.\.\.\s*)?req\.body/g;
 
   function countIn(file: string): number {
     const src = stripComments(readFileSync(join(routesDir(), file), 'utf8'));

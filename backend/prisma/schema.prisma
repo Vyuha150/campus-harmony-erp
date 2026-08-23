@@ -132,6 +132,10 @@ model Institution {
   broadcastMessages       BroadcastMessage[]
   grievanceCases          GrievanceCase[]
   complianceItems         ComplianceItem[]
+  vendors                 Vendor[]
+  purchaseOrders          PurchaseOrder[]
+  budgetAllocations       BudgetAllocation[]
+  payrollRecords          PayrollRecord[]
 
   @@index([isActive])
 }
@@ -1879,7 +1883,12 @@ model JournalEntry {
 // Finance — Purchase Orders
 model PurchaseOrder {
   id               String    @id @default(uuid())
-  poNumber         String    @unique
+  /// TENANT KEY, added in 0033. All four tables were GLOBAL. PayrollRecord is
+  /// the worst of them: salary, allowances, deductions and net pay, readable by
+  /// every finance officer in the deployment.
+  institutionId    String
+  /// Unique PER INSTITUTION (0033); it was globally unique.
+  poNumber         String
   department       String
   vendorId         String
   orderDate        DateTime  @default(now()) @db.Timestamptz(3)
@@ -1893,11 +1902,20 @@ model PurchaseOrder {
   paymentDate      DateTime? @db.Timestamptz(3)
 
   vendor Vendor @relation(fields: [vendorId], references: [id])
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@unique([institutionId, poNumber])
+  @@index([institutionId])
 }
 
 // Finance — Vendors
 model Vendor {
   id            String  @id @default(uuid())
+  /// TENANT KEY, added in 0033. All four tables were GLOBAL. PayrollRecord is
+  /// the worst of them: salary, allowances, deductions and net pay, readable by
+  /// every finance officer in the deployment.
+  institutionId String
   name          String
   contactPerson String
   email         String
@@ -1909,11 +1927,19 @@ model Vendor {
   status        String  @default("active")
 
   purchaseOrders PurchaseOrder[]
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Finance — Payroll Records
 model PayrollRecord {
   id            String    @id @default(uuid())
+  /// TENANT KEY, added in 0033. All four tables were GLOBAL. PayrollRecord is
+  /// the worst of them: salary, allowances, deductions and net pay, readable by
+  /// every finance officer in the deployment.
+  institutionId String
   employeeId    String
   employeeName  String
   department    String
@@ -1929,12 +1955,19 @@ model PayrollRecord {
   paymentDate   DateTime? @db.Timestamptz(3)
   paymentMethod String    @default("bank_transfer")
 
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
   @@unique([employeeId, month, year])
+  @@index([institutionId])
 }
 
 // Finance — Budget Allocations
 model BudgetAllocation {
   id                    String   @id @default(uuid())
+  /// TENANT KEY, added in 0033. All four tables were GLOBAL. PayrollRecord is
+  /// the worst of them: salary, allowances, deductions and net pay, readable by
+  /// every finance officer in the deployment.
+  institutionId         String
   department            String
   category              String
   budgetYear            String
@@ -1944,7 +1977,10 @@ model BudgetAllocation {
   utilizationPercentage Float    @default(0)
   lastUpdated           DateTime @default(now()) @db.Timestamptz(3)
 
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
   @@unique([department, category, budgetYear])
+  @@index([institutionId])
 }
 
 // Placement — Training Sessions

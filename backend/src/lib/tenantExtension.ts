@@ -133,6 +133,12 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   // in a globally shared table.
   'GrievanceCase',
   'ComplianceItem',
+  // 0033 - the remaining finance models. Payroll, purchase orders, budgets
+  // and vendors were all globally shared.
+  'Vendor',
+  'PurchaseOrder',
+  'BudgetAllocation',
+  'PayrollRecord',
   // Workflow engine (0024). WorkflowStep and WorkflowTransition are NOT listed:
   // they carry no institutionId and are scoped through their parent.
   'WorkflowDefinition',
