@@ -1450,3 +1450,95 @@ queue items, multi-step publication), so a single generic engine may be the wron
 shape. Recommendation: model definition → step → instance → transition with the
 transition LOG as the primary record, migrate the four uniform
 `PUT /approvals/:id` handlers first, and leave per-entity flags to Phase 3.
+
+---
+
+## Checkpoint 22 — Phases 2.3, 2.4 and 3a
+
+### 2.3 — Workflow engine, verification closed at 15/15
+Two of three earlier failures were harness defects, not product defects: a grep
+for wording migration 0025 had replaced, and a fixture cleanup that deleted
+definitions before instances (`WorkflowInstance → WorkflowDefinition` is
+ON DELETE RESTRICT *by design* — a process must not be removable while decisions
+made under it still exist).
+
+The third was worse than a failure. A broken arithmetic expansion made one check
+abort before calling `pass` or `fail`, and the run printed **ALL CHECKS PASSED**
+having silently skipped it. Both scripts now declare `EXPECTED_CHECKS` and report
+INCOMPLETE if fewer ran. A harness that can skip a check and still report success
+is worse than no harness.
+
+### 2.4 — Result publication on the engine
+Closed a governance defect, not just a refactor. `PUT /dean/results/:id/approve`
+did not require a submission: finding no row it **created one already marked
+`published`**, so results the CoE never submitted could be published and the
+record afterwards showed an approval with no request behind it. And
+`POST /coe/results/:id/submit` reset any existing row to `pending`, including one
+already published — a decided item reopened in place, published twice, no trace.
+
+Both follow from keeping a process in a status column, which cannot express
+"this may only happen after that". HTTP contracts unchanged; `ApprovalItem`
+gained `workflowInstanceId` (0026) and became a projection of the transition log.
+**12/12 live**, including a `principal` — allowed by the route mount, refused by
+the step.
+
+### 3a — Examination schedule, and the measured cost
+`ExamProgress` had no tenant key. The identical line in `coe.ts` and
+`registrar.ts`:
+
+    prisma.examProgress.update({ where: { id }, data: req.body })
+
+— a unique-key update the extension cannot constrain, carrying an unfiltered
+body. Proven live: a planted rival exam was listed by another institution's CoE
+and then renamed through the API. Closed by 0027 + `modules/coe/exams.*`.
+**13/13 live.**
+
+### The find that matters most
+**The service layer does not get automatic tenant scoping.** The extension wraps
+`prisma`, but services import `basePrisma`, and `mutate()` opens its transaction
+on `basePrisma` — so `tx` is unscoped too. Safety depends on the author writing
+`institutionId` into every `where`.
+
+Found by getting it wrong: my first `exams.service.ts` copied library's *import*
+pattern without its *where-clause* pattern, and reintroduced the same
+cross-tenant authority breach **through the layer meant to prevent it**. The unit
+suite was green throughout; only the live probe caught it.
+
+### Debt recorded, not hidden
+`update({ where: { id }, data: req.body })` appears **17 times across 9 route
+files**. These are NOT fixed. They are held by a ratchet in
+`serviceScoping.test.ts`: the count may not grow, and lowering it means editing
+the inventory. My first count missed `grievances.ts` because I used an
+exact-string grep; the number now comes from the same regex as the test.
+
+### Also fixed while verifying
+- The **seed threw at line 694 of 1829** — `ApprovalItem.institutionId` became
+  required in 0022 and the seed was never updated. ~60% of the seed had never run
+  on a fresh database: `academicYear`, `feeStructure`, `moduleConfig`,
+  `departmentBudget`.
+- **`principal` and `auditor` existed only as ad-hoc rows.** A fresh
+  `migrate reset && seed` produced neither, while `server.ts` mounts `principal`
+  on five routers and `auditor` on every oversight router. Two roles that could
+  not be logged into, so were never exercised.
+- `WorkflowInstance.endedAt` lacked `@db.Timestamptz(3)`.
+- Verification scripts moved into `backend/scripts/verify/`. They had lived
+  outside the repository, so none of the evidence behind any phase was
+  reproducible by anyone else.
+- `.gitignore` now excludes `backend/backups/` and `backend/uploads/` — the
+  uploads first staged included **vigilance material** that Phase 0.3 put behind
+  authentication.
+
+### Status
+Typecheck **0** · Tests **336** (18 files) · Migrations **27** · Live checks **40/40**
+
+### NEXT — Phase 3b
+Not started. ~450 handlers remain: weeks of work, not a session. Order by risk:
+the **17 mass-assignment handlers first** — each is a live cross-tenant write, a
+security queue rather than a refactor queue — then `grievances.ts` (confidential
+and anonymous submissions, worst blast radius), then the oversight modules.
+
+The highest-value structural change would be making the service layer scoped by
+construction: have `mutate()` open its transaction on the extended client, or add
+a repository wrapper requiring a `TenantContext`. Until then every new service is
+one forgotten `where` clause away from the breach above, and a test is the only
+thing in the way. Full numbers: `20_PHASE_3_BASELINE.md`.
