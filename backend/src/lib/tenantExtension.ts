@@ -188,12 +188,19 @@ const WHERE_OPERATIONS = new Set([
  * verifying the RESULT instead — see `verifyResultTenancy`. This is the IDOR
  * defence: knowing a UUID from another institution must not be enough to read it.
  */
-const UNIQUE_OPERATIONS = new Set([
-  'findUnique',
-  'findUniqueOrThrow',
-  'update',
-  'delete'
-]);
+/**
+ * Unique-key READS. Safe to run and then inspect: nothing has changed.
+ */
+const UNIQUE_OPERATIONS = new Set(['findUnique', 'findUniqueOrThrow']);
+
+/**
+ * Unique-key WRITES. These must be constrained BEFORE they execute.
+ *
+ * `update` and `delete` were in the set above, which meant the query ran and the
+ * RESULT was checked — by which point the row had already been written or
+ * deleted. See the comment at the call site.
+ */
+const UNIQUE_WRITE_OPERATIONS = new Set(['update', 'delete']);
 
 const CREATE_OPERATIONS = new Set(['create', 'createMany']);
 
@@ -305,7 +312,33 @@ export const tenantExtension = Prisma.defineExtension({
           return query(args);
         }
 
-        // ── Unique-key operations: verify the result instead ────────────────
+        // ── Unique-key WRITES: constrain BEFORE the query ───────────────────
+        //
+        // `update` and `delete` used to fall through to the result check below.
+        // That is sound for a read and CATASTROPHIC for a write: the row is
+        // already changed or gone by the time the result is inspected, so the
+        // extension threw AuthorizationError while the write stood.
+        //
+        // Demonstrated live before this fix, against a planted rival row:
+        //
+        //   DELETE /api/security/incidents/rival-incident-probe
+        //     API  -> {"success":false,"message":"Record was not found."}
+        //     rows -> BEFORE: 1   AFTER: 0
+        //
+        // A destructive cross-tenant write that REPORTS FAILURE is worse than
+        // one that reports success: nothing looks wrong, so nobody investigates.
+        //
+        // Prisma permits a non-unique filter alongside the unique field in the
+        // `where` of update/delete, and raises P2025 when nothing matches —
+        // measured, not assumed. Injecting the tenant here makes the database
+        // refuse the write instead of performing it and apologising.
+        if (UNIQUE_WRITE_OPERATIONS.has(operation)) {
+          const typedArgs = args as { where?: Record<string, unknown> };
+          typedArgs.where = { ...(typedArgs.where ?? {}), institutionId };
+          return query(args);
+        }
+
+        // ── Unique-key READS: verify the result ─────────────────────────────
         if (UNIQUE_OPERATIONS.has(operation)) {
           const result = await query(args);
           return verifyResultTenancy(result, institutionId, model);

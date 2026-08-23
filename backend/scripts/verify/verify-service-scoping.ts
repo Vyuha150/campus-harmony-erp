@@ -31,7 +31,7 @@ const PROBE = 'service-scoping-probe';
 
 let failures = 0;
 let checks = 0;
-const EXPECTED_CHECKS = 5;
+const EXPECTED_CHECKS = 8;
 
 const pass = (m: string) => { console.log(`  PASS  ${m}`); checks++; };
 const fail = (m: string) => { console.log(`  FAIL  ${m}`); failures++; checks++; };
@@ -115,6 +115,41 @@ async function main() {
   after[0]?.coach === 'UNTOUCHED'
     ? pass('the rival row is byte-for-byte unchanged')
     : fail(`the rival row was modified: ${after[0]?.coach}`);
+
+  console.log('');
+  console.log('==============================================');
+  console.log(' 3. Unique-key WRITES must be refused, not undone');
+  console.log('==============================================');
+
+  // THE P0. `update` and `delete` used to run and then have their RESULT
+  // checked, so the write had already committed when the extension threw.
+  // Live before the fix: DELETE returned "Record was not found" and the row
+  // count went 1 -> 0. A destructive cross-tenant write that reports failure is
+  // worse than one that reports success, because nothing looks wrong.
+  await plantRival();
+
+  await runWithTenant(ctx, async () => {
+    try {
+      await prisma.sportsTeam.delete({ where: { id: PROBE } });
+      fail('delete({ where: { id } }) on another institution SUCCEEDED');
+    } catch {
+      pass('delete({ where: { id } }) across tenants is refused');
+    }
+
+    try {
+      await prisma.sportsTeam.update({ where: { id: PROBE }, data: { coach: 'HIJACKED' } });
+      fail('update({ where: { id } }) on another institution SUCCEEDED');
+    } catch {
+      pass('update({ where: { id } }) across tenants is refused');
+    }
+  });
+
+  const survived = await basePrisma.$queryRawUnsafe<{ coach: string }[]>(
+    `SELECT coach FROM "SportsTeam" WHERE id='${PROBE}'`
+  );
+  survived.length === 1 && survived[0]?.coach === 'UNTOUCHED'
+    ? pass('the rival row survived both, unchanged')
+    : fail(`the rival row was written or removed: ${JSON.stringify(survived)}`);
 
   await basePrisma.$executeRawUnsafe(`DELETE FROM "SportsTeam" WHERE id='${PROBE}'`);
   await basePrisma.$disconnect();

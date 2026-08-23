@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { getTenantContext } from '../lib/tenant.js';
+import * as coeService from '../modules/coe/coe.service.js';
 import { sendError } from '../lib/errors.js';
 import * as workflow from '../modules/workflow/workflow.service.js';
 import { ensureDefinition } from '../modules/workflow/bridge.js';
@@ -88,149 +89,43 @@ router.delete(
   })
 );
 
-router.get('/dashboard', authenticate, async (_req: Request, res: Response) => {
-  try {
-    const [pending, published, draftExamCount, activeExamCount] = await Promise.all([
-      prisma.approvalItem.count({ where: { type: 'result_publication', status: 'pending' } }),
-      prisma.approvalItem.count({ where: { type: 'result_publication', status: 'published' } }),
-      prisma.examProgress.count({ where: { status: { in: ['scheduling', 'ongoing', 'mark_entry', 'moderation'] } } }),
-      prisma.examProgress.count({ where: { status: { in: ['ongoing', 'mark_entry', 'moderation'] } } }),
-    ]);
+router.get(
+  '/dashboard',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const data = await coeService.dashboard(getTenantContext(req));
+    res.json({ success: true, data });
+  })
+);
 
-    const latestSubmissions = await prisma.approvalItem.findMany({
-      where: { type: 'result_publication' },
-      orderBy: { requestedAt: 'desc' },
-      take: 5
-    });
+// Was unpaginated: every result-publication row, however many existed.
+router.get(
+  '/submissions',
+  authenticate,
+  validate({ query: examPage }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = req.query as unknown as { page: number; pageSize: number };
+    const result = await coeService.listSubmissions(getTenantContext(req), q);
+    res.json({ success: true, ...result });
+  })
+);
 
-    const departmentIds = latestSubmissions
-      .map((item: any) => String(item.details || ''))
-      .filter(Boolean);
-    const departments = departmentIds.length > 0
-      ? await prisma.department.findMany({ where: { id: { in: departmentIds } } })
-      : [];
-    const requestUserIds = latestSubmissions
-      .map((item: any) => String(item.requestedBy || ''))
-      .filter(Boolean);
-    const requestUsers = requestUserIds.length > 0
-      ? await prisma.user.findMany({ where: { id: { in: requestUserIds } } })
-      : [];
-    const departmentById = new Map(departments.map((dept: any) => [dept.id, dept.name]));
-    const userById = new Map(requestUsers.map((user: any) => [user.id, user.name]));
-
-    res.json({
-      success: true,
-      data: {
-        stats: [
-          { label: 'Pending Dean Approval', value: String(pending), icon: 'Clock' },
-          { label: 'Published Results', value: String(published), icon: 'CheckCircle' },
-          { label: 'Active Exam Cycles', value: String(activeExamCount), icon: 'ClipboardList' },
-          { label: 'Exam Pipelines', value: String(draftExamCount), icon: 'BarChart3' },
-        ]
-        ,
-        latestSubmissions: latestSubmissions.map((item: any) => ({
-          id: item.id,
-          departmentId: item.details,
-          department: departmentById.get(String(item.details || '')) || 'Unknown Department',
-          status: item.status,
-          requestedAt: item.requestedAt,
-          requestedBy: item.requestedBy,
-          requestedByName: userById.get(String(item.requestedBy || '')) || item.requestedBy
-        }))
-      }
-    });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
-
-router.get('/submissions', authenticate, async (_req: Request, res: Response) => {
-  try {
-    const submissions = await prisma.approvalItem.findMany({
-      where: { type: 'result_publication' },
-      orderBy: { requestedAt: 'desc' },
-    });
-
-    const departmentIds = submissions
-      .map((item: any) => String(item.details || ''))
-      .filter(Boolean);
-    const departments = departmentIds.length > 0
-      ? await prisma.department.findMany({ where: { id: { in: departmentIds } } })
-      : [];
-    const requestUserIds = submissions
-      .map((item: any) => String(item.requestedBy || ''))
-      .filter(Boolean);
-    const requestUsers = requestUserIds.length > 0
-      ? await prisma.user.findMany({ where: { id: { in: requestUserIds } } })
-      : [];
-    const departmentById = new Map(departments.map((dept: any) => [dept.id, dept.name]));
-    const userById = new Map(requestUsers.map((user: any) => [user.id, user.name]));
-
-    res.json({
-      success: true,
-      data: submissions.map((item: any) => ({
-        id: item.id,
-        departmentId: item.details,
-        department: departmentById.get(String(item.details || '')) || 'Unknown Department',
-        status: item.status,
-        requestedAt: item.requestedAt,
-        requestedBy: item.requestedBy,
-        requestedByName: userById.get(String(item.requestedBy || '')) || item.requestedBy,
-        title: item.title,
-        priority: item.priority
-      }))
-    });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
-
-router.get('/results', authenticate, async (_req: Request, res: Response) => {
-  try {
-    const [departments, approvals] = await Promise.all([
-      prisma.department.findMany({ include: { courses: { include: { enrollments: true } } } }),
-      prisma.approvalItem.findMany({ where: { type: 'result_publication' } })
-    ]);
-
-    const approvalByDepartmentId = new Map<string, any>();
-    for (const approval of approvals) {
-      if (approval.details) {
-        approvalByDepartmentId.set(String(approval.details), approval);
-      }
-    }
-
-    res.json({
-      success: true,
-      data: departments.map((d: any) => {
-        const totalEnrollments = d.courses.reduce((sum: number, c: any) => sum + c.enrollments.length, 0);
-        const passed = d.courses.reduce((sum: number, c: any) =>
-          sum + c.enrollments.filter((e: any) => e.grade && !['F', 'I'].includes(e.grade)).length, 0);
-
-        const approval = approvalByDepartmentId.get(String(d.id));
-        let status = 'draft';
-        if (approval?.status === 'pending') status = 'pending_approval';
-        if (approval?.status === 'published' || approval?.status === 'approved') status = 'published';
-
-        return {
-          departmentId: d.id,
-          department: d.name,
-          totalStudents: totalEnrollments,
-          passed,
-          failed: totalEnrollments - passed,
-          passPercentage: totalEnrollments > 0 ? Math.round((passed / totalEnrollments) * 100) : 0,
-          // REMOVED: `avgGPA: 7.2`, a literal presented as this department's
-          // average. It never varied by department, semester or cohort. The
-          // figure belongs to SemesterResult and is computed there; asserting it
-          // here put an invented academic statistic on an oversight screen.
-          avgGPA: null,
-          status
-        };
-      })
-    });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Department-by-department result readiness.
+ *
+ * `avgGPA` is now COMPUTED from published SemesterResult rows reached through
+ * Department -> Programme -> StudentProfile. It was the literal 7.2, identical
+ * for every department, on the screen used to decide whether results are fit to
+ * publish. `null` where nothing is published yet.
+ */
+router.get(
+  '/results',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const data = await coeService.departmentResults(getTenantContext(req));
+    res.json({ success: true, data });
+  })
+);
 
 /**
  * Submit a department's results for publication (Phase 2.4 — engine-backed).

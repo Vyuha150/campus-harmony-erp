@@ -1841,3 +1841,67 @@ Migrations **31** · Live checks **85/85** across 7 scripts
 No known nullable tenant keys, no known `data: req.body` writes, no known
 globally-unique columns that should be per-tenant. ~415 legacy handlers remain;
 what is left is refactoring rather than exposure.
+
+---
+
+## Checkpoint 27 — coe.ts complete, and a P0 I had wrongly declared closed
+
+### A correction first
+In checkpoint 26 I wrote that the security queue was empty and what remained was
+"refactoring, not exposure". **That was wrong.** Scanning the remaining handlers
+before migrating them found 22 `update`/`delete({ where: { id } })` calls on
+tenant-owned models, and one of them proved exploitable.
+
+### The P0
+`security.ts` `DELETE /incidents/:id`, against a planted rival-institution row:
+
+```
+API  -> {"success":false,"message":"Record was not found."}
+rows -> BEFORE: 1   AFTER: 0
+```
+
+The row was **deleted across a tenant boundary while the API reported failure**.
+
+Cause: the extension put `update` and `delete` in `UNIQUE_OPERATIONS`, which runs
+the query and then inspects the RESULT. That is sound for a read — nothing has
+changed yet — and catastrophic for a write, because the row is already gone when
+`verifyResultTenancy` throws. A destructive cross-tenant write that reports
+failure is worse than one that reports success: nothing looks wrong, so nobody
+investigates.
+
+**Fixed structurally**, not per handler: `update` and `delete` now have
+`institutionId` injected into their `where` BEFORE execution. Prisma permits a
+non-unique filter alongside the unique field and raises P2025 when nothing
+matches — measured with a probe, not assumed. All 22 sites are covered by the
+one change.
+
+Verified live: the rival row survives both a cross-tenant delete and update,
+unchanged, while own-institution deletes still work.
+`verify-service-scoping.ts` now covers this (8 checks).
+
+### coe.ts — complete
+All 8 handlers migrated. The last three were reads:
+
+- `avgGPA` is **computed** from published `SemesterResult` reached through
+  Department → Programme → StudentProfile. It was the literal `7.2`, identical
+  for every department, on the screen used to decide whether results are fit to
+  publish; it was then `null` after the fabrication sweep. Live: **9.1** for CSE
+  from its one published result, `null` for ECE which has none.
+- `passPercentage` is now over GRADED enrolments and `null` when none are
+  graded — an ungraded enrolment is not a pass.
+- `GET /submissions` is paginated; it returned every row.
+
+### Measured inventory of what remains
+Not an estimate — counted across all 17 legacy route files:
+
+| | count |
+|---|---|
+| Total handlers | 474 |
+| Unpaginated list endpoints | 211 |
+| Write handlers without a validation schema | 237 |
+| Hard deletes | 31 |
+| `update`/`delete` by unique key | 80 (22 on tenant-owned models — **now structurally safe**) |
+
+### Status
+Typecheck **0** (backend + frontend) · Tests **472** · Migrations **31** ·
+Live checks **88/88** across 7 scripts
