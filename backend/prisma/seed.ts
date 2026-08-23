@@ -4,7 +4,67 @@ import { prisma } from '../src/lib/prisma.js';
 
 const db: any = prisma;
 
+/**
+ * ENVIRONMENT GUARD.
+ *
+ * This script creates 17 privileged accounts — including `super_admin`,
+ * `vice_chancellor`, `registrar` and `finance_officer` — all sharing a single
+ * default password that is visible in this repository. Running it against a
+ * live database is an immediate total compromise, and nothing previously
+ * prevented that.
+ *
+ * Seeding is now refused outside development unless explicitly overridden with
+ * ALLOW_SEED=yes (for disposable CI databases).
+ */
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+const seedAllowed = nodeEnv === 'development' || process.env.ALLOW_SEED === 'yes';
+
+if (!seedAllowed) {
+  console.error(
+    [
+      '',
+      '  REFUSING TO SEED',
+      '',
+      `  NODE_ENV is "${nodeEnv}", not "development".`,
+      '',
+      '  This script creates 17 privileged accounts sharing one default',
+      '  password. Running it outside development would hand an attacker',
+      '  super_admin access.',
+      '',
+      '  If this really is a disposable database, set ALLOW_SEED=yes.',
+      ''
+    ].join('\n')
+  );
+  process.exit(1);
+}
+
 const DEFAULT_PASSWORD = process.env.SEED_DEFAULT_PASSWORD || 'Password@123';
+
+if (DEFAULT_PASSWORD === 'Password@123') {
+  console.warn(
+    '  WARNING: using the built-in default seed password. Set SEED_DEFAULT_PASSWORD\n' +
+      '  to something unique if this database is reachable by anyone else.\n'
+  );
+}
+
+/**
+ * Tenant the seed data belongs to (ADR-0001).
+ *
+ * These match the default institution and campus created by migration
+ * 0002_multi_tenancy, so seeding an already-migrated database attaches to the
+ * same tenant rather than creating a second one.
+ */
+const SEED_INSTITUTION_ID = '00000000-0000-4000-8000-000000000001';
+const SEED_CAMPUS_ID = '00000000-0000-4000-8000-000000000002';
+
+/** Roles that see every campus — they are deliberately left campus-unassigned. */
+const INSTITUTION_WIDE_ROLES = new Set([
+  'super_admin', 'vice_chancellor', 'pro_vc', 'registrar', 'coe', 'iqac_coordinator',
+  // Both oversee the whole institution: `principal` is mounted on five routers
+  // and `auditor` on every oversight router, so a campus pin would hide most of
+  // what they exist to see.
+  'principal', 'auditor'
+]);
 
 const IDS = {
   departments: {
@@ -29,6 +89,15 @@ const IDS = {
     grievance: 'seed-user-grievance',
     security: 'seed-user-security',
     librarian: 'seed-user-librarian',
+    // These two were created by an ad-hoc script when the roles were added, and
+    // never reached this file. A fresh `migrate reset && seed` therefore produced
+    // a database with NO principal and NO auditor, while `server.ts` mounts
+    // `principal` on five routers and `auditor` on every oversight router — two
+    // roles that could not be logged into, so never exercised. The ids match the
+    // rows the script created, so the upsert below adopts them rather than
+    // orphaning anything already referencing them.
+    principal: '00000000-0000-4000-8000-00000000000a',
+    auditor: '00000000-0000-4000-8000-00000000000b',
   },
   student: {
     profile: 'seed-student-profile',
@@ -96,21 +165,70 @@ async function upsertById(delegate: any, id: string, data: Record<string, unknow
   });
 }
 
+/**
+ * Ensure the seed tenant exists.
+ *
+ * Idempotent: matches the ids created by migration 0002 so a migrated database
+ * is reused rather than duplicated.
+ */
+async function ensureSeedTenant() {
+  await prisma.institution.upsert({
+    where: { id: SEED_INSTITUTION_ID },
+    update: {},
+    create: {
+      id: SEED_INSTITUTION_ID,
+      code: 'DEFAULT',
+      name: 'Default Institution',
+      legalName: 'Default Institution (development seed)',
+      type: 'university',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      isActive: true,
+    },
+  });
+
+  await prisma.campus.upsert({
+    where: { id: SEED_CAMPUS_ID },
+    update: {},
+    create: {
+      id: SEED_CAMPUS_ID,
+      institutionId: SEED_INSTITUTION_ID,
+      code: 'MAIN',
+      name: 'Main Campus',
+      type: 'main',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      isActive: true,
+    },
+  });
+}
+
 async function main() {
   await assertSeedSchema();
+  await ensureSeedTenant();
 
   const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
+  // Codes are now TENANT-SCOPED (@@unique([institutionId, code])), so lookups
+  // must supply the institution. A bare `{ code: 'CSE' }` would be ambiguous
+  // once a second university exists — and could have matched another
+  // institution's department.
   await prisma.department.upsert({
-    where: { code: 'CSE' },
+    where: { institutionId_code: { institutionId: SEED_INSTITUTION_ID, code: 'CSE' } },
     update: { id: IDS.departments.cse, name: 'Computer Science and Engineering', code: 'CSE' },
-    create: { id: IDS.departments.cse, name: 'Computer Science and Engineering', code: 'CSE' },
+    create: {
+      id: IDS.departments.cse, name: 'Computer Science and Engineering', code: 'CSE',
+      institutionId: SEED_INSTITUTION_ID, campusId: SEED_CAMPUS_ID,
+    },
   });
 
   await prisma.department.upsert({
-    where: { code: 'ECE' },
+    where: { institutionId_code: { institutionId: SEED_INSTITUTION_ID, code: 'ECE' } },
     update: { id: IDS.departments.ece, name: 'Electronics and Communication Engineering', code: 'ECE' },
-    create: { id: IDS.departments.ece, name: 'Electronics and Communication Engineering', code: 'ECE' },
+    create: {
+      id: IDS.departments.ece, name: 'Electronics and Communication Engineering', code: 'ECE',
+      institutionId: SEED_INSTITUTION_ID, campusId: SEED_CAMPUS_ID,
+    },
   });
 
   const userSeeds = [
@@ -131,9 +249,15 @@ async function main() {
     { id: IDS.users.grievance, name: 'Leena Grievance', email: 'grievance@campusharmony.edu', role: 'grievance_officer', designation: 'Grievance Officer', departmentId: IDS.departments.cse },
     { id: IDS.users.security, name: 'Kabir Security', email: 'security@campusharmony.edu', role: 'security_officer', designation: 'Chief Security Officer', departmentId: IDS.departments.cse },
     { id: IDS.users.librarian, name: 'Maya Librarian', email: 'librarian@campusharmony.edu', role: 'librarian', designation: 'Librarian', departmentId: IDS.departments.cse },
+    { id: IDS.users.principal, name: 'Dr. S. Menon', email: 'principal@campusharmony.edu', role: 'principal', designation: 'Principal', departmentId: IDS.departments.cse },
+    { id: IDS.users.auditor, name: 'Vikram Auditor', email: 'auditor@campusharmony.edu', role: 'auditor', designation: 'Internal Auditor', departmentId: IDS.departments.cse },
   ] as const;
 
   for (const user of userSeeds) {
+    // Institution-wide roles keep campusId = null, which denotes "sees every
+    // campus" (ADR-0001). Operational roles are pinned to the main campus.
+    const campusId = INSTITUTION_WIDE_ROLES.has(user.role) ? null : SEED_CAMPUS_ID;
+
     await prisma.user.upsert({
       where: { email: user.email },
       update: {
@@ -143,6 +267,8 @@ async function main() {
         password: hashedPassword,
         departmentId: user.departmentId,
         designation: user.designation,
+        institutionId: SEED_INSTITUTION_ID,
+        campusId,
         campus: 'Main Campus',
         avatar: null,
       },
@@ -154,6 +280,8 @@ async function main() {
         password: hashedPassword,
         departmentId: user.departmentId,
         designation: user.designation,
+        institutionId: SEED_INSTITUTION_ID,
+        campusId,
         campus: 'Main Campus',
       },
     });
@@ -170,7 +298,12 @@ async function main() {
       section: 'A',
       batch: '2024',
       admissionYear: 2024,
-      cgpa: 8.7,
+      // DERIVED, not seeded. CGPA is computed by the results engine (T-403)
+      // from CourseResult grades and Course credits. Seeding a plausible-looking
+      // 8.7 here would reintroduce, in the seed, exactly the fabrication that
+      // Phase 0 removed from the runtime — and it would silently disagree with
+      // whatever the engine computes.
+      cgpa: 0,
       totalCredits: 110,
       earnedCredits: 92,
     },
@@ -184,7 +317,12 @@ async function main() {
       section: 'A',
       batch: '2024',
       admissionYear: 2024,
-      cgpa: 8.7,
+      // DERIVED, not seeded. CGPA is computed by the results engine (T-403)
+      // from CourseResult grades and Course credits. Seeding a plausible-looking
+      // 8.7 here would reintroduce, in the seed, exactly the fabrication that
+      // Phase 0 removed from the runtime — and it would silently disagree with
+      // whatever the engine computes.
+      cgpa: 0,
       totalCredits: 110,
       earnedCredits: 92,
     },
@@ -229,7 +367,7 @@ async function main() {
   });
 
   await prisma.course.upsert({
-    where: { code: 'CSE501' },
+    where: { institutionId_code: { institutionId: SEED_INSTITUTION_ID, code: 'CSE501' } },
     update: {
       id: IDS.core.course,
       name: 'Cloud Computing',
@@ -393,11 +531,33 @@ async function main() {
   });
 
   await upsertById(prisma.feeRecord, 'seed-fee-record-1', {
+    institutionId: SEED_INSTITUTION_ID,
     studentProfileId: IDS.student.profile,
     type: 'tuition',
     description: 'Semester 5 tuition fee',
     amount: 78000,
+    // Explicitly zero. The seeded status is 'pending', and a non-zero paid
+    // amount here would be a fabricated payment with no Payment row behind it.
+    paidAmount: 0,
+    waivedAmount: 0,
     dueDate: daysFromNow(12),
+    paidDate: null,
+    status: 'pending',
+    transactionId: null,
+    academicYear: '2025-26',
+  });
+
+  // A second, smaller due so the oldest-due-first allocation has something to
+  // demonstrate. Due earlier than the tuition record above.
+  await upsertById(prisma.feeRecord, 'seed-fee-record-2', {
+    institutionId: SEED_INSTITUTION_ID,
+    studentProfileId: IDS.student.profile,
+    type: 'library',
+    description: 'Library fee 2025-26',
+    amount: 2500,
+    paidAmount: 0,
+    waivedAmount: 0,
+    dueDate: daysFromNow(3),
     paidDate: null,
     status: 'pending',
     transactionId: null,
@@ -424,19 +584,76 @@ async function main() {
     collectionDate: null,
   });
 
+  // Two copies of the same title — impossible before migration 0012, which
+  // dropped the global unique index on ISBN.
   await upsertById(prisma.libraryBook, 'seed-library-book-1', {
+    institutionId: SEED_INSTITUTION_ID,
+    accessionNumber: 'ACC-000001',
     isbn: '9780132350884',
     title: 'Clean Code',
     author: 'Robert C. Martin',
     category: 'Software Engineering',
-    issuedDate: daysFromNow(-5),
-    dueDate: daysFromNow(9),
-    returnedDate: null,
-    fine: 0,
-    renewalCount: 1,
-    maxRenewals: 2,
-    status: 'issued',
-    studentProfileId: IDS.student.profile,
+    publisher: 'Prentice Hall',
+    status: 'available',
+  });
+
+  await upsertById(prisma.libraryBook, 'seed-library-book-2', {
+    institutionId: SEED_INSTITUTION_ID,
+    accessionNumber: 'ACC-000002',
+    isbn: '9780132350884',
+    title: 'Clean Code',
+    author: 'Robert C. Martin',
+    category: 'Software Engineering',
+    publisher: 'Prentice Hall',
+    status: 'available',
+  });
+
+  // Reconcile copy status with circulation records.
+  //
+  // The upserts above set every copy to 'available', which is wrong if a loan
+  // is still open against one — a state that let the catalogue claim a copy was
+  // on the shelf while it was out. Derived here rather than assumed.
+  const openLoans = await prisma.libraryLoan.findMany({
+    where: { status: 'active' },
+    select: { id: true, bookId: true },
+  });
+
+  for (const loan of openLoans) {
+    await prisma.libraryBook.updateMany({
+      where: { id: loan.bookId },
+      data: { status: 'issued', currentLoanId: loan.id },
+    });
+  }
+
+  // Circulation policy.
+  //
+  // Upserted on institutionId, NOT on a synthetic seed id: migration 0012
+  // already creates one row per institution, and `institutionId` is unique.
+  // Keying on a seed id collides with the migration's row — which is exactly
+  // how this failed the first time, aborting the rest of the seed.
+  await prisma.libraryPolicy.upsert({
+    where: { institutionId: SEED_INSTITUTION_ID },
+    update: {
+      loanPeriodDays: 14,
+      maxRenewals: 2,
+      renewalDays: 14,
+      finePerDay: 2,
+      graceDays: 1,
+      maxFine: 500,
+      maxBooksPerStudent: 3,
+      blockIssueAboveFine: 100,
+    },
+    create: {
+      institutionId: SEED_INSTITUTION_ID,
+      loanPeriodDays: 14,
+      maxRenewals: 2,
+      renewalDays: 14,
+      finePerDay: 2,
+      graceDays: 1,
+      maxFine: 500,
+      maxBooksPerStudent: 3,
+      blockIssueAboveFine: 100,
+    },
   });
 
   await upsertById(prisma.hostel, 'seed-hostel-1', {
@@ -474,7 +691,13 @@ async function main() {
     timestamp: new Date(),
   });
 
+  // `institutionId` became required on ApprovalItem in migration 0022, when the
+  // approval queue was given a tenant key. This call was not updated, so the
+  // seed threw HERE — at line ~694 of 1829 — and every statement after it was
+  // skipped. Roughly 60% of the seed had never run on a fresh database,
+  // including academicYear, feeStructure, moduleConfig and departmentBudget.
   await upsertById(prisma.approvalItem, 'seed-approval-1', {
+    institutionId: SEED_INSTITUTION_ID,
     type: 'fee_waiver',
     title: 'Merit scholarship partial waiver',
     details: 'Requesting 25% waiver for high academic performance.',
@@ -526,7 +749,7 @@ async function main() {
   });
 
   await prisma.academicYear.upsert({
-    where: { year: '2025-26' },
+    where: { institutionId_year: { institutionId: SEED_INSTITUTION_ID, year: '2025-26' } },
     update: {
       id: 'seed-academic-year-1',
       startDate: new Date('2025-07-01T00:00:00.000Z'),
@@ -574,15 +797,12 @@ async function main() {
     scheduledDate: null,
   });
 
-  await upsertById(prisma.backupRecord, 'seed-backup-record-1', {
-    type: 'automatic',
-    size: '122 MB',
-    createdDate: new Date(),
-    status: 'completed',
-    duration: '00:02:35',
-    initiatedBy: IDS.users.superAdmin,
-    location: 's3://campus-harmony-backups/daily/',
-  });
+  // REMOVED: a fictional BackupRecord describing a 122 MB backup to
+  // s3://campus-harmony-backups/daily/. No backup implementation existed, so
+  // the Admin UI displayed a capability the system did not have — the same
+  // facade pattern as the audit log. Backup records are now written by the
+  // real backup service (src/lib/backup.ts).
+
 
   await upsertById(prisma.incidentReport, 'seed-incident-1', {
     title: 'Unauthorized lab access attempt',
@@ -707,6 +927,7 @@ async function main() {
   });
 
   await upsertById(prisma.feeStructure, 'seed-fee-structure-1', {
+    institutionId: SEED_INSTITUTION_ID,
     academicYear: '2025-26',
     semester: '5',
     program: 'B.Tech CSE',

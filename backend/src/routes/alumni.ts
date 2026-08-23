@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { sendError } from '../lib/errors.js';
 
 const router = Router();
 const currentYear = new Date().getFullYear();
@@ -31,7 +32,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -67,7 +68,7 @@ router.get('/directory', authenticate, async (req: Request, res: Response) => {
         }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -81,7 +82,7 @@ router.get('/directory/:id', authenticate, async (req: Request, res: Response) =
     }
     res.json({ success: true, data: alumni });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -136,7 +137,7 @@ router.post('/directory/sync-graduates', authenticate, async (req: Request, res:
       },
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -146,7 +147,7 @@ router.get('/communications', authenticate, async (req: Request, res: Response) 
     const comms = await prisma.alumniCommunicationRecord.findMany({ orderBy: { sentDate: 'desc' } });
     res.json({ success: true, data: comms });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -155,7 +156,7 @@ router.post('/communications', authenticate, async (req: Request, res: Response)
     const comm = await prisma.alumniCommunicationRecord.create({ data: req.body });
     res.json({ success: true, data: comm });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -165,7 +166,7 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
     const events = await prisma.alumniEvent.findMany({ orderBy: { date: 'desc' } });
     res.json({ success: true, data: events });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -181,7 +182,7 @@ router.post('/events', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: event });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -191,7 +192,7 @@ router.put('/events/:id', authenticate, async (req: Request, res: Response) => {
     const updated = await prisma.alumniEvent.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -201,7 +202,7 @@ router.get('/mentorship/programs', authenticate, async (req: Request, res: Respo
     const programs = await prisma.mentorshipProgram.findMany({ orderBy: { startDate: 'desc' } });
     res.json({ success: true, data: programs });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -212,7 +213,7 @@ router.post('/mentorship/programs', authenticate, async (req: Request, res: Resp
     });
     res.json({ success: true, data: program });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -222,7 +223,7 @@ router.get('/mentorship/matches', authenticate, async (req: Request, res: Respon
     const matches = programs.flatMap((p: any) => (p.matches || []).map((m: any) => ({ ...m, programId: p.id, programTitle: p.title })));
     res.json({ success: true, data: matches });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -241,7 +242,7 @@ router.get('/donations', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -250,7 +251,7 @@ router.post('/donations', authenticate, async (req: Request, res: Response) => {
     const donation = await prisma.donation.create({ data: req.body });
     res.json({ success: true, data: donation });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -260,7 +261,7 @@ router.get('/progression/surveys', authenticate, async (req: Request, res: Respo
     const surveys = await prisma.progressionSurvey.findMany({ orderBy: { startDate: 'desc' } });
     res.json({ success: true, data: surveys });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -271,7 +272,7 @@ router.post('/progression/surveys', authenticate, async (req: Request, res: Resp
     });
     res.json({ success: true, data: survey });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -296,7 +297,7 @@ router.get('/progression/metrics', authenticate, async (req: Request, res: Respo
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -306,7 +307,7 @@ router.get('/jobs', authenticate, async (req: Request, res: Response) => {
     const jobs = await prisma.alumniJobPosting.findMany({ orderBy: { postedDate: 'desc' } });
     res.json({ success: true, data: jobs });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -318,7 +319,7 @@ router.post('/jobs', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: job });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -328,7 +329,7 @@ router.put('/jobs/:id', authenticate, async (req: Request, res: Response) => {
     const updated = await prisma.alumniJobPosting.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

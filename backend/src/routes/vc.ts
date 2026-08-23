@@ -2,6 +2,8 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { getTenantContext } from '../lib/tenant.js';
+import { sendError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -113,7 +115,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -123,7 +125,7 @@ router.get('/approvals', authenticate, async (req: Request, res: Response) => {
     const approvals = await prisma.approvalItem.findMany({ orderBy: { requestedAt: 'desc' } });
     res.json({ success: true, data: approvals });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -134,10 +136,35 @@ router.put('/approvals/:id', authenticate, async (req: Request, res: Response) =
       return res.status(400).json({ success: false, message: 'Invalid approval id' });
     }
     const { status } = req.body;
-    const updated = await prisma.approvalItem.update({ where: { id }, data: { status } });
+    // updateMany + a pending filter, NOT update-by-id.
+    //
+    // The tenant extension can constrain a `where` clause but cannot filter a
+    // unique-key update, so `update({ where: { id } })` let anyone holding an id
+    // from ANOTHER institution decide that approval. Demonstrated live before
+    // migration 0022. The status is validated above rather than written raw.
+    const ALLOWED_DECISIONS = ['approved', 'rejected', 'forwarded'];
+    if (!ALLOWED_DECISIONS.includes(status)) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: `status must be one of: ${ALLOWED_DECISIONS.join(', ')}.` }
+      });
+      return;
+    }
+    const changed = await prisma.approvalItem.updateMany({
+      where: { id, status: 'pending' },
+      data: { status, decidedBy: getTenantContext(req).userId, decidedAt: new Date() }
+    });
+    if (changed.count === 0) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'No pending approval with that id.' }
+      });
+      return;
+    }
+    const updated = await prisma.approvalItem.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -147,7 +174,7 @@ router.get('/policies', authenticate, async (req: Request, res: Response) => {
     const scenarios = await prisma.policyScenario.findMany({ orderBy: { createdAt: 'desc' } });
     res.json({ success: true, data: scenarios });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -162,7 +189,7 @@ router.get('/policyscenarios', authenticate, async (_req: Request, res: Response
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -183,7 +210,7 @@ router.post('/policyscenarios', authenticate, async (req: Request, res: Response
     });
     res.json({ success: true, data: { ...created, parameters: toArray<any>(created.parameters) } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -193,7 +220,7 @@ router.delete('/policyscenarios/:id', authenticate, async (req: Request, res: Re
     await prisma.policyScenario.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -206,7 +233,7 @@ router.post('/policies/simulate', authenticate, async (req: Request, res: Respon
     });
     res.json({ success: true, data: scenario });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -216,7 +243,7 @@ router.get('/meetings', authenticate, async (req: Request, res: Response) => {
     const meetings = await prisma.meeting.findMany({ orderBy: { date: 'desc' } });
     res.json({ success: true, data: meetings.map(normalizeMeeting) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -225,7 +252,7 @@ router.get('/meetingagendas', authenticate, async (_req: Request, res: Response)
     const meetings = await prisma.meeting.findMany({ orderBy: { date: 'desc' } });
     res.json({ success: true, data: meetings.map(normalizeMeeting) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -238,7 +265,7 @@ router.post('/meetings', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: meeting });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -251,7 +278,7 @@ router.put('/meetings/:id', authenticate, async (req: Request, res: Response) =>
     const updated = await prisma.meeting.update({ where: { id }, data: req.body });
     res.json({ success: true, data: normalizeMeeting(updated) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -264,7 +291,7 @@ router.get('/meetings/:id/minutes', authenticate, async (req: Request, res: Resp
     const meeting = await prisma.meeting.findUnique({ where: { id } });
     res.json({ success: true, data: { minutes: meeting?.minutes, agendaItems: meeting?.agendaItems } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -274,7 +301,7 @@ router.get('/messages', authenticate, async (req: Request, res: Response) => {
     const messages = await prisma.broadcastMessage.findMany({ orderBy: { sentAt: 'desc' } });
     res.json({ success: true, data: messages });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -283,7 +310,7 @@ router.get('/broadcastmessages', authenticate, async (_req: Request, res: Respon
     const messages = await prisma.broadcastMessage.findMany({ orderBy: { sentAt: 'desc' } });
     res.json({ success: true, data: messages });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -297,7 +324,7 @@ router.post('/messages', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: msg });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -307,7 +334,7 @@ router.put('/messages/:id', authenticate, async (req: Request, res: Response) =>
     const updated = await prisma.broadcastMessage.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -323,7 +350,7 @@ router.get('/compliance', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -336,7 +363,7 @@ router.put('/compliance/:id', authenticate, async (req: Request, res: Response) 
     });
     res.json({ success: true, data: { ...updated, criteria: toArray<any>(updated.criteria) } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -358,7 +385,7 @@ router.get('/finance', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -368,7 +395,7 @@ router.get('/analytics', authenticate, async (req: Request, res: Response) => {
     const data = await buildDepartmentPerformance();
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -377,7 +404,7 @@ router.get('/departmentperformance', authenticate, async (_req: Request, res: Re
     const data = await buildDepartmentPerformance();
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -397,7 +424,7 @@ router.get('/campussummaries', authenticate, async (_req: Request, res: Response
 
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -412,7 +439,7 @@ router.get('/institutionkpis', authenticate, async (_req: Request, res: Response
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -442,7 +469,7 @@ router.get('/liveupdates', authenticate, async (_req: Request, res: Response) =>
 
     res.json({ success: true, data: updates.slice(0, 8) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -458,7 +485,7 @@ router.get('/executiveapprovals', authenticate, async (_req: Request, res: Respo
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -480,7 +507,7 @@ router.get('/financialoverview', authenticate, async (_req: Request, res: Respon
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -497,7 +524,7 @@ router.get('/finance-summary', authenticate, async (_req: Request, res: Response
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -506,7 +533,7 @@ router.get('/compliancereports', authenticate, async (_req: Request, res: Respon
     const data = await prisma.complianceReport.findMany({ orderBy: { lastUpdated: 'desc' } });
     res.json({ success: true, data: data.map((report: any) => ({ ...report, criteria: toArray<any>(report.criteria) })) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -530,7 +557,7 @@ router.get('/department-budgets', authenticate, async (_req: Request, res: Respo
     });
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -556,7 +583,7 @@ router.get('/revenue-streams', authenticate, async (_req: Request, res: Response
 
     res.json({ success: true, data: rows });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -612,7 +639,7 @@ router.get('/global-access-records', authenticate, async (_req: Request, res: Re
 
     res.json({ success: true, data: records });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -645,7 +672,7 @@ router.get('/global-access/:module', authenticate, async (req: Request, res: Res
 
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

@@ -147,33 +147,36 @@ export default function AdminUserManagement() {
     URL.revokeObjectURL(url);
   };
 
-  const importUsersFromFile = async (file: File) => {
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      const users = safeArray(data);
-      if (users.length === 0) {
-        toast({ title: 'Import failed', description: 'File does not contain user records.', variant: 'destructive' });
-        return;
-      }
-
-      for (const user of users) {
-        await postApi('/admin/users', {
-          name: safeString(user?.name),
-          email: safeString(user?.email),
-          role: safeString(user?.role, 'student'),
-          designation: safeString(user?.designation),
-          departmentId: user?.departmentId || null,
-          password: safeString(user?.password, 'password123')
-        });
-      }
-
-      const refreshed = await fetchApi('/admin/users');
-      setSystemUsers(safeArray(refreshed).map(normalizeUser));
-      toast({ title: 'Import complete', description: `${users.length} user(s) imported successfully.` });
-    } catch (error: any) {
-      toast({ title: 'Import failed', description: safeString(error?.message, 'Unable to import users.'), variant: 'destructive' });
-    }
+  /**
+   * Bulk import — DISABLED, deliberately.
+   *
+   * The previous implementation posted each record from an uploaded JSON file
+   * straight to `/admin/users`, defaulting the password to a literal
+   * `'password123'`. Three things were wrong with it:
+   *
+   *   1. It sent a hardcoded password. The backend now refuses that value (it is
+   *      on the forbidden list), so the loop failed on the FIRST record and the
+   *      feature has not worked since — it just reported a generic failure.
+   *
+   *   2. It was not atomic. Had it worked, a failure at record 400 of 500 would
+   *      leave 399 accounts created and no record of which.
+   *
+   *   3. It duplicated the bulk import engine, which validates the entire file
+   *      before writing anything, refuses partial loads, offers a dry run, and
+   *      generates a unique temporary password per account.
+   *
+   * Rather than leave a broken path that creates user accounts, this points at
+   * the supported one. The import engine's API exists today (`/api/import`); its
+   * screen is Phase 4 of `16_REMEDIATION_PLAN.md`.
+   */
+  const importUsersFromFile = async (_file: File) => {
+    toast({
+      title: 'Bulk import has moved',
+      description:
+        'This uploader created accounts one at a time with a shared default password and could not be rolled back. ' +
+        'Use the bulk import engine instead — it checks the whole file first and refuses to write anything if any row is wrong.',
+      variant: 'destructive',
+    });
   };
 
   const filtered = systemUsers.filter(u => {

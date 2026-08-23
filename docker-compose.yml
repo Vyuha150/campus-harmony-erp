@@ -1,0 +1,67 @@
+# Campus Harmony ERP — local / staging stack
+#
+#   docker compose up -d
+#   docker compose exec backend npx prisma migrate deploy
+#   docker compose exec backend npm run backup:verify   # restore drill
+#
+# This is a REPRODUCIBLE deployment. Previously there was none: no Dockerfile,
+# no compose file, no defined backend host, and three conflicting port
+# assumptions across server.ts, ecosystem.config.cjs and the CORS config.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-campus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-campus_harmony}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # Bound to loopback so the database is not exposed on the host network.
+      - '127.0.0.1:5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-campus}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        # Waits for the DB to be READY, not merely started — otherwise the
+        # backend's fail-fast config aborts the container on first boot.
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-campus}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-campus_harmony}?schema=public
+      # No default. The server REFUSES TO START without it, and rejects the
+      # legacy hardcoded value. Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set — there is no default}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # pg_dump/pg_restore are on PATH in the runtime image.
+      PG_BIN_DIR: ''
+      BACKUP_DIR: /app/backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      DATABASE_SSL_REJECT_UNAUTHORIZED: 'true'
+    ports:
+      - '${BACKEND_PORT:-5000}:5000'
+    volumes:
+      # Named volumes so uploads and backups survive a container replacement.
+      # NOTE: these are still node-local. Multi-instance deployment requires
+      # object storage for uploads (A5) and off-host backup replication.
+      - uploads:/app/uploads
+      - backups:/app/backups
+
+volumes:
+  postgres-data:
+  uploads:
+  backups:

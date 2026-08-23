@@ -2,6 +2,11 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { getTenantContext } from '../lib/tenant.js';
+import { sendError } from '../lib/errors.js';
+import * as workflow from '../modules/workflow/workflow.service.js';
+import { ensureDefinition } from '../modules/workflow/bridge.js';
+import { RESULT_PUBLICATION } from '../modules/workflow/builtins.js';
 
 const router = Router();
 
@@ -65,7 +70,7 @@ router.get('/exams', authenticate, async (_req: Request, res: Response) => {
 
     res.json({ success: true, data: normalized });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -100,7 +105,7 @@ router.post('/exams', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -110,7 +115,7 @@ router.put('/exams/:id', authenticate, async (req: Request, res: Response) => {
     const updated = await prisma.examProgress.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -120,7 +125,7 @@ router.delete('/exams/:id', authenticate, async (req: Request, res: Response) =>
     await prisma.examProgress.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -176,7 +181,7 @@ router.get('/dashboard', authenticate, async (_req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -217,7 +222,7 @@ router.get('/submissions', authenticate, async (_req: Request, res: Response) =>
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -260,12 +265,27 @@ router.get('/results', authenticate, async (_req: Request, res: Response) => {
       })
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
+/**
+ * Submit a department's results for publication (Phase 2.4 — engine-backed).
+ *
+ * The HTTP contract is unchanged. What changed is underneath: this now STARTS a
+ * workflow instance, and the `ApprovalItem` row it returns is a projection of
+ * that instance rather than the record itself.
+ *
+ * The behaviour this replaces: the handler reset ANY existing row back to
+ * `pending`, including one already `published`. A published result could be
+ * quietly pulled back into the queue and published again, with the record
+ * showing only the latest state and nothing about the round trip. The engine
+ * refuses a second open instance for the same department, so that path is now a
+ * 409 instead of a silent overwrite.
+ */
 router.post('/results/:id/submit', authenticate, async (req: Request, res: Response) => {
   try {
+    const ctx = getTenantContext(req);
     const identifier = decodeURIComponent(String(req.params.id));
     const userId = String((req as any).user.id);
 
@@ -278,44 +298,48 @@ router.post('/results/:id/submit', authenticate, async (req: Request, res: Respo
       return;
     }
 
-    const existing = await prisma.approvalItem.findFirst({
-      where: { type: 'result_publication', details: String(department.id) },
-      orderBy: { requestedAt: 'desc' }
+    await ensureDefinition(ctx, RESULT_PUBLICATION);
+
+    // Throws ConflictError (409) if this department already has a submission in
+    // flight. That is the point: two open publications of one department's
+    // results could reach opposite conclusions.
+    const instance = await workflow.startWorkflow(ctx, {
+      code: RESULT_PUBLICATION.code,
+      entityType: RESULT_PUBLICATION.entityType,
+      entityId: String(department.id),
+      context: { department: department.name, submittedBy: userId }
     });
 
-    const saved = existing
-      ? await prisma.approvalItem.update({
-          where: { id: existing.id },
-          data: {
-            status: 'pending',
-            title: `Result publication request - ${department.name}`,
-            requestedBy: userId,
-            requestedAt: new Date(),
-            priority: existing.priority || 'medium'
-          }
-        })
-      : await prisma.approvalItem.create({
-          data: {
-            type: 'result_publication',
-            title: `Result publication request - ${department.name}`,
-            details: String(department.id),
-            requestedBy: userId,
-            priority: 'medium',
-            status: 'pending'
-          }
-        });
+    // The queue projection. Created fresh per submission rather than recycling
+    // the previous row: each publication cycle is its own request, and reusing
+    // one row is what allowed a decided item to be reopened in place.
+    const created = await prisma.approvalItem.create({
+      data: {
+        institutionId: ctx.institutionId,
+        type: 'result_publication',
+        title: `Result publication request - ${department.name}`,
+        details: String(department.id),
+        requestedBy: userId,
+        priority: 'medium',
+        status: 'pending',
+        workflowInstanceId: instance.instanceId
+      }
+    });
 
     res.json({
       success: true,
       data: {
-        approvalId: saved.id,
+        approvalId: created.id,
+        instanceId: instance.instanceId,
         departmentId: department.id,
         department: department.name,
-        status: 'pending_approval'
+        status: 'pending_approval',
+        waitingOn: instance.assigneeRole,
+        currentStep: instance.currentStep
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

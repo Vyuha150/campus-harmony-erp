@@ -1,7 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { config } from '../config/env.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey123';
+// Secret comes from validated config — there is deliberately no fallback.
+// See src/config/env.ts for why.
+const JWT_SECRET = config.auth.jwtSecret;
 
 export interface AuthenticatedRequest extends Request {
   user?: {

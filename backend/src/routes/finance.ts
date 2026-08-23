@@ -2,6 +2,8 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { getTenantContext } from '../lib/tenant.js';
+import { sendError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -37,7 +39,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -97,7 +99,7 @@ router.get('/snapshot', authenticate, async (_req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -140,7 +142,7 @@ router.get('/alerts', authenticate, async (_req: Request, res: Response) => {
 
     res.json({ success: true, data: alerts.slice(0, 12) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -178,7 +180,7 @@ router.get('/tasks', authenticate, async (_req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -186,10 +188,35 @@ router.put('/tasks/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const status = String(req.body.status || 'pending');
-    const updated = await prisma.approvalItem.update({ where: { id }, data: { status } });
+    // updateMany + a pending filter, NOT update-by-id.
+    //
+    // The tenant extension can constrain a `where` clause but cannot filter a
+    // unique-key update, so `update({ where: { id } })` let anyone holding an id
+    // from ANOTHER institution decide that approval. Demonstrated live before
+    // migration 0022. The status is validated above rather than written raw.
+    const ALLOWED_DECISIONS = ['approved', 'rejected', 'forwarded'];
+    if (!ALLOWED_DECISIONS.includes(status)) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: `status must be one of: ${ALLOWED_DECISIONS.join(', ')}.` }
+      });
+      return;
+    }
+    const changed = await prisma.approvalItem.updateMany({
+      where: { id, status: 'pending' },
+      data: { status, decidedBy: getTenantContext(req).userId, decidedAt: new Date() }
+    });
+    if (changed.count === 0) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'No pending approval with that id.' }
+      });
+      return;
+    }
+    const updated = await prisma.approvalItem.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -199,7 +226,7 @@ router.get('/fee-structures', authenticate, async (req: Request, res: Response) 
     const structures = await prisma.feeStructure.findMany({ orderBy: { academicYear: 'desc' } });
     res.json({ success: true, data: structures });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -208,7 +235,7 @@ router.post('/fee-structures', authenticate, async (req: Request, res: Response)
     const structure = await prisma.feeStructure.create({ data: { ...req.body, dueDate: new Date(req.body.dueDate) } });
     res.json({ success: true, data: structure });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -237,7 +264,7 @@ router.get('/payments', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -270,7 +297,7 @@ router.get('/fee-payments', authenticate, async (req: Request, res: Response) =>
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -291,7 +318,7 @@ router.put('/fee-payments/:id', authenticate, async (req: Request, res: Response
     const updated = await prisma.feeRecord.update({ where: { id }, data: payload });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -318,7 +345,7 @@ router.get('/defaulters', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: Object.values(grouped) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -328,7 +355,7 @@ router.get('/journal-entries', authenticate, async (req: Request, res: Response)
     const entries = await prisma.journalEntry.findMany({ orderBy: { date: 'desc' }, take: 100 });
     res.json({ success: true, data: entries });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -341,7 +368,7 @@ router.post('/journal-entries', authenticate, async (req: Request, res: Response
     });
     res.json({ success: true, data: entry });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -351,7 +378,7 @@ router.put('/journal-entries/:id', authenticate, async (req: Request, res: Respo
     const updated = await prisma.journalEntry.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -361,7 +388,7 @@ router.get('/purchase-orders', authenticate, async (req: Request, res: Response)
     const orders = await prisma.purchaseOrder.findMany({ include: { vendor: true }, orderBy: { orderDate: 'desc' } });
     res.json({ success: true, data: orders });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -378,7 +405,7 @@ router.post('/purchase-orders', authenticate, async (req: Request, res: Response
     });
     res.json({ success: true, data: order });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -391,7 +418,7 @@ router.put('/purchase-orders/:id', authenticate, async (req: Request, res: Respo
     const updated = await prisma.purchaseOrder.update({ where: { id }, data: payload });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -401,7 +428,7 @@ router.get('/vendors', authenticate, async (req: Request, res: Response) => {
     const vendors = await prisma.vendor.findMany({ include: { purchaseOrders: { take: 5, orderBy: { orderDate: 'desc' } } } });
     res.json({ success: true, data: vendors });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -410,7 +437,7 @@ router.post('/vendors', authenticate, async (req: Request, res: Response) => {
     const vendor = await prisma.vendor.create({ data: req.body });
     res.json({ success: true, data: vendor });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -426,7 +453,7 @@ router.get('/payroll', authenticate, async (req: Request, res: Response) => {
     const records = await prisma.payrollRecord.findMany({ where, orderBy: { employeeName: 'asc' } });
     res.json({ success: true, data: records });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -438,7 +465,7 @@ router.put('/payroll/:id', authenticate, async (req: Request, res: Response) => 
     const updated = await prisma.payrollRecord.update({ where: { id }, data: payload });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -459,7 +486,7 @@ router.post('/payroll/disburse', authenticate, async (req: Request, res: Respons
 
     res.json({ success: true, data: { updatedCount: result.count } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -468,7 +495,7 @@ router.post('/payroll/process', authenticate, async (req: Request, res: Response
     const record = await prisma.payrollRecord.create({ data: req.body });
     res.json({ success: true, data: record });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -478,7 +505,7 @@ router.get('/payroll/:id', authenticate, async (req: Request, res: Response) => 
     const record = await prisma.payrollRecord.findUnique({ where: { id } });
     res.json({ success: true, data: record });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -500,7 +527,7 @@ router.get('/reports', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -517,7 +544,7 @@ router.post('/reports/generate', authenticate, async (req: Request, res: Respons
       data: { reportType: type, recordCount: records.length, totalAmount: records.reduce((s: number, r: any) => s + r.amount, 0), generatedAt: new Date() }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -561,7 +588,7 @@ router.get('/reports/summary', authenticate, async (_req: Request, res: Response
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -571,7 +598,7 @@ router.get('/budgets', authenticate, async (req: Request, res: Response) => {
     const budgets = await prisma.budgetAllocation.findMany();
     res.json({ success: true, data: budgets });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -582,7 +609,7 @@ router.post('/budgets', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: budget });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -592,7 +619,7 @@ router.put('/budgets/:id', authenticate, async (req: Request, res: Response) => 
     const updated = await prisma.budgetAllocation.update({ where: { id }, data: { ...req.body, lastUpdated: new Date() } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -608,21 +635,27 @@ router.get('/expenditure-trend', authenticate, async (_req: Request, res: Respon
       yearBuckets[year].count += 1;
     });
 
+    // Previously indexed `yearBuckets[...]` and `sortedYears[index - 1]` without
+    // undefined checks — TS2532/TS2538. With no budget rows, or a sparse index,
+    // this threw "Cannot read properties of undefined" at runtime and returned a
+    // 500 from the finance dashboard.
+    const mean = (bucket: { total: number; count: number } | undefined): number =>
+      bucket && bucket.count > 0 ? bucket.total / bucket.count : 0;
+
     const sortedYears = Object.keys(yearBuckets).sort();
     const data = sortedYears.map((year, index) => {
-      const amount = yearBuckets[year].count > 0 ? Math.round(yearBuckets[year].total / yearBuckets[year].count) : 0;
-      const prev = index > 0
-        ? (yearBuckets[sortedYears[index - 1]].count > 0
-          ? yearBuckets[sortedYears[index - 1]].total / yearBuckets[sortedYears[index - 1]].count
-          : 0)
-        : amount;
+      const amount = Math.round(mean(yearBuckets[year]));
+
+      const previousYear = index > 0 ? sortedYears[index - 1] : undefined;
+      const prev = previousYear !== undefined ? mean(yearBuckets[previousYear]) : amount;
+
       const changePercentage = prev > 0 ? Number((((amount - prev) / prev) * 100).toFixed(1)) : 0;
       return { year, amount, changePercentage };
     });
 
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -645,7 +678,7 @@ router.get('/revenue-streams', authenticate, async (_req: Request, res: Response
 
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

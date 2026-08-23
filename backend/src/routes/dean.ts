@@ -2,18 +2,35 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.js';
+import { sendError, NotFoundError } from '../lib/errors.js';
+import { getTenantContext } from '../lib/tenant.js';
+import * as workflow from '../modules/workflow/workflow.service.js';
+import { openInstanceFor, projectOntoQueue } from '../modules/workflow/bridge.js';
+import { RESULT_PUBLICATION } from '../modules/workflow/builtins.js';
 
 const router = Router();
 
+/**
+ * Resolve the dean's department.
+ *
+ * HISTORY — this previously auto-created a "Computer Science & Engg" department
+ * when the user had none, and silently assigned the user to it. That is the
+ * same fabrication pattern removed from students.ts and faculty.ts: inventing
+ * institutional structure on a read path. It also looked up `{ code: 'CSE' }`
+ * globally, which under multi-tenancy could have returned ANOTHER
+ * INSTITUTION'S department and assigned the user to it — a cross-tenant write.
+ *
+ * It now reads only and fails clearly when no department is assigned.
+ *
+ * @throws {NotFoundError} when the user has no department assignment.
+ */
 async function getDeanDepartment(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { department: true } });
   if (!user?.departmentId) {
-    let dept = await prisma.department.findUnique({ where: { code: 'CSE' } });
-    if (!dept) {
-      dept = await prisma.department.create({ data: { name: 'Computer Science & Engg', code: 'CSE' } });
-    }
-    await prisma.user.update({ where: { id: userId }, data: { departmentId: dept.id } });
-    return dept;
+    throw new NotFoundError(
+      'Department assignment',
+      { userId, hint: 'This account is not assigned to a department. An administrator must assign one.' }
+    );
   }
   return user.department;
 }
@@ -61,7 +78,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -81,7 +98,7 @@ router.get('/academics', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -91,7 +108,7 @@ router.get('/curriculum-proposals', authenticate, async (req: Request, res: Resp
     const proposals = await prisma.curriculumProposal.findMany({ orderBy: { submittedAt: 'desc' } });
     res.json({ success: true, data: proposals });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -102,7 +119,7 @@ router.put('/curriculum-proposals/:id', authenticate, async (req: Request, res: 
     const updated = await prisma.curriculumProposal.update({ where: { id }, data: { status } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -122,7 +139,7 @@ router.get('/faculty', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -131,7 +148,7 @@ router.get('/recruitment', authenticate, async (req: Request, res: Response) => 
     const rec = await prisma.facultyRecruitment.findMany({ include: { department: true } });
     res.json({ success: true, data: rec });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -142,7 +159,7 @@ router.get('/student-affairs', authenticate, async (req: Request, res: Response)
     const scholarships = await prisma.feeRecord.count({ where: { type: 'other' as any, status: 'paid' } });
     res.json({ success: true, data: { disciplinaryCases: cases, scholarshipCount: scholarships } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -153,7 +170,7 @@ router.put('/disciplinary/:id', authenticate, async (req: Request, res: Response
     const updated = await prisma.disciplinaryCase.update({ where: { id }, data: { status, ...(severity && { severity }) } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -197,19 +214,34 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
       })
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
+/**
+ * Publish a department's results (Phase 2.4 — engine-backed).
+ *
+ * THE DEFECT THIS CLOSES. The previous handler never checked that a submission
+ * existed. When it found no approval row it CREATED one already marked
+ * `published`, so the dean could publish results the CoE had never submitted,
+ * and afterwards the record showed an approval with no request behind it. There
+ * was also nothing preventing a second publication of the same results.
+ *
+ * Both follow from keeping a process in a status column: a column can record
+ * where something is, but cannot express "this may only happen after that".
+ * The engine can, because the instance must exist and must be waiting at the
+ * dean's step before `act` will record anything.
+ *
+ * The HTTP contract is unchanged apart from the added failure case — publishing
+ * with nothing submitted is now a refusal rather than a fabricated record.
+ */
 router.put('/results/:id/approve', authenticate, async (req: Request, res: Response) => {
   try {
+    const ctx = getTenantContext(req);
     const identifier = decodeURIComponent(String(req.params.id));
-    const userId = String((req as any).user.id);
 
     const department = await prisma.department.findFirst({
-      where: {
-        OR: [{ id: identifier }, { name: identifier }]
-      }
+      where: { OR: [{ id: identifier }, { name: identifier }] }
     });
 
     if (!department) {
@@ -217,38 +249,61 @@ router.put('/results/:id/approve', authenticate, async (req: Request, res: Respo
       return;
     }
 
-    const existing = await prisma.approvalItem.findFirst({
-      where: { type: 'result_publication', details: String(department.id) },
-      orderBy: { requestedAt: 'desc' }
+    const instance = await openInstanceFor(ctx, RESULT_PUBLICATION.entityType, String(department.id));
+
+    if (!instance) {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'BUSINESS_RULE_VIOLATION',
+          message:
+            `No result publication is awaiting approval for ${department.name}. ` +
+            'The Controller of Examinations must submit the results before they can be published.'
+        }
+      });
+      return;
+    }
+
+    // Records the transition and completes the instance. Throws if the caller is
+    // not the dean, or if the instance has already been decided.
+    const result = await workflow.act(
+      ctx,
+      instance.id,
+      'approved',
+      typeof req.body?.note === 'string' ? req.body.note.slice(0, 500) : undefined
+    );
+
+    // Mirror onto the queue row so existing screens keep working. `published`
+    // rather than `approved`: that is the vocabulary this flow already used, and
+    // migration 0023 widened the CHECK constraint to permit it.
+    const projection = await prisma.approvalItem.findFirst({
+      where: { workflowInstanceId: instance.id },
+      select: { id: true }
     });
 
-    const saved = existing
-      ? await prisma.approvalItem.update({
-          where: { id: existing.id },
-          data: { status: 'published', title: `Result publication - ${department.name}` }
-        })
-      : await prisma.approvalItem.create({
-          data: {
-            type: 'result_publication',
-            title: `Result publication - ${department.name}`,
-            details: String(department.id),
-            requestedBy: userId,
-            priority: 'medium',
-            status: 'published'
-          }
-        });
+    if (projection) {
+      await projectOntoQueue({
+        approvalId: projection.id,
+        instanceId: instance.id,
+        status: 'published',
+        decidedBy: ctx.userId,
+        decisionNote: typeof req.body?.note === 'string' ? req.body.note.slice(0, 500) : null
+      });
+    }
 
     res.json({
       success: true,
       data: {
-        approvalId: saved.id,
+        approvalId: projection?.id ?? null,
+        instanceId: instance.id,
         departmentId: department.id,
         department: department.name,
-        status: 'published'
+        status: 'published',
+        workflowStatus: result.status
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -264,7 +319,7 @@ router.get('/finance', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -274,7 +329,7 @@ router.get('/accreditation', authenticate, async (req: Request, res: Response) =
     const metrics = await prisma.qualityMetric.findMany();
     res.json({ success: true, data: metrics });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -284,7 +339,7 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
     const events = await prisma.interDeptEvent.findMany({ orderBy: { date: 'desc' } });
     res.json({ success: true, data: events });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -310,7 +365,7 @@ router.get('/class-management/options', authenticate, async (req: Request, res: 
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -367,7 +422,7 @@ router.get('/class-management', authenticate, async (req: Request, res: Response
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -489,7 +544,7 @@ router.post('/class-management', authenticate, authorizeRoles('dean', 'hod'), as
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -617,7 +672,7 @@ router.put('/class-management/:id', authenticate, authorizeRoles('dean', 'hod'),
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -640,7 +695,7 @@ router.delete('/class-management/:id', authenticate, authorizeRoles('dean', 'hod
     await prisma.courseClass.delete({ where: { id: classId } });
     res.json({ success: true, data: { id: classId } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -652,7 +707,7 @@ router.post('/events', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: event });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -674,7 +729,7 @@ router.put('/events/:id', authenticate, async (req: Request, res: Response) => {
     const event = await prisma.interDeptEvent.update({ where: { id }, data: updateData });
     res.json({ success: true, data: event });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -683,7 +738,7 @@ router.get('/meetings', authenticate, async (req: Request, res: Response) => {
     const meetings = await prisma.meeting.findMany({ orderBy: { date: 'desc' }, take: 20 });
     res.json({ success: true, data: meetings });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -714,7 +769,7 @@ router.post('/meetings', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: meeting });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -737,7 +792,7 @@ router.put('/meetings/:id', authenticate, async (req: Request, res: Response) =>
     const meeting = await prisma.meeting.update({ where: { id }, data: updateData });
     res.json({ success: true, data: meeting });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -793,7 +848,7 @@ router.get('/mentoring/options', authenticate, async (_req: Request, res: Respon
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -856,7 +911,7 @@ router.post('/mentoring/assignments', authenticate, async (req: Request, res: Re
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -873,7 +928,7 @@ router.delete('/mentoring/assignments/:studentId', authenticate, async (req: Req
     await prisma.menteeAssignment.delete({ where: { id: assignment.id } });
     res.json({ success: true, message: 'Assignment removed' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -898,7 +953,7 @@ router.get('/course-management/options', authenticate, async (req: Request, res:
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -928,7 +983,7 @@ router.get('/course-management', authenticate, async (req: Request, res: Respons
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -957,7 +1012,7 @@ router.post('/course-management', authenticate, authorizeRoles('dean', 'hod'), a
 
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -988,7 +1043,7 @@ router.put('/course-management/:id', authenticate, authorizeRoles('dean', 'hod')
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1008,7 +1063,7 @@ router.delete('/course-management/:id', authenticate, authorizeRoles('dean', 'ho
     await prisma.course.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1018,7 +1073,7 @@ router.get('/facility-management', authenticate, async (_req: Request, res: Resp
     const facilities = await prisma.facility.findMany({ orderBy: [{ type: 'asc' }, { name: 'asc' }] });
     res.json({ success: true, data: facilities });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1040,7 +1095,7 @@ router.post('/facility-management', authenticate, authorizeRoles('dean', 'hod'),
     });
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1061,7 +1116,7 @@ router.put('/facility-management/:id', authenticate, authorizeRoles('dean', 'hod
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1083,7 +1138,7 @@ router.delete('/facility-management/:id', authenticate, authorizeRoles('dean', '
     await prisma.facility.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1093,7 +1148,7 @@ router.get('/semester-management/academic-years', authenticate, async (_req: Req
     const years = await prisma.academicYear.findMany({ orderBy: { year: 'desc' } });
     res.json({ success: true, data: years });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1105,7 +1160,15 @@ router.post('/semester-management/academic-years', authenticate, authorizeRoles(
       return;
     }
 
-    const existing = await prisma.academicYear.findUnique({ where: { year: yearValue } });
+    // Academic years are TENANT-SCOPED: two universities may both run "2025-26",
+    // and each must be able to define its own calendar. A bare
+    // `{ year: yearValue }` lookup would have found another institution's row
+    // and wrongly reported a duplicate.
+    const ctx = getTenantContext(req);
+
+    const existing = await prisma.academicYear.findUnique({
+      where: { institutionId_year: { institutionId: ctx.institutionId, year: yearValue } }
+    });
     if (existing) {
       res.status(400).json({ success: false, message: `Academic year ${yearValue} already exists` });
       return;
@@ -1113,6 +1176,7 @@ router.post('/semester-management/academic-years', authenticate, authorizeRoles(
 
     const created = await prisma.academicYear.create({
       data: {
+        institutionId: ctx.institutionId,
         year: yearValue,
         startDate: new Date(req.body.startDate),
         endDate: new Date(req.body.endDate),
@@ -1124,7 +1188,7 @@ router.post('/semester-management/academic-years', authenticate, authorizeRoles(
 
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1152,7 +1216,7 @@ router.put('/semester-management/academic-years/:id', authenticate, authorizeRol
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1176,7 +1240,7 @@ router.get('/inventory/purchase-requests', authenticate, async (req: Request, re
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1202,7 +1266,7 @@ router.put('/inventory/purchase-requests/:id/status', authenticate, authorizeRol
     const updated = await prisma.purchaseRequest.update({ where: { id }, data: { status } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

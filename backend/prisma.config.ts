@@ -11,5 +11,11 @@ export default defineConfig({
   },
   datasource: {
     url: process.env.DATABASE_URL ?? "",
+    // Only set when provided. `prisma migrate diff --from-migrations` needs a
+    // throwaway database to replay migration history into; `migrate deploy`
+    // does not, and rejects an empty string. Never points at real data.
+    ...(process.env.SHADOW_DATABASE_URL
+      ? { shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL }
+      : {}),
   },
 });

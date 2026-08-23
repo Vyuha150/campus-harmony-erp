@@ -3,19 +3,29 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { fromRoleGrievanceStatus, toRoleGrievanceStatus } from '../lib/grievanceStatus.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.js';
+import { sendError, NotFoundError } from '../lib/errors.js';
+import { getTenantContext } from '../lib/tenant.js';
 
 const router = Router();
 const db: any = prisma;
 
+/**
+ * Resolve the HOD's department.
+ *
+ * HISTORY — same fabrication as dean.ts: it auto-created a "Computer Science &
+ * Engg" department and assigned the user to it, using a GLOBAL `{ code: 'CSE' }`
+ * lookup that under multi-tenancy could have matched another institution's
+ * department and assigned this user across the tenant boundary.
+ *
+ * @throws {NotFoundError} when the user has no department assignment.
+ */
 async function getHODDepartment(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { department: true } });
   if (!user?.departmentId) {
-    let dept = await prisma.department.findUnique({ where: { code: 'CSE' } });
-    if (!dept) {
-      dept = await prisma.department.create({ data: { name: 'Computer Science & Engg', code: 'CSE' } });
-    }
-    await prisma.user.update({ where: { id: userId }, data: { departmentId: dept.id } });
-    return dept;
+    throw new NotFoundError(
+      'Department assignment',
+      { userId, hint: 'This account is not assigned to a department. An administrator must assign one.' }
+    );
   }
   return user.department;
 }
@@ -63,7 +73,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -92,7 +102,7 @@ router.get('/faculty', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -102,18 +112,58 @@ router.get('/approvals', authenticate, async (req: Request, res: Response) => {
     const approvals = await prisma.approvalItem.findMany({ orderBy: { requestedAt: 'desc' } });
     res.json({ success: true, data: approvals });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.put('/approvals/:id', authenticate, async (req: Request, res: Response) => {
   try {
+    const ctx = getTenantContext(req);
     const id = String(req.params.id);
-    const { status } = req.body;
-    const updated = await prisma.approvalItem.update({ where: { id }, data: { status } });
+    const { status, note } = req.body ?? {};
+
+    // The status was previously written straight from the body (`data: { status }`),
+    // so any string was accepted and an item could skip states entirely.
+    const ALLOWED = ['approved', 'rejected', 'forwarded'] as const;
+    if (!ALLOWED.includes(status)) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `status must be one of: ${ALLOWED.join(', ')}.`
+        }
+      });
+      return;
+    }
+
+    // updateMany, not update: the tenant extension constrains a `where` clause but
+    // cannot filter a unique-key update. Without this, knowing an id from another
+    // institution was enough to decide their approval.
+    const result = await prisma.approvalItem.updateMany({
+      where: { id, status: 'pending' },
+      data: {
+        status,
+        decidedBy: ctx.userId,
+        decidedAt: new Date(),
+        decisionNote: typeof note === 'string' ? note.slice(0, 500) : null
+      }
+    });
+
+    if (result.count === 0) {
+      // Absent, already decided, or belonging to another institution — all three
+      // are "not yours to decide", and distinguishing them would leak whether an
+      // id exists elsewhere.
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'No pending approval with that id.' }
+      });
+      return;
+    }
+
+    const updated = await prisma.approvalItem.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -168,7 +218,7 @@ router.get('/workload', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -193,7 +243,7 @@ router.put('/workload/assign', authenticate, async (req: Request, res: Response)
     // Substitution flow from UI currently sends absent/substitute data; accept as successful action.
     res.json({ success: true, data: { accepted: true } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -215,7 +265,7 @@ router.get('/workload/course-options', authenticate, async (req: Request, res: R
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -264,7 +314,7 @@ router.get('/timetable', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: filtered });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -290,7 +340,7 @@ router.get('/students', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -320,7 +370,7 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
       })
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -333,7 +383,7 @@ router.get('/accreditation', authenticate, async (req: Request, res: Response) =
     const data = await db.accreditationData.findMany({ where: { departmentId: department.id } });
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -343,7 +393,7 @@ router.put('/accreditation/:id', authenticate, async (req: Request, res: Respons
     const updated = await db.accreditationData.update({ where: { id }, data: { ...req.body, lastUpdated: new Date() } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -356,7 +406,7 @@ router.get('/inventory', authenticate, async (req: Request, res: Response) => {
     const items = await db.labInventoryItem.findMany({ where: { departmentId: department.id } });
     res.json({ success: true, data: items });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -371,7 +421,7 @@ router.post('/inventory/purchase-request', authenticate, async (req: Request, re
     });
     res.json({ success: true, data: request });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -381,7 +431,7 @@ router.get('/messages', authenticate, async (req: Request, res: Response) => {
     const messages = await db.broadcastMessage.findMany({ orderBy: { sentAt: 'desc' }, take: 50 });
     res.json({ success: true, data: messages });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -395,7 +445,7 @@ router.post('/messages', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: msg });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -433,7 +483,7 @@ router.get('/departmentfaculty', authenticate, async (req: Request, res: Respons
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -443,6 +493,7 @@ router.put('/faculty/:id/roles', authenticate, async (req: Request, res: Respons
     const roles = Array.isArray(req.body?.roles) ? req.body.roles : [];
     await prisma.approvalItem.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         type: 'role_assignment',
         title: `Faculty role update for ${id}`,
         details: `Roles set: ${roles.join(', ')}`,
@@ -453,7 +504,7 @@ router.put('/faculty/:id/roles', authenticate, async (req: Request, res: Respons
     });
     res.json({ success: true, data: { id, roles } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -486,7 +537,7 @@ router.put('/faculty/:id/leave', authenticate, async (req: Request, res: Respons
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -496,6 +547,7 @@ router.post('/faculty/:id/promotion-recommendation', authenticate, async (req: R
     const reason = String(req.body?.reason || 'Promotion recommendation');
     const item = await prisma.approvalItem.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         type: 'promotion_recommendation',
         title: `Promotion recommendation: ${id}`,
         details: reason,
@@ -506,7 +558,7 @@ router.post('/faculty/:id/promotion-recommendation', authenticate, async (req: R
     });
     res.json({ success: true, data: item });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -541,7 +593,7 @@ router.get('/departmentstudents', authenticate, async (req: Request, res: Respon
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -551,7 +603,7 @@ router.put('/students/:id/advisor', authenticate, async (req: Request, res: Resp
     const advisor = String(req.body?.advisor || '');
     res.json({ success: true, data: { studentId, advisor } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -561,6 +613,7 @@ router.post('/students/:id/counseling-note', authenticate, async (req: Request, 
     const note = String(req.body?.note || '');
     const entry = await prisma.approvalItem.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         type: 'counseling_note',
         title: `Counseling note for ${studentId}`,
         details: note,
@@ -571,7 +624,7 @@ router.post('/students/:id/counseling-note', authenticate, async (req: Request, 
     });
     res.json({ success: true, data: entry });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -592,7 +645,7 @@ router.get('/hodapprovals', authenticate, async (_req: Request, res: Response) =
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -600,10 +653,35 @@ router.put('/hodapprovals/:id/status', authenticate, async (req: Request, res: R
   try {
     const id = String(req.params.id);
     const status = String(req.body?.status || 'pending');
-    const updated = await prisma.approvalItem.update({ where: { id }, data: { status } });
+    // updateMany + a pending filter, NOT update-by-id.
+    //
+    // The tenant extension can constrain a `where` clause but cannot filter a
+    // unique-key update, so `update({ where: { id } })` let anyone holding an id
+    // from ANOTHER institution decide that approval. Demonstrated live before
+    // migration 0022. The status is validated above rather than written raw.
+    const ALLOWED_DECISIONS = ['approved', 'rejected', 'forwarded'];
+    if (!ALLOWED_DECISIONS.includes(status)) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: `status must be one of: ${ALLOWED_DECISIONS.join(', ')}.` }
+      });
+      return;
+    }
+    const changed = await prisma.approvalItem.updateMany({
+      where: { id, status: 'pending' },
+      data: { status, decidedBy: getTenantContext(req).userId, decidedAt: new Date() }
+    });
+    if (changed.count === 0) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'No pending approval with that id.' }
+      });
+      return;
+    }
+    const updated = await prisma.approvalItem.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -622,7 +700,7 @@ router.get('/departmentcalendar', authenticate, async (_req: Request, res: Respo
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -739,7 +817,7 @@ router.post('/workload/course', authenticate, authorizeRoles('hod', 'dean'), asy
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -862,7 +940,7 @@ router.put('/workload/course/:id', authenticate, authorizeRoles('hod', 'dean'), 
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -872,7 +950,7 @@ router.delete('/workload/course/:id', authenticate, authorizeRoles('hod', 'dean'
     await prisma.courseClass.delete({ where: { id } });
     res.json({ success: true, message: 'Class removed' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -924,7 +1002,7 @@ router.get('/courseresults', authenticate, async (req: Request, res: Response) =
       })
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -933,6 +1011,7 @@ router.post('/courseresults/:courseCode/verify', authenticate, async (req: Reque
     const courseCode = String(req.params.courseCode);
     const item = await prisma.approvalItem.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         type: 'result_verification',
         title: `Result verified: ${courseCode}`,
         details: 'Verified by HOD',
@@ -943,7 +1022,7 @@ router.post('/courseresults/:courseCode/verify', authenticate, async (req: Reque
     });
     res.json({ success: true, data: item });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -953,6 +1032,7 @@ router.post('/courseresults/:courseCode/remedial', authenticate, async (req: Req
     const note = String(req.body?.note || 'Remedial class scheduled');
     const item = await prisma.approvalItem.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         type: 'remedial',
         title: `Remedial for ${courseCode}`,
         details: note,
@@ -963,7 +1043,7 @@ router.post('/courseresults/:courseCode/remedial', authenticate, async (req: Req
     });
     res.json({ success: true, data: item });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -971,6 +1051,7 @@ router.post('/courseresults/forward-coe', authenticate, async (req: Request, res
   try {
     const item = await prisma.approvalItem.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         type: 'forward_to_coe',
         title: 'Results forwarded to CoE',
         details: 'Department results forwarded for publication',
@@ -981,7 +1062,7 @@ router.post('/courseresults/forward-coe', authenticate, async (req: Request, res
     });
     res.json({ success: true, data: item });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1005,7 +1086,7 @@ router.get('/accreditationdata', authenticate, async (req: Request, res: Respons
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1028,7 +1109,7 @@ router.post('/accreditationdata', authenticate, async (req: Request, res: Respon
     });
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1045,7 +1126,7 @@ router.put('/accreditationdata/:id', authenticate, async (req: Request, res: Res
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1065,7 +1146,7 @@ router.get('/labinventory', authenticate, async (req: Request, res: Response) =>
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1110,7 +1191,7 @@ router.post('/labinventory', authenticate, async (req: Request, res: Response) =
 
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1161,7 +1242,7 @@ router.put('/labinventory/:id', authenticate, async (req: Request, res: Response
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1174,7 +1255,7 @@ router.put('/labinventory/:id/maintenance', authenticate, async (req: Request, r
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1192,7 +1273,7 @@ router.get('/purchaserequests', authenticate, async (req: Request, res: Response
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1220,7 +1301,7 @@ router.post('/purchaserequests', authenticate, async (req: Request, res: Respons
     });
     res.json({ success: true, data: request });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1231,7 +1312,7 @@ router.put('/purchaserequests/:id/status', authenticate, async (req: Request, re
       message: 'Purchase requests can only be approved or rejected by Dean'
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1256,7 +1337,7 @@ router.get('/course-management/options', authenticate, async (req: Request, res:
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1286,7 +1367,7 @@ router.get('/course-management', authenticate, async (req: Request, res: Respons
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1315,7 +1396,7 @@ router.post('/course-management', authenticate, authorizeRoles('hod', 'dean'), a
 
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1346,7 +1427,7 @@ router.put('/course-management/:id', authenticate, authorizeRoles('hod', 'dean')
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1366,7 +1447,7 @@ router.delete('/course-management/:id', authenticate, authorizeRoles('hod', 'dea
     await prisma.course.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1402,7 +1483,7 @@ router.get('/curriculum-proposals', authenticate, async (req: Request, res: Resp
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1453,7 +1534,7 @@ router.post('/curriculum-proposals', authenticate, authorizeRoles('hod'), async 
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1463,7 +1544,7 @@ router.get('/facility-management', authenticate, async (_req: Request, res: Resp
     const facilities = await prisma.facility.findMany({ orderBy: [{ type: 'asc' }, { name: 'asc' }] });
     res.json({ success: true, data: facilities });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1485,7 +1566,7 @@ router.post('/facility-management', authenticate, authorizeRoles('hod', 'dean'),
     });
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1506,7 +1587,7 @@ router.put('/facility-management/:id', authenticate, authorizeRoles('hod', 'dean
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1528,7 +1609,7 @@ router.delete('/facility-management/:id', authenticate, authorizeRoles('hod', 'd
     await prisma.facility.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1562,7 +1643,7 @@ router.get('/communication/messages', authenticate, async (_req: Request, res: R
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1622,7 +1703,7 @@ router.post('/communication/messages', authenticate, async (req: Request, res: R
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1632,7 +1713,7 @@ router.delete('/communication/messages/:id', authenticate, async (req: Request, 
     await db.broadcastMessage.delete({ where: { id } });
     res.json({ success: true, message: 'Message deleted' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1665,7 +1746,7 @@ router.get('/communication/recipient-options', authenticate, async (req: Request
       ]
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1691,7 +1772,7 @@ router.get('/grievances', authenticate, async (_req: Request, res: Response) => 
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1717,7 +1798,7 @@ router.get('/grievances/:id', authenticate, async (req: Request, res: Response) 
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1765,7 +1846,7 @@ router.put('/grievances/:id', authenticate, async (req: Request, res: Response) 
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1774,7 +1855,7 @@ router.post('/students/export', authenticate, async (req: Request, res: Response
     const format = String(req.body?.format || 'csv');
     res.json({ success: true, data: { format, exportedAt: new Date().toISOString() } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1802,7 +1883,7 @@ router.post('/students/merit-list', authenticate, async (req: Request, res: Resp
 
     res.json({ success: true, data: ranked });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1814,6 +1895,7 @@ router.post('/students/:id/email', authenticate, async (req: Request, res: Respo
 
     const entry = await prisma.approvalItem.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         type: 'student_communication',
         title: `Email sent to student ${studentId}`,
         details: `${subject}: ${message}`,
@@ -1825,7 +1907,7 @@ router.post('/students/:id/email', authenticate, async (req: Request, res: Respo
 
     res.json({ success: true, data: entry });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1834,7 +1916,7 @@ router.post('/students/:id/report-card', authenticate, async (req: Request, res:
     const studentId = String(req.params.id);
     res.json({ success: true, data: { studentId, generatedAt: new Date().toISOString() } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1842,7 +1924,7 @@ router.post('/workload/check-conflicts', authenticate, async (_req: Request, res
   try {
     res.json({ success: true, data: { conflicts: [] } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1850,7 +1932,7 @@ router.post('/timetable/export', authenticate, async (_req: Request, res: Respon
   try {
     res.json({ success: true, data: { exportedAt: new Date().toISOString(), format: 'pdf' } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1858,7 +1940,7 @@ router.post('/accreditation/export-ssr', authenticate, async (_req: Request, res
   try {
     res.json({ success: true, data: { exportedAt: new Date().toISOString(), type: 'ssr' } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1867,7 +1949,7 @@ router.post('/accreditation/upload-document', authenticate, async (req: Request,
     const name = String(req.body?.name || 'document');
     res.json({ success: true, data: { name, uploadedAt: new Date().toISOString() } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1875,7 +1957,7 @@ router.post('/inventory/export', authenticate, async (_req: Request, res: Respon
   try {
     res.json({ success: true, data: { exportedAt: new Date().toISOString() } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

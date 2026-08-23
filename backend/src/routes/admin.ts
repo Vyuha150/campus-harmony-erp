@@ -1,7 +1,17 @@
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.js';
+import { hashPassword } from '../lib/password.js';
+import { ValidationError, NotFoundError , sendError} from '../lib/errors.js';
+import { recordFromRequest } from '../lib/audit.js';
+import {
+  getTenantContext,
+  campusScope,
+  withInstitution,
+  assertSameInstitution,
+  assertCampusAccess
+} from '../lib/tenant.js';
 
 const router = Router();
 const db: any = prisma;
@@ -29,17 +39,23 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 // ─── User Management ───
 router.get('/users', authenticate, async (req: Request, res: Response) => {
   try {
+    const ctx = getTenantContext(req);
     const query = req.query as Record<string, string | undefined>;
     const search = query.search;
     const role = query.role;
-    const where: any = {};
+
+    // TENANT SCOPE (ADR-0001). Without this the endpoint would list every user
+    // in every institution — the exact cross-tenant leak this architecture
+    // exists to prevent. `campusScope` additionally narrows campus-scoped roles
+    // to their own campus while letting VC/Registrar see all campuses.
+    const where: any = { ...campusScope(ctx) };
     if (role) where.role = role;
     if (search) where.name = { contains: search, mode: 'insensitive' };
 
@@ -59,41 +75,109 @@ router.get('/users', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
-router.post('/users', authenticate, async (req: Request, res: Response) => {
+router.post('/users', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const bcrypt = await import('bcrypt');
-    const { name, email, password, role, departmentId, designation } = req.body;
-    const hashedPassword = await bcrypt.hash(password || 'password123', 10);
+    const ctx = getTenantContext(req);
+    const { name, email, password, role, departmentId, designation } = req.body ?? {};
 
+    if (!name || !email || !role) {
+      throw new ValidationError('name, email and role are required.');
+    }
+
+    // Previously: `bcrypt.hash(password || 'password123', 10)` — omitting the
+    // password silently created a real account with a password published in a
+    // public repository. hashPassword() requires and validates it instead.
+    const hashedPassword = await hashPassword(password);
+
+    // `withInstitution` FORCES the creator's institutionId onto the row,
+    // overwriting anything the client supplied — a caller must not be able to
+    // create a user inside another institution.
     const user = await prisma.user.create({
-      data: { name, email, password: hashedPassword, role, departmentId, designation }
+      data: withInstitution(ctx, {
+        name,
+        email,
+        password: hashedPassword,
+        role,
+        departmentId,
+        designation,
+        // Campus-scoped creators can only create within their own campus.
+        campusId: ctx.scopeLevel === 'CAMPUS' ? ctx.campusId : (req.body?.campusId ?? null)
+      })
     });
 
-    res.json({ success: true, data: { id: user.id, name: user.name, email: user.email, role: user.role } });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    await recordFromRequest(req, {
+      action: 'CREATE',
+      module: 'admin',
+      resource: `User:${user.id}`,
+      details: `Created user ${user.email} with role ${user.role}`,
+      newValue: { name, email, role, departmentId, designation },
+      severity: 'warning' // account creation is privileged
+    });
+
+    res.status(201).json({
+      success: true,
+      data: { id: user.id, name: user.name, email: user.email, role: user.role }
+    });
+  } catch (error) {
+    next(error);
   }
 });
 
-router.put('/users/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/users/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const ctx = getTenantContext(req);
     const id = String(req.params.id);
-    const { password, ...rest } = req.body;
-    const data: any = { ...rest };
+    const { password, ...rest } = req.body ?? {};
 
-    if (password) {
-      const bcrypt = await import('bcrypt');
-      data.password = await bcrypt.hash(password, 10);
+    const existing = await prisma.user.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundError('User');
+    }
+
+    // IDOR guard at tenant scale. `findUnique` by primary key cannot carry a
+    // tenant filter, so an attacker who learned a user id from another
+    // institution could otherwise modify it. Reports "not found" rather than
+    // "forbidden" — confirming the id exists elsewhere is itself a leak.
+    assertSameInstitution(ctx, existing, 'User');
+    assertCampusAccess(ctx, existing, 'User');
+
+    // Whitelist updatable fields. Spreading req.body allowed a caller to set any
+    // column, including `role` — a privilege-escalation path — and `password`
+    // in plaintext.
+    const data: Record<string, unknown> = {};
+    for (const field of ['name', 'email', 'role', 'departmentId', 'designation', 'campus', 'avatar']) {
+      if (rest[field] !== undefined) data[field] = rest[field];
+    }
+
+    if (password !== undefined) {
+      data.password = await hashPassword(password);
     }
 
     const updated = await prisma.user.update({ where: { id }, data });
-    res.json({ success: true, data: { id: updated.id, name: updated.name, email: updated.email, role: updated.role } });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+
+    await recordFromRequest(req, {
+      action: password !== undefined ? 'PASSWORD_RESET' : 'UPDATE',
+      module: 'admin',
+      resource: `User:${id}`,
+      details: `Updated user ${updated.email}`,
+      oldValue: {
+        name: existing.name, email: existing.email, role: existing.role,
+        departmentId: existing.departmentId, designation: existing.designation
+      },
+      newValue: data,
+      severity: 'warning'
+    });
+
+    res.json({
+      success: true,
+      data: { id: updated.id, name: updated.name, email: updated.email, role: updated.role }
+    });
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -103,7 +187,7 @@ router.delete('/users/:id', authenticate, async (req: Request, res: Response) =>
     await prisma.user.delete({ where: { id } });
     res.json({ success: true, message: 'User deleted' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -121,7 +205,7 @@ router.get('/config', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -129,7 +213,7 @@ router.put('/config', authenticate, async (_req: Request, res: Response) => {
   try {
     res.json({ success: true, message: 'Configuration updated' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -149,7 +233,7 @@ router.get('/departments', authenticate, async (req: Request, res: Response) => 
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -158,7 +242,7 @@ router.post('/departments', authenticate, async (req: Request, res: Response) =>
     const dept = await prisma.department.create({ data: req.body });
     res.json({ success: true, data: dept });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -168,7 +252,7 @@ router.get('/academic-years', authenticate, async (req: Request, res: Response) 
     const years = await db.academicYear.findMany({ orderBy: { year: 'desc' } });
     res.json({ success: true, data: years });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -177,7 +261,7 @@ router.get('/academicyears', authenticate, async (req: Request, res: Response) =
     const years = await db.academicYear.findMany({ orderBy: { year: 'desc' } });
     res.json({ success: true, data: years });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -203,7 +287,7 @@ router.post('/academic-years', authenticate, authorizeRoles('dean'), async (req:
     });
     res.json({ success: true, data: year });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -238,7 +322,7 @@ router.put('/academic-years/:id', authenticate, async (req: Request, res: Respon
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -268,7 +352,7 @@ router.get('/audit-logs', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: logs });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -278,7 +362,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response) =
     const notifications = await db.systemNotificationRecord.findMany({ orderBy: { sentDate: 'desc' }, take: 50 });
     res.json({ success: true, data: notifications });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -287,7 +371,7 @@ router.get('/systemnotifications', authenticate, async (req: Request, res: Respo
     const notifications = await db.systemNotificationRecord.findMany({ orderBy: { sentDate: 'desc' }, take: 50 });
     res.json({ success: true, data: notifications });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -299,7 +383,7 @@ router.post('/notifications', authenticate, async (req: Request, res: Response) 
     });
     res.json({ success: true, data: notification });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -330,7 +414,7 @@ router.get('/analytics/login-trend', authenticate, async (_req: Request, res: Re
 
     res.json({ success: true, data: points });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -351,7 +435,7 @@ router.get('/analytics/module-usage', authenticate, async (_req: Request, res: R
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -368,7 +452,7 @@ router.get('/analytics/role-distribution', authenticate, async (_req: Request, r
       data: grouped.map((item: any) => ({ role: item.role, count: item._count.role }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -395,7 +479,7 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -407,7 +491,7 @@ router.post('/courses', authenticate, authorizeRoles('hod', 'dean'), async (req:
     });
     res.json({ success: true, data: course });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -417,7 +501,7 @@ router.put('/courses/:id', authenticate, authorizeRoles('hod', 'dean'), async (r
     const updated = await prisma.course.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -427,7 +511,7 @@ router.delete('/courses/:id', authenticate, async (req: Request, res: Response) 
     await prisma.course.delete({ where: { id } });
     res.json({ success: true, message: 'Course deleted' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

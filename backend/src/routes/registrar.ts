@@ -2,6 +2,8 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { getTenantContext } from '../lib/tenant.js';
+import { sendError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -34,7 +36,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -64,7 +66,7 @@ router.get('/students', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -78,7 +80,7 @@ router.get('/students/:id', authenticate, async (req: Request, res: Response) =>
     if (!user) { res.status(404).json({ success: false, message: 'Student not found' }); return; }
     res.json({ success: true, data: user });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -94,7 +96,7 @@ router.put('/students/:id', authenticate, async (req: Request, res: Response) =>
     }
     res.json({ success: true, message: 'Student record updated' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -104,7 +106,7 @@ router.get('/record-changes', authenticate, async (req: Request, res: Response) 
     const requests = await prisma.recordChangeRequest.findMany({ orderBy: { requestedAt: 'desc' } });
     res.json({ success: true, data: requests });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -116,7 +118,7 @@ router.put('/record-changes/:id', authenticate, async (req: Request, res: Respon
     const updated = await prisma.recordChangeRequest.update({ where: { id }, data: { status, approvedBy: userId } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -126,7 +128,7 @@ router.get('/transfers', authenticate, async (req: Request, res: Response) => {
     const transfers = await prisma.transferRequest.findMany({ orderBy: { requestedAt: 'desc' } });
     res.json({ success: true, data: transfers });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -135,7 +137,7 @@ router.post('/transfers', authenticate, async (req: Request, res: Response) => {
     const transfer = await prisma.transferRequest.create({ data: req.body });
     res.json({ success: true, data: transfer });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -145,7 +147,7 @@ router.put('/transfers/:id', authenticate, async (req: Request, res: Response) =
     const updated = await prisma.transferRequest.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -164,7 +166,7 @@ router.get('/certificates', authenticate, async (req: Request, res: Response) =>
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -175,7 +177,7 @@ router.put('/certificates/:id', authenticate, async (req: Request, res: Response
     const updated = await prisma.certificateRequest.update({ where: { id }, data: { status, ...(remarks && { remarks }) } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -185,7 +187,7 @@ router.get('/verifications', authenticate, async (req: Request, res: Response) =
     const verifications = await prisma.verificationRequest.findMany({ orderBy: { receivedAt: 'desc' } });
     res.json({ success: true, data: verifications });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -199,7 +201,7 @@ router.put('/verifications/:id', authenticate, async (req: Request, res: Respons
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -255,7 +257,7 @@ router.get('/exams', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: normalized });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -265,7 +267,7 @@ router.put('/exams/:id', authenticate, async (req: Request, res: Response) => {
     const updated = await prisma.examProgress.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -275,7 +277,7 @@ router.get('/documents', authenticate, async (req: Request, res: Response) => {
     const docs = await prisma.adminDocument.findMany({ orderBy: { uploadedAt: 'desc' } });
     res.json({ success: true, data: docs });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -284,7 +286,7 @@ router.get('/admindocuments', authenticate, async (req: Request, res: Response) 
     const docs = await prisma.adminDocument.findMany({ orderBy: { uploadedAt: 'desc' } });
     res.json({ success: true, data: docs });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -325,7 +327,7 @@ router.get('/workflow-files', authenticate, async (_req: Request, res: Response)
 
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -345,17 +347,43 @@ router.put('/workflow-files/:id', authenticate, async (req: Request, res: Respon
       ? `${existing.details || ''}\n\nRegistrar Note: ${remarkText}`.trim()
       : existing.details;
 
-    const updated = await prisma.approvalItem.update({
+    // updateMany, not update-by-id: `id` arrives from the request, and the tenant
+    // extension can constrain a `where` clause but cannot filter a unique-key
+    // update. Before this, an id from another institution was enough to decide
+    // their approval.
+    const nextStatus = String(status || existing.status);
+    const ALLOWED_DECISIONS = ['pending', 'approved', 'rejected', 'forwarded', 'published'];
+    if (!ALLOWED_DECISIONS.includes(nextStatus)) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: `status must be one of: ${ALLOWED_DECISIONS.join(', ')}.` }
+      });
+      return;
+    }
+
+    const changed = await prisma.approvalItem.updateMany({
       where: { id },
       data: {
-        status: String(status || existing.status),
+        status: nextStatus,
         details: nextDetails,
+        decidedBy: getTenantContext(req).userId,
+        decidedAt: new Date()
       }
     });
 
+    if (changed.count === 0) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'No approval with that id.' }
+      });
+      return;
+    }
+
+    const updated = await prisma.approvalItem.findFirst({ where: { id } });
+
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -394,7 +422,7 @@ router.post('/documents', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: doc });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -404,7 +432,7 @@ router.delete('/documents/:id', authenticate, async (req: Request, res: Response
     await prisma.adminDocument.delete({ where: { id } });
     res.json({ success: true, message: 'Document deleted' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -448,7 +476,7 @@ router.get('/hr/summary', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -457,7 +485,7 @@ router.get('/hr/vacancies', authenticate, async (req: Request, res: Response) =>
     const vacancies = await prisma.vacancy.findMany({ orderBy: { postedAt: 'desc' } });
     res.json({ success: true, data: vacancies });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -479,7 +507,7 @@ router.post('/hr/vacancies', authenticate, async (req: Request, res: Response) =
     });
     res.json({ success: true, data: vacancy });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -489,7 +517,7 @@ router.put('/hr/vacancies/:id', authenticate, async (req: Request, res: Response
     const updated = await prisma.vacancy.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -505,6 +533,7 @@ router.post('/hr/promotions/forward', authenticate, async (req: Request, res: Re
 
     const created = await prisma.approvalItem.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         type: 'faculty_hire',
         title: `Promotion Recommendation: ${name}`,
         details: `${name} (${department}) recommended for promotion from ${fromDesignation} to ${toDesignation}. Years of service: ${years ?? 'N/A'}. Forwarded by Registrar for VC review.`,
@@ -516,7 +545,7 @@ router.post('/hr/promotions/forward', authenticate, async (req: Request, res: Re
 
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -526,7 +555,7 @@ router.get('/accreditation', authenticate, async (req: Request, res: Response) =
     const checklists = await prisma.accreditationChecklist.findMany();
     res.json({ success: true, data: checklists });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -536,7 +565,7 @@ router.put('/accreditation/:id', authenticate, async (req: Request, res: Respons
     const updated = await prisma.accreditationChecklist.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -549,7 +578,7 @@ router.get('/queries', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: queries });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -562,7 +591,7 @@ router.put('/queries/:id', authenticate, async (req: Request, res: Response) => 
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -572,7 +601,7 @@ router.get('/promotions', authenticate, async (req: Request, res: Response) => {
     const promotions = await prisma.promotionRequest.findMany({ orderBy: { appliedAt: 'desc' } });
     res.json({ success: true, data: promotions });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -591,7 +620,7 @@ router.put('/promotions/:id', authenticate, async (req: Request, res: Response) 
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -601,7 +630,7 @@ router.get('/retirements', authenticate, async (req: Request, res: Response) => 
     const retirements = await prisma.retirementRequest.findMany({ orderBy: { appliedAt: 'desc' } });
     res.json({ success: true, data: retirements });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -620,7 +649,7 @@ router.put('/retirements/:id', authenticate, async (req: Request, res: Response)
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

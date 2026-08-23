@@ -36,7 +36,10 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => {
     fetchApi('/admin/dashboard').then((d: any) => {
-      const stats = safeArray(d?.stats);
+      // Named rather than cast: the dashboard returns labelled stat tiles, and
+      // `safeArray` without a type argument yields unknown[], which is what made
+      // every `.value` access below a type error.
+      const stats = safeArray<{ label?: unknown; value?: unknown }>(d?.stats);
       const totalUsers = safeNumber(stats.find((s: any) => safeString(s?.label).toLowerCase() === 'total users')?.value);
       const students = safeNumber(stats.find((s: any) => safeString(s?.label).toLowerCase() === 'students')?.value);
       const faculty = safeNumber(stats.find((s: any) => safeString(s?.label).toLowerCase() === 'faculty')?.value);

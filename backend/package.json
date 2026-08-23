@@ -10,7 +10,12 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "backup": "tsx scripts/backup.ts create",
+    "backup:list": "tsx scripts/backup.ts list",
+    "backup:prune": "tsx scripts/backup.ts prune",
+    "backup:verify": "tsx scripts/backup.ts verify"
   },
   "keywords": [],
   "author": "",
@@ -27,6 +32,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "pg": "^8.20.0",
+    "zod": "^4.4.3",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
@@ -41,7 +47,8 @@
     "replace-in-file": "^8.4.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

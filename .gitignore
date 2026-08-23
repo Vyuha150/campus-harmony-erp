@@ -24,3 +24,14 @@ dist-ssr
 *.sw?
 .vercel
 .env*.local
+
+# Database dumps produced by scripts/backup.ts. Large, binary, and a full copy
+# of institutional data — a backup belongs in backup storage, not version
+# control, where it cannot be rotated or expired.
+backend/backups/
+
+# Uploaded files. These include grievance evidence and vigilance material that
+# Phase 0.3 put behind authentication; committing them would republish exactly
+# the content that change was made to protect, permanently, in git history.
+backend/uploads/
+!backend/uploads/.gitkeep

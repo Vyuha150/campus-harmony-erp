@@ -79,8 +79,14 @@ export default function FinanceBudgets() {
     variance: ba.allocatedAmount > 0 ? ((ba.spentAmount / ba.allocatedAmount) * 100) - 50 : 0,
   }));
 
-  const yearOptions = Array.from(new Set(budgetAllocations.map((ba: any) => String(ba.budgetYear || '').trim()).filter(Boolean)));
-  const departmentOptions = Array.from(new Set(budgetAllocations.map((ba: any) => String(ba.department || '').trim()).filter(Boolean)));
+  // Annotated because `budgetAllocations` is `any`, so Set/Array.from collapse to
+  // unknown[] and every option below fails as a React key and child.
+  const yearOptions: string[] = Array.from(
+    new Set(budgetAllocations.map((ba: any) => String(ba.budgetYear || '').trim()).filter(Boolean) as string[])
+  );
+  const departmentOptions: string[] = Array.from(
+    new Set(budgetAllocations.map((ba: any) => String(ba.department || '').trim()).filter(Boolean) as string[])
+  );
 
   const generateBudgetReport = async (type: string) => {
     try {

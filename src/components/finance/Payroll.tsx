@@ -124,8 +124,12 @@ export default function Payroll() {
     return matchesDepartment && matchesSearch;
   });
 
-  const departmentOptions = Array.from(
-    new Set(payrollRecords.map((record: any) => String(record.department || '').trim()).filter(Boolean))
+  // Annotated because `payrollRecords` is `any`, so Set and Array.from collapse the
+  // result to unknown[] and each option fails as a React key and child.
+  const departmentOptions: string[] = Array.from(
+    new Set(
+      payrollRecords.map((record: any) => String(record.department || '').trim()).filter(Boolean) as string[]
+    )
   );
 
   return (

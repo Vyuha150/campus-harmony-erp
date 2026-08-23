@@ -1,14 +1,21 @@
 import type { Request, Response } from 'express';import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../lib/prisma.js';
+// Authentication runs BEFORE tenant context exists — it is the step that
+// determines which tenant the caller belongs to. It therefore uses the
+// unscoped client deliberately. `email` is globally unique (ADR-0001), so a
+// login lookup resolves to exactly one account across all institutions.
+import { basePrisma as prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { sendError } from '../lib/errors.js';
+import { config } from '../config/env.js';
+import { loginRateLimiter } from '../middleware/rateLimit.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey123';
+const JWT_SECRET = config.auth.jwtSecret;
 
 // Basic Login Route
-router.post('/login', async (req: Request, res: Response): Promise<void> => {
+router.post('/login', loginRateLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, role } = req.body;
 
@@ -34,7 +41,11 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+    const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      JWT_SECRET,
+      { expiresIn: config.auth.jwtExpiresIn } as jwt.SignOptions
+    );
     
     res.json({
       success: true,
@@ -48,7 +59,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -75,7 +86,7 @@ router.get('/me', authenticate, async (req: Request, res: Response): Promise<voi
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

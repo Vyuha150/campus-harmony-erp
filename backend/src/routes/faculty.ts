@@ -1,29 +1,27 @@
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { toRoleGrievanceStatus } from '../lib/grievanceStatus.js';
 import { authenticate } from '../middleware/auth.js';
+import { NotFoundError , sendError} from '../lib/errors.js';
+import { recordFromRequest } from '../lib/audit.js';
 
 const router = Router();
 const db: any = prisma;
 
-async function ensureFacultyLessonPlanTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "FacultyLessonPlan" (
-      id TEXT PRIMARY KEY,
-      course_id TEXT NOT NULL,
-      week_number INTEGER NOT NULL,
-      topic TEXT NOT NULL,
-      subtopics JSONB NOT NULL DEFAULT '[]'::jsonb,
-      course_outcome TEXT NOT NULL,
-      planned_date DATE NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-      UNIQUE (course_id, week_number)
-    )
-  `);
-}
+/** Allowed lesson-plan states. Previously any string was accepted. */
+const LESSON_PLAN_STATUSES = ['pending', 'in_progress', 'completed', 'deferred'] as const;
+
+// REMOVED: ensureFacultyLessonPlanTable()
+//
+// This executed `CREATE TABLE IF NOT EXISTS "FacultyLessonPlan"` via
+// $executeRawUnsafe on the request path, on every call. The table existed in
+// the database but not in schema.prisma, creating permanent drift that no
+// migration could reconcile, and issuing DDL under concurrency contends on
+// PostgreSQL schema locks.
+//
+// FacultyLessonPlan is now a first-class model in schema.prisma with a real
+// foreign key to Course, created by migration 0001_baseline.
 
 function formatDateToIn(value: Date | string) {
   const date = value instanceof Date ? value : new Date(value);
@@ -35,19 +33,34 @@ function sanitizeLessonSubtopics(value: any): string[] {
   return value.map((item) => String(item || '').trim()).filter(Boolean);
 }
 
-async function getOrCreateFacultyProfile(userId: string) {
-  let profile = await prisma.facultyProfile.findUnique({ where: { userId } });
+/**
+ * Resolve the authenticated user's faculty profile.
+ *
+ * HISTORY — this function previously CREATED a profile when none existed,
+ * populating it with fabricated credentials: `qualification: 'Ph.D in CSE'`,
+ * `specialization: 'Artificial Intelligence'`, `experience: 5`. It was invoked
+ * from 38 endpoints in this file, all on read paths.
+ *
+ * This was the most damaging defect in the system. Faculty qualification and
+ * experience are direct NIRF `TLR` inputs and NAAC teaching-learning evidence —
+ * the application was manufacturing doctorates that would then be reported to
+ * national accreditation and ranking bodies.
+ *
+ * It now reads only. Faculty records are created by the HR onboarding workflow
+ * (EPIC-03 / T-307).
+ *
+ * @throws {NotFoundError} when the user has no faculty profile.
+ */
+async function getFacultyProfile(userId: string) {
+  const profile = await prisma.facultyProfile.findUnique({ where: { userId } });
+
   if (!profile) {
-    profile = await prisma.facultyProfile.create({
-      data: {
-        userId,
-        employeeId: `FAC${userId.substring(0, 6).toUpperCase()}`,
-        qualification: 'Ph.D in CSE',
-        specialization: 'Artificial Intelligence',
-        experience: 5
-      }
-    });
+    throw new NotFoundError(
+      'Faculty profile',
+      { userId, hint: 'This account has no faculty record. It must be created through HR onboarding.' }
+    );
   }
+
   return profile;
 }
 
@@ -95,80 +108,31 @@ function resolveCurrentSemesterFromAcademicYear(academicYear: any): number | nul
   return null;
 }
 
-async function getOrCreateFacultyClasses(facultyProfileId: string) {
-  let classes = await db.courseClass.findMany({
+/**
+ * Read the classes assigned to a faculty member.
+ *
+ * HISTORY — this previously SYNTHESISED `CourseClass` and `ClassEnrollment`
+ * rows when a faculty member had none, inventing sections and batch groupings
+ * the institution had never defined, with a `create` per group inside nested
+ * loops (an N+1 write pattern on a read path).
+ *
+ * It now reads only. Class structures are defined by academic management
+ * (EPIC-04); an empty result correctly means no classes are assigned.
+ */
+async function getFacultyClasses(facultyProfileId: string) {
+  return db.courseClass.findMany({
     where: { facultyId: facultyProfileId },
     include: { course: true, students: true }
   });
-
-  if (classes.length > 0) {
-    return classes;
-  }
-
-  const courses = await prisma.course.findMany({
-    where: { facultyId: facultyProfileId },
-    include: {
-      enrollments: {
-        include: { student: true }
-      }
-    }
-  });
-
-  for (const course of courses) {
-    const groups = new Map<string, { section: string; batch: string | null; studentIds: string[] }>();
-
-    for (const enrollment of course.enrollments) {
-      const section = enrollment.student.section || 'A';
-      const batch = enrollment.student.batch || null;
-      const key = `${section}::${batch || ''}`;
-      if (!groups.has(key)) {
-        groups.set(key, { section, batch, studentIds: [] });
-      }
-      groups.get(key)!.studentIds.push(enrollment.studentProfileId);
-    }
-
-    if (groups.size === 0) {
-      groups.set('A::', { section: 'A', batch: null, studentIds: [] });
-    }
-
-    for (const group of groups.values()) {
-      const createdClass = await db.courseClass.create({
-        data: {
-          courseId: course.id,
-          facultyId: facultyProfileId,
-          section: group.section,
-          batch: group.batch,
-          name: `${course.code} Section ${group.section}${group.batch ? ` (${group.batch})` : ''}`
-        }
-      });
-
-      if (group.studentIds.length > 0) {
-        await db.classEnrollment.createMany({
-          data: group.studentIds.map((studentId) => ({
-            classId: createdClass.id,
-            studentProfileId: studentId
-          })),
-          skipDuplicates: true
-        });
-      }
-    }
-  }
-
-  classes = await db.courseClass.findMany({
-    where: { facultyId: facultyProfileId },
-    include: { course: true, students: true }
-  });
-
-  return classes;
 }
 
 // ─── Dashboard ───
 router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
 
-    const classes = await getOrCreateFacultyClasses(profile.id);
+    const classes = await getFacultyClasses(profile.id);
     const classIds = classes.map((item: any) => item.id);
 
     const pendingSubmissions = await db.submission.count({
@@ -205,7 +169,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -213,7 +177,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
 router.get('/profile', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const user = await prisma.user.findUnique({ where: { id: userId } });
     const leaves = await prisma.leaveRequest.findMany({ where: { facultyProfileId: profile.id } });
     const courses = await prisma.course.findMany({ where: { facultyId: profile.id }, include: { enrollments: true } });
@@ -247,14 +211,14 @@ router.get('/profile', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.get('/profile/leave-balances', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const leaves = await prisma.leaveRequest.findMany({ where: { facultyProfileId: profile.id } });
 
     const balances = [
@@ -267,14 +231,14 @@ router.get('/profile/leave-balances', authenticate, async (req: Request, res: Re
 
     res.json({ success: true, data: balances });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.get('/profile/leave-history', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const leaves = await prisma.leaveRequest.findMany({
       where: { facultyProfileId: profile.id },
       orderBy: { appliedAt: 'desc' }
@@ -293,14 +257,14 @@ router.get('/profile/leave-history', authenticate, async (req: Request, res: Res
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.put('/profile', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const { qualification, specialization, experience } = req.body;
     const updated = await prisma.facultyProfile.update({
       where: { id: profile.id },
@@ -308,14 +272,14 @@ router.put('/profile', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.post('/profile/leave-request', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const { type, fromDate, toDate, reason } = req.body;
 
     const created = await prisma.leaveRequest.create({
@@ -331,7 +295,7 @@ router.post('/profile/leave-request', authenticate, async (req: Request, res: Re
 
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -340,7 +304,7 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const where: any = { facultyId: profile.id };
     if (Number.isFinite(semesterQuery)) where.semester = semesterQuery;
     const courses = await prisma.course.findMany({
@@ -367,15 +331,15 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.get('/classes', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
-    const classes = await getOrCreateFacultyClasses(profile.id);
+    const profile = await getFacultyProfile(userId);
+    const classes = await getFacultyClasses(profile.id);
 
     res.json({
       success: true,
@@ -394,14 +358,14 @@ router.get('/classes', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.get('/current-semester', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const courses = await prisma.course.findMany({ where: { facultyId: profile.id } });
     const availableSemesters = Array.from(new Set(courses.map((course: any) => Number(course.semester)).filter((value) => Number.isFinite(value))));
 
@@ -420,7 +384,7 @@ router.get('/current-semester', authenticate, async (req: Request, res: Response
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -428,7 +392,7 @@ router.put('/courses/:id/details', authenticate, async (req: Request, res: Respo
   try {
     const userId = (req as any).user.id;
     const userRole = String((req as any).user?.role || '');
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const courseId = String(req.params.id);
     const {
       code,
@@ -533,7 +497,7 @@ router.put('/courses/:id/details', authenticate, async (req: Request, res: Respo
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -541,75 +505,56 @@ router.get('/courses/lesson-plans', authenticate, async (req: Request, res: Resp
   try {
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const where: any = { facultyId: profile.id };
     if (Number.isFinite(semesterQuery)) where.semester = semesterQuery;
     const courses = await prisma.course.findMany({ where });
-    await ensureFacultyLessonPlanTable();
 
-    const lessonPlans: any[] = [];
-    for (const course of courses) {
-      const existingRows = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT id, course_id, week_number, topic, subtopics, course_outcome, planned_date, status
-         FROM "FacultyLessonPlan"
-         WHERE course_id = $1
-         ORDER BY week_number ASC`,
-        course.id
-      );
-
-      if (existingRows.length === 0) {
-        for (let week = 1; week <= 8; week += 1) {
-          const plannedDate = new Date(new Date().getFullYear(), 0, week * 7 + 1);
-          await prisma.$executeRawUnsafe(
-            `INSERT INTO "FacultyLessonPlan"
-             (id, course_id, week_number, topic, subtopics, course_outcome, planned_date, status)
-             VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
-             ON CONFLICT (course_id, week_number) DO NOTHING`,
-            `${course.id}-${week}`,
-            course.id,
-            week,
-            `Module ${week}`,
-            JSON.stringify([`Topic ${week}.1`, `Topic ${week}.2`]),
-            `CO${Math.min(week, 5)}`,
-            plannedDate,
-            week <= 4 ? 'completed' : 'pending'
-          );
-        }
-      }
-
-      const rows = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT id, course_id, week_number, topic, subtopics, course_outcome, planned_date, status
-         FROM "FacultyLessonPlan"
-         WHERE course_id = $1
-         ORDER BY week_number ASC`,
-        course.id
-      );
-
-      rows.forEach((row: any) => {
-        lessonPlans.push({
-          id: row.id,
-          courseId: row.course_id,
-          courseCode: course.code,
-          weekNumber: row.week_number,
-          topic: row.topic,
-          subtopics: sanitizeLessonSubtopics(row.subtopics),
-          courseOutcome: row.course_outcome,
-          plannedDate: formatDateToIn(row.planned_date),
-          status: row.status
-        });
-      });
+    if (courses.length === 0) {
+      res.json({ success: true, data: [] });
+      return;
     }
+
+    // HISTORY — this endpoint previously auto-generated eight weeks of lesson
+    // plans per course when none existed, inventing topics ("Module 1"),
+    // subtopics, course-outcome codes (CO1..CO5) and — most seriously — marking
+    // weeks 1-4 as 'completed' with no human action. That fabricated both
+    // academic delivery records and the CO artefacts OBE attainment depends on.
+    //
+    // It now reads only. An empty result correctly means the faculty member has
+    // not yet created a lesson plan.
+    //
+    // The N+1 raw-SQL loop (2 queries per course) is also gone: this is a single
+    // indexed query against the now-modelled FacultyLessonPlan table.
+    const courseById = new Map(courses.map((course) => [course.id, course]));
+
+    const rows = await db.facultyLessonPlan.findMany({
+      where: { courseId: { in: courses.map((course) => course.id) } },
+      orderBy: [{ courseId: 'asc' }, { weekNumber: 'asc' }]
+    });
+
+    const lessonPlans = rows.map((row: any) => ({
+      id: row.id,
+      courseId: row.courseId,
+      courseCode: courseById.get(row.courseId)?.code ?? '',
+      weekNumber: row.weekNumber,
+      topic: row.topic,
+      subtopics: sanitizeLessonSubtopics(row.subtopics),
+      courseOutcome: row.courseOutcome,
+      plannedDate: formatDateToIn(row.plannedDate),
+      status: row.status
+    }));
 
     res.json({ success: true, data: lessonPlans });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
-router.put('/courses/:courseId/lesson-plans/:weekNumber', authenticate, async (req: Request, res: Response) => {
+router.put('/courses/:courseId/lesson-plans/:weekNumber', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const courseId = String(req.params.courseId);
     const weekNumber = Number(req.params.weekNumber);
 
@@ -637,46 +582,60 @@ router.put('/courses/:courseId/lesson-plans/:weekNumber', authenticate, async (r
       return;
     }
 
-    await ensureFacultyLessonPlanTable();
+    const parsedDate = new Date(plannedDate);
+    if (Number.isNaN(parsedDate.getTime())) {
+      res.status(400).json({ success: false, message: 'plannedDate must be a valid date' });
+      return;
+    }
 
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "FacultyLessonPlan"
-       (id, course_id, week_number, topic, subtopics, course_outcome, planned_date, status, updated_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, NOW())
-       ON CONFLICT (course_id, week_number)
-       DO UPDATE SET
-         topic = EXCLUDED.topic,
-         subtopics = EXCLUDED.subtopics,
-         course_outcome = EXCLUDED.course_outcome,
-         planned_date = EXCLUDED.planned_date,
-         status = EXCLUDED.status,
-         updated_at = NOW()`,
-      `${courseId}-${weekNumber}`,
-      courseId,
-      weekNumber,
-      String(topic),
-      JSON.stringify(sanitizeLessonSubtopics(subtopics)),
-      String(courseOutcome),
-      new Date(plannedDate),
-      String(status)
-    );
+    if (!(LESSON_PLAN_STATUSES as readonly string[]).includes(String(status))) {
+      res.status(400).json({
+        success: false,
+        message: `status must be one of: ${LESSON_PLAN_STATUSES.join(', ')}`
+      });
+      return;
+    }
+
+    // Uses the modelled FacultyLessonPlan table (migration 0001_baseline)
+    // instead of raw DDL + raw upsert against a shadow table.
+    const payload = {
+      topic: String(topic),
+      subtopics: sanitizeLessonSubtopics(subtopics),
+      courseOutcome: String(courseOutcome),
+      plannedDate: parsedDate,
+      status: String(status)
+    };
+
+    const saved = await db.facultyLessonPlan.upsert({
+      where: { courseId_weekNumber: { courseId, weekNumber } },
+      update: payload,
+      create: { courseId, weekNumber, ...payload }
+    });
+
+    await recordFromRequest(req, {
+      action: 'UPDATE',
+      module: 'faculty',
+      resource: `FacultyLessonPlan:${saved.id}`,
+      details: `Lesson plan set for ${course.code} week ${weekNumber}`,
+      newValue: payload
+    });
 
     res.json({
       success: true,
       data: {
-        id: `${courseId}-${weekNumber}`,
+        id: saved.id,
         courseId,
         courseCode: course.code,
         weekNumber,
-        topic: String(topic),
-        subtopics: sanitizeLessonSubtopics(subtopics),
-        courseOutcome: String(courseOutcome),
-        plannedDate: formatDateToIn(new Date(plannedDate)),
-        status: String(status)
+        topic: saved.topic,
+        subtopics: sanitizeLessonSubtopics(saved.subtopics),
+        courseOutcome: saved.courseOutcome,
+        plannedDate: formatDateToIn(saved.plannedDate),
+        status: saved.status
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 });
 
@@ -696,7 +655,7 @@ router.get('/courses/:id/students', authenticate, async (req: Request, res: Resp
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -705,7 +664,7 @@ router.get('/attendance/sessions', authenticate, async (req: Request, res: Respo
   try {
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const where: any = { facultyId: profile.id };
     if (Number.isFinite(semesterQuery)) where.course = { semester: semesterQuery };
     const sessions = await prisma.attendanceSession.findMany({
@@ -727,7 +686,7 @@ router.get('/attendance/sessions', authenticate, async (req: Request, res: Respo
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -736,7 +695,7 @@ router.get('/attendance/roster', authenticate, async (req: Request, res: Respons
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
     const courseIdQuery = req.query.courseId ? String(req.query.courseId) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const where: any = { facultyId: profile.id };
     if (courseIdQuery) where.id = courseIdQuery;
     if (Number.isFinite(semesterQuery)) where.semester = semesterQuery;
@@ -764,14 +723,14 @@ router.get('/attendance/roster', authenticate, async (req: Request, res: Respons
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.post('/attendance/mark', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const { courseId, date, startTime, endTime, type, students } = req.body;
 
     const session = await prisma.attendanceSession.create({
@@ -790,14 +749,14 @@ router.post('/attendance/mark', authenticate, async (req: Request, res: Response
 
     res.json({ success: true, data: session });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.get('/attendance/history', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const query = req.query as Record<string, string | undefined>;
     const courseId = query.courseId;
     const semester = query.semester ? Number(query.semester) : undefined;
@@ -814,7 +773,7 @@ router.get('/attendance/history', authenticate, async (req: Request, res: Respon
     });
     res.json({ success: true, data: sessions });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -823,8 +782,8 @@ router.get('/assignments', authenticate, async (req: Request, res: Response) => 
   try {
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
-    const classes = await getOrCreateFacultyClasses(profile.id);
+    const profile = await getFacultyProfile(userId);
+    const classes = await getFacultyClasses(profile.id);
     const filteredClasses = Number.isFinite(semesterQuery)
       ? classes.filter((item: any) => item.course?.semester === semesterQuery)
       : classes;
@@ -860,14 +819,14 @@ router.get('/assignments', authenticate, async (req: Request, res: Response) => 
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.post('/assignments', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const { classId, title, description, dueDate, maxMarks, status } = req.body;
 
     const classRecord = await db.courseClass.findFirst({ where: { id: classId, facultyId: profile.id }, include: { course: true } });
@@ -892,7 +851,7 @@ router.post('/assignments', authenticate, async (req: Request, res: Response) =>
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -914,7 +873,7 @@ router.put('/assignments/:id', authenticate, async (req: Request, res: Response)
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -934,7 +893,7 @@ router.get('/assignments/:id/submissions', authenticate, async (req: Request, re
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -942,8 +901,8 @@ router.get('/assignments/submissions', authenticate, async (req: Request, res: R
   try {
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
-    const classes = await getOrCreateFacultyClasses(profile.id);
+    const profile = await getFacultyProfile(userId);
+    const classes = await getFacultyClasses(profile.id);
     const filteredClasses = Number.isFinite(semesterQuery)
       ? classes.filter((item: any) => item.course?.semester === semesterQuery)
       : classes;
@@ -973,7 +932,7 @@ router.get('/assignments/submissions', authenticate, async (req: Request, res: R
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -987,7 +946,7 @@ router.put('/assignments/:id/submissions/:subId/grade', authenticate, async (req
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1014,7 +973,7 @@ router.get('/marks/:courseId', authenticate, async (req: Request, res: Response)
       })
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1032,7 +991,7 @@ router.put('/marks/:courseId', authenticate, async (req: Request, res: Response)
     }
     res.json({ success: true, message: 'Marks updated' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1040,7 +999,7 @@ router.get('/marks/internal', authenticate, async (req: Request, res: Response) 
   try {
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const where: any = { facultyId: profile.id };
     if (Number.isFinite(semesterQuery)) where.semester = semesterQuery;
     const courses = await prisma.course.findMany({
@@ -1074,7 +1033,7 @@ router.get('/marks/internal', authenticate, async (req: Request, res: Response) 
       })
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1082,7 +1041,7 @@ router.get('/marks/internal', authenticate, async (req: Request, res: Response) 
 router.get('/mentees', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const assignments = await db.menteeAssignment.findMany({ where: { facultyId: profile.id } });
 
     const mentees = [];
@@ -1112,14 +1071,14 @@ router.get('/mentees', authenticate, async (req: Request, res: Response) => {
     }
     res.json({ success: true, data: mentees });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.post('/mentees/:id/notes', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const studentId = String(req.params.id);
     const { topic, notes, followUpDate } = req.body;
 
@@ -1139,7 +1098,7 @@ router.post('/mentees/:id/notes', authenticate, async (req: Request, res: Respon
 
     res.json({ success: true, data: note });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1147,7 +1106,7 @@ router.post('/mentees/:id/notes', authenticate, async (req: Request, res: Respon
 router.get('/research/publications', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const pubs = await prisma.publication.findMany({ where: { facultyProfileId: profile.id }, orderBy: { year: 'desc' } });
     res.json({
       success: true,
@@ -1159,28 +1118,28 @@ router.get('/research/publications', authenticate, async (req: Request, res: Res
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.post('/research/publications', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const { title, journal, year, status } = req.body;
     const pub = await prisma.publication.create({
       data: { facultyProfileId: profile.id, title, journal, year, status: status || 'submitted' }
     });
     res.json({ success: true, data: pub });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.get('/research/projects', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const projects = await prisma.researchProject.findMany({ where: { facultyProfileId: profile.id } });
     res.json({
       success: true,
@@ -1192,7 +1151,7 @@ router.get('/research/projects', authenticate, async (req: Request, res: Respons
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1200,7 +1159,7 @@ router.get('/research/patents', authenticate, async (req: Request, res: Response
   try {
     res.json({ success: true, data: [] });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1215,7 +1174,7 @@ router.get('/dashboard/announcements', authenticate, async (_req: Request, res: 
       ]
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1223,8 +1182,8 @@ router.get('/dashboard/tasks', authenticate, async (req: Request, res: Response)
   try {
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
-    const classes = await getOrCreateFacultyClasses(profile.id);
+    const profile = await getFacultyProfile(userId);
+    const classes = await getFacultyClasses(profile.id);
     const filteredClasses = Number.isFinite(semesterQuery)
       ? classes.filter((item: any) => item.course?.semester === semesterQuery)
       : classes;
@@ -1250,7 +1209,7 @@ router.get('/dashboard/tasks', authenticate, async (req: Request, res: Response)
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1263,7 +1222,7 @@ router.get('/dashboard/alerts', authenticate, async (_req: Request, res: Respons
       ]
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1271,7 +1230,7 @@ router.get('/feedback-summaries', authenticate, async (req: Request, res: Respon
   try {
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const where: any = { facultyId: profile.id };
     if (Number.isFinite(semesterQuery)) where.semester = semesterQuery;
     const courses = await prisma.course.findMany({
@@ -1300,21 +1259,21 @@ router.get('/feedback-summaries', authenticate, async (req: Request, res: Respon
 
     res.json({ success: true, data: summaries });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.post('/research/projects', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const { title, fundingAgency, amount, status } = req.body;
     const project = await prisma.researchProject.create({
       data: { facultyProfileId: profile.id, title, fundingAgency, amount, status: status || 'submitted' }
     });
     res.json({ success: true, data: project });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1322,7 +1281,7 @@ router.post('/research/projects', authenticate, async (req: Request, res: Respon
 router.get('/committees', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const committees = await db.committee.findMany({ where: { facultyId: profile.id } });
     res.json({
       success: true,
@@ -1338,7 +1297,7 @@ router.get('/committees', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1374,7 +1333,7 @@ router.get('/grievances', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1409,7 +1368,7 @@ router.get('/grievances/:id', authenticate, async (req: Request, res: Response) 
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1463,7 +1422,7 @@ router.post('/grievances', authenticate, async (req: Request, res: Response) => 
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1485,7 +1444,7 @@ router.post('/grievances/:id/respond', authenticate, async (req: Request, res: R
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -1494,7 +1453,7 @@ router.get('/messages', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const courseWhere: any = { facultyId: profile.id };
     if (Number.isFinite(semesterQuery)) courseWhere.semester = semesterQuery;
     const courses = await prisma.course.findMany({
@@ -1508,14 +1467,14 @@ router.get('/messages', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: messages });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
 router.post('/messages', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const profile = await getOrCreateFacultyProfile(userId);
+    const profile = await getFacultyProfile(userId);
     const { courseId, courseCode, subject, message } = req.body;
 
     const enrollmentCount = await prisma.enrollment.count({ where: { courseId } });
@@ -1525,7 +1484,7 @@ router.post('/messages', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: msg });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

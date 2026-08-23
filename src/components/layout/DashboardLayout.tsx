@@ -17,6 +17,19 @@ interface DashboardLayoutProps {
   children: ReactNode;
 }
 
+/**
+ * URL segment → breadcrumb label.
+ *
+ * Keys are PATH SEGMENTS, not routes, so the same segment appears under several
+ * parents (`/sports/events` and `/alumni/events`). Duplicate keys used to make the
+ * last definition silently win, so `/sports/events` breadcrumbed as "Events &
+ * Reunions" and the security officer's compliance page showed IQAC's title.
+ *
+ * Where a segment serves more than one parent the label is deliberately generic.
+ * A role-specific label needs a path-aware lookup, not a second key here — a
+ * duplicate is now a compile error (TS1117), which is the guard against this
+ * recurring.
+ */
 const routeLabels: Record<string, string> = {
   dashboard: 'Dashboard',
   student: 'Student Portal',
@@ -38,7 +51,7 @@ const routeLabels: Record<string, string> = {
   grievance: 'Grievance Portal',
   'grievance-portal': 'Grievance Portal',
   cases: 'Case Management',
-  compliance: 'Compliance Tracking',
+  compliance: 'Compliance',
   security: 'Security Operations',
   'security-operations': 'Security Operations',
   incidents: 'Incident Reporting',
@@ -69,7 +82,6 @@ const routeLabels: Record<string, string> = {
   approvals: 'Approvals & Decisions',
   policy: 'Policy & Planning',
   meetings: 'Meetings & Workflow',
-  compliance: 'Compliance & Accreditation',
   analytics: 'Analytics & Reports',
   'global-access': 'Global Access',
   registrar: 'Registrar Portal',
@@ -81,10 +93,8 @@ const routeLabels: Record<string, string> = {
   hr: 'Establishment & HR',
   queries: 'Queries & Verification',
   coe: 'COE Portal',
-  'exam-oversight': 'Exam Oversight',
   'result-submission': 'Result Submission',
   submissions: 'Submission Tracker',
-  finance: 'Finance Officer',
   'fee-management': 'Fee Management',
   accounting: 'Accounting & Ledger',
   procurement: 'Procurement & Payments',
@@ -99,11 +109,10 @@ const routeLabels: Record<string, string> = {
   athletes: 'Athletes Database',
   teams: 'Team Management',
   facilities: 'Facility Booking',
-  events: 'Events & Tournaments',
+  events: 'Events',
   health: 'Health & Fitness',
   alumni: 'Alumni Portal',
   directory: 'Alumni Directory',
-  events: 'Events & Reunions',
   mentorship: 'Mentorship Programs',
   donations: 'Fundraising & Donations',
   progression: 'Progression Data',

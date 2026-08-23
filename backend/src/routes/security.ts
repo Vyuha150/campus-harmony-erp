@@ -3,6 +3,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { sendError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -30,7 +31,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -40,7 +41,7 @@ router.get('/visitors', authenticate, async (req: Request, res: Response) => {
     const visitors = await prisma.visitorPass.findMany({ orderBy: { checkInTime: 'desc' }, take: 100 });
     res.json({ success: true, data: visitors });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -62,7 +63,7 @@ router.post('/visitors', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: visitor });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -90,7 +91,7 @@ router.put('/visitors/:id', authenticate, async (req: Request, res: Response) =>
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -100,7 +101,7 @@ router.delete('/visitors/:id', authenticate, async (req: Request, res: Response)
     await prisma.visitorPass.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -110,7 +111,7 @@ router.get('/incidents', authenticate, async (req: Request, res: Response) => {
     const incidents = await prisma.incidentReport.findMany({ orderBy: { reportedAt: 'desc' } });
     res.json({ success: true, data: incidents });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -132,7 +133,7 @@ router.post('/incidents', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: incident });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -142,7 +143,7 @@ router.put('/incidents/:id', authenticate, async (req: Request, res: Response) =
     const updated = await prisma.incidentReport.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -152,7 +153,7 @@ router.delete('/incidents/:id', authenticate, async (req: Request, res: Response
     await prisma.incidentReport.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -162,7 +163,7 @@ router.get('/patrols', authenticate, async (req: Request, res: Response) => {
     const patrols = await prisma.patrolLog.findMany({ orderBy: { startTime: 'desc' }, take: 50 });
     res.json({ success: true, data: patrols });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -189,7 +190,7 @@ router.post('/patrols', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: created });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -212,7 +213,7 @@ router.put('/patrols/:id', authenticate, async (req: Request, res: Response) => 
     const updated = await prisma.patrolLog.update({ where: { id }, data });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -222,7 +223,7 @@ router.delete('/patrols/:id', authenticate, async (req: Request, res: Response) 
     await prisma.patrolLog.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -268,7 +269,7 @@ router.get('/guards', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: withDuty });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -314,7 +315,7 @@ router.post('/guards', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -359,7 +360,7 @@ router.put('/guards/:id', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: { ...updated, latestDuty } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -421,7 +422,7 @@ router.put('/guards/:id/duty', authenticate, async (req: Request, res: Response)
 
     res.json({ success: true, data: duty });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -432,7 +433,7 @@ router.delete('/guards/:id', authenticate, async (req: Request, res: Response) =
     await prisma.user.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -442,7 +443,7 @@ router.get('/id-cards', authenticate, async (req: Request, res: Response) => {
     const requests = await prisma.iDCardRequest.findMany({ orderBy: { requestDate: 'desc' } });
     res.json({ success: true, data: requests });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -468,7 +469,7 @@ router.post('/id-cards', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: request });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -501,7 +502,7 @@ router.put('/id-cards/:id', authenticate, async (req: Request, res: Response) =>
     const updated = await prisma.iDCardRequest.update({ where: { id }, data });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -511,7 +512,7 @@ router.delete('/id-cards/:id', authenticate, async (req: Request, res: Response)
     await prisma.iDCardRequest.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -521,7 +522,7 @@ router.get('/vehicle-passes', authenticate, async (req: Request, res: Response) 
     const passes = await prisma.vehiclePass.findMany({ orderBy: { validFrom: 'desc' } });
     res.json({ success: true, data: passes });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -566,7 +567,7 @@ router.post('/vehicle-passes', authenticate, async (req: Request, res: Response)
     });
     res.json({ success: true, data: pass });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -605,7 +606,7 @@ router.put('/vehicle-passes/:id', authenticate, async (req: Request, res: Respon
     const updated = await prisma.vehiclePass.update({ where: { id }, data });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -615,7 +616,7 @@ router.delete('/vehicle-passes/:id', authenticate, async (req: Request, res: Res
     await prisma.vehiclePass.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -625,7 +626,7 @@ router.get('/hostel-access', authenticate, async (req: Request, res: Response) =
     const logs = await prisma.hostelAccessLog.findMany({ orderBy: { outTime: 'desc' }, take: 100 });
     res.json({ success: true, data: logs });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -635,7 +636,7 @@ router.get('/vigilance-cases', authenticate, async (req: Request, res: Response)
     const cases = await prisma.vigilanceCase.findMany({ orderBy: { dateReported: 'desc' } });
     res.json({ success: true, data: cases });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -647,7 +648,7 @@ router.post('/vigilance-cases', authenticate, async (req: Request, res: Response
     });
     res.json({ success: true, data: caseRecord });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -688,7 +689,7 @@ router.put('/vigilance-cases/:id', authenticate, async (req: Request, res: Respo
     const updated = await prisma.vigilanceCase.update({ where: { id }, data });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -698,7 +699,7 @@ router.delete('/vigilance-cases/:id', authenticate, async (req: Request, res: Re
     await prisma.vigilanceCase.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -708,7 +709,7 @@ router.get('/support-tickets', authenticate, async (req: Request, res: Response)
     const tickets = await prisma.supportTicket.findMany({ orderBy: { createdDate: 'desc' } });
     res.json({ success: true, data: tickets });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -720,7 +721,7 @@ router.post('/support-tickets', authenticate, async (req: Request, res: Response
     });
     res.json({ success: true, data: ticket });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -761,7 +762,7 @@ router.put('/support-tickets/:id', authenticate, async (req: Request, res: Respo
     const updated = await prisma.supportTicket.update({ where: { id }, data });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -771,7 +772,7 @@ router.delete('/support-tickets/:id', authenticate, async (req: Request, res: Re
     await prisma.supportTicket.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

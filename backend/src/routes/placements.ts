@@ -2,6 +2,8 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { sendError } from '../lib/errors.js';
+import { hashPassword, generateTemporaryPassword } from '../lib/password.js';
 
 const router = Router();
 const customCommunicationTemplates: Array<{ id: string; name: string; category: string; desc: string }> = [];
@@ -114,7 +116,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -137,7 +139,7 @@ router.get('/students', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -153,8 +155,17 @@ router.post('/students', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    const bcrypt = await import('bcrypt');
-    const hashedPassword = await bcrypt.hash(String(payload.password || 'Student@123'), 10);
+    // Previously: `bcrypt.hash(String(payload.password || 'Student@123'), 10)`.
+    // Omitting the password created a real student account with a password
+    // published in a public repository. A temporary password is now generated
+    // and returned once to the caller for out-of-band delivery.
+    const temporaryPassword =
+      typeof payload.password === 'string' && payload.password.length > 0
+        ? payload.password
+        : generateTemporaryPassword();
+
+    const hashedPassword = await hashPassword(temporaryPassword);
+    const passwordWasGenerated = payload.password !== temporaryPassword;
 
     const created = await prisma.$transaction(async (tx: any) => {
       const user = await tx.user.create({
@@ -187,6 +198,9 @@ router.post('/students', authenticate, async (req: Request, res: Response) => {
 
     res.json({
       success: true,
+      // Returned ONCE so the operator can deliver it out of band. It is not
+      // stored in plaintext and cannot be retrieved again.
+      ...(passwordWasGenerated ? { temporaryPassword } : {}),
       data: {
         id: created.student.id,
         userId: created.user.id,
@@ -203,7 +217,7 @@ router.post('/students', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -245,7 +259,7 @@ router.get('/students/:id', authenticate, async (req: Request, res: Response) =>
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -287,7 +301,7 @@ router.put('/students/:id', authenticate, async (req: Request, res: Response) =>
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -304,7 +318,7 @@ router.delete('/students/:id', authenticate, async (req: Request, res: Response)
     await prisma.user.delete({ where: { id: profile.userId } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -328,7 +342,7 @@ router.get('/companies', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -346,7 +360,7 @@ router.post('/companies', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: company });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -366,7 +380,7 @@ router.put('/companies/:id', authenticate, async (req: Request, res: Response) =
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -376,7 +390,7 @@ router.delete('/companies/:id', authenticate, async (req: Request, res: Response
     await prisma.company.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -411,7 +425,7 @@ router.get('/drives', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -436,7 +450,7 @@ router.post('/drives', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: drive });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -459,7 +473,7 @@ router.put('/drives/:id', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -469,7 +483,7 @@ router.delete('/drives/:id', authenticate, async (req: Request, res: Response) =
     await prisma.placementDrive.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -489,7 +503,7 @@ router.get('/drives/:id/applications', authenticate, async (req: Request, res: R
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -516,7 +530,7 @@ router.put('/drives/:driveId/applications/:applicationId', authenticate, async (
 
     res.json({ success: true, data: { id: applicationId, status } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -532,7 +546,7 @@ router.get('/training', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -556,7 +570,7 @@ router.post('/training', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: session });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -582,7 +596,7 @@ router.put('/training/:id', authenticate, async (req: Request, res: Response) =>
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -592,7 +606,7 @@ router.delete('/training/:id', authenticate, async (req: Request, res: Response)
     await prisma.trainingSession.delete({ where: { id } });
     res.json({ success: true, data: { id } });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -635,7 +649,7 @@ router.get('/reports', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -660,7 +674,7 @@ router.get('/analytics/department-wise', authenticate, async (_req: Request, res
 
     res.json({ success: true, data: Array.from(grouped.values()) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -669,7 +683,7 @@ router.get('/offers/recent', authenticate, async (_req: Request, res: Response) 
     const offers = await prisma.jobOffer.findMany({ orderBy: { offerDate: 'desc' }, take: 20 });
     res.json({ success: true, data: offers });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -693,7 +707,7 @@ router.get('/reports/department-wise', authenticate, async (_req: Request, res: 
 
     res.json({ success: true, data: Array.from(grouped.values()) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -715,7 +729,7 @@ router.get('/reports/outcomes', authenticate, async (_req: Request, res: Respons
       ]
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -745,7 +759,7 @@ router.get('/reports/salary-bands', authenticate, async (_req: Request, res: Res
 
     res.json({ success: true, data: bands.map(({ band, count }) => ({ band, count })) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -761,7 +775,7 @@ router.post('/reports/generate', authenticate, async (req: Request, res: Respons
 
     res.json({ success: true, data });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -771,7 +785,7 @@ router.get('/messages', authenticate, async (req: Request, res: Response) => {
     const messages = await prisma.placementMessage.findMany({ orderBy: { sentAt: 'desc' } });
     res.json({ success: true, data: messages });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -790,7 +804,7 @@ router.post('/messages', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: msg });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -810,7 +824,7 @@ router.get('/communication/recent', authenticate, async (_req: Request, res: Res
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -827,7 +841,7 @@ router.get('/communication/templates', authenticate, async (_req: Request, res: 
       data: [...defaultTemplates, ...customCommunicationTemplates]
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -844,7 +858,7 @@ router.post('/communication/templates', authenticate, async (req: Request, res: 
     customCommunicationTemplates.push(template);
     res.json({ success: true, data: template });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -862,7 +876,7 @@ router.get('/communication/stats', authenticate, async (_req: Request, res: Resp
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

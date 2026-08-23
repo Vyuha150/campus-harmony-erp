@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { sendError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -63,7 +64,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -78,7 +79,7 @@ router.get('/criteria', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: grouped });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -88,7 +89,7 @@ router.put('/criteria/:id', authenticate, async (req: Request, res: Response) =>
     const updated = await prisma.qualityMetric.update({ where: { id }, data: req.body });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -98,7 +99,7 @@ router.get('/actions', authenticate, async (req: Request, res: Response) => {
     const actions = await prisma.iQACActionItem.findMany({ orderBy: { dueDate: 'asc' } });
     res.json({ success: true, data: actions });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -109,7 +110,7 @@ router.post('/actions', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: action });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -122,7 +123,7 @@ router.put('/actions/:id', authenticate, async (req: Request, res: Response) => 
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -132,7 +133,7 @@ router.get('/documents', authenticate, async (req: Request, res: Response) => {
     const docs = await prisma.qualityDocument.findMany({ orderBy: { uploadDate: 'desc' } });
     res.json({ success: true, data: docs });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -144,7 +145,7 @@ router.post('/documents', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: doc });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -158,7 +159,7 @@ router.put('/documents/:id', authenticate, async (req: Request, res: Response) =
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -195,7 +196,7 @@ router.get('/feedback', authenticate, async (req: Request, res: Response) => {
       }))
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -221,7 +222,7 @@ router.post('/feedback/create-form', authenticate, async (req: Request, res: Res
     });
     res.json({ success: true, data: form });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -231,7 +232,7 @@ router.get('/reports', authenticate, async (req: Request, res: Response) => {
     const aqar = await prisma.aQARRecord.findMany({ orderBy: { academicYear: 'desc' } });
     res.json({ success: true, data: aqar });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -253,7 +254,7 @@ router.post('/reports/generate', authenticate, async (req: Request, res: Respons
     });
     res.json({ success: true, data: aqar });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -276,7 +277,7 @@ router.put('/reports/:id', authenticate, async (req: Request, res: Response) => 
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -286,7 +287,7 @@ router.get('/meetings', authenticate, async (req: Request, res: Response) => {
     const meetings = await prisma.iQACMeeting.findMany({ orderBy: { date: 'desc' } });
     res.json({ success: true, data: meetings });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -317,7 +318,7 @@ router.post('/meetings', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: meeting });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -345,7 +346,7 @@ router.put('/meetings/:id', authenticate, async (req: Request, res: Response) =>
     });
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

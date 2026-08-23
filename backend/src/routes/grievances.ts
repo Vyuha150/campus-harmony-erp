@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { sendError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -27,7 +28,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -67,7 +68,7 @@ router.get('/cases', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -88,7 +89,7 @@ router.get('/cases/:id', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: grievance });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -143,7 +144,7 @@ router.post('/cases', authenticate, async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: grievance });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -168,7 +169,7 @@ router.put('/cases/:id', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -214,7 +215,7 @@ router.post('/cases/:id/activity', authenticate, async (req: Request, res: Respo
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -235,7 +236,7 @@ router.get('/compliance', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -256,7 +257,7 @@ router.get('/compliance/:id', authenticate, async (req: Request, res: Response) 
 
     res.json({ success: true, data: item });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -286,7 +287,7 @@ router.post('/compliance', authenticate, async (req: Request, res: Response) => 
 
     res.status(201).json({ success: true, data: item });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -311,7 +312,7 @@ router.put('/compliance/:id', authenticate, async (req: Request, res: Response) 
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -324,7 +325,7 @@ router.get('/affidavits', authenticate, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: affidavits });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -351,7 +352,7 @@ router.post('/affidavits', authenticate, async (req: Request, res: Response) => 
 
     res.status(201).json({ success: true, data: affidavit });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -369,7 +370,7 @@ router.put('/affidavits/:id', authenticate, async (req: Request, res: Response) 
 
     res.json({ success: true, data: updated });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
@@ -399,7 +400,7 @@ router.get('/reports', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
