@@ -6,6 +6,11 @@ import { getTenantContext } from '../lib/tenant.js';
 import { sendError } from '../lib/errors.js';
 import * as workflow from '../modules/workflow/workflow.service.js';
 import { ensureDefinition } from '../modules/workflow/bridge.js';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { z } from 'zod';
+import * as exams from '../modules/coe/exams.service.js';
+import { createExamSchema, updateExamSchema } from '../modules/coe/exams.schema.js';
 import { RESULT_PUBLICATION } from '../modules/workflow/builtins.js';
 
 const router = Router();
@@ -19,115 +24,69 @@ function normalizeSemester(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-router.get('/exams', authenticate, async (_req: Request, res: Response) => {
-  try {
-    const [exams, profiles] = await Promise.all([
-      prisma.examProgress.findMany({ orderBy: { startDate: 'desc' } }),
-      prisma.studentProfile.findMany({ select: { program: true, semester: true } })
-    ]);
+// ─── Examination schedule (Phase 3a — migrated to the service layer) ─────────
+//
+// The four handlers below were replaced. What they used to do is recorded in
+// modules/coe/exams.service.ts; in short: no tenant key, `update({ where: { id },
+// data: req.body })` in two files, an unaudited hard delete, and a list endpoint
+// that recomputed `totalStudents` from student profiles instead of reading it.
 
-    const totalProfiles = profiles.length;
-    const programCounts = new Map<string, number>();
-    const programSemesterCounts = new Map<string, number>();
-
-    for (const profile of profiles) {
-      const programKey = normalizeText(profile.program);
-      const semester = normalizeSemester(profile.semester);
-      if (!programKey) continue;
-
-      programCounts.set(programKey, (programCounts.get(programKey) || 0) + 1);
-      if (semester !== null) {
-        const key = `${programKey}::${semester}`;
-        programSemesterCounts.set(key, (programSemesterCounts.get(key) || 0) + 1);
-      }
-    }
-
-    const normalized = exams.map((exam: any) => {
-      const storedTotal = Math.max(0, Number(exam.totalStudents) || 0);
-      const programKey = normalizeText(exam.program);
-      const semester = normalizeSemester(exam.semester);
-
-      let inferredTotal: number | undefined;
-      if (programKey && semester !== null) {
-        inferredTotal = programSemesterCounts.get(`${programKey}::${semester}`);
-      }
-      if ((inferredTotal === undefined || inferredTotal === 0) && programKey) {
-        inferredTotal = programCounts.get(programKey);
-      }
-      if (inferredTotal === undefined || inferredTotal === 0) {
-        inferredTotal = totalProfiles > 0 ? totalProfiles : storedTotal;
-      }
-
-      const totalStudents = Math.max(0, inferredTotal || 0);
-      let marksEntered = Math.max(0, Number(exam.marksEntered) || 0);
-      marksEntered = Math.min(marksEntered, totalStudents);
-      if (exam.status === 'published' || exam.resultsPublished) {
-        marksEntered = totalStudents;
-      }
-
-      return { ...exam, totalStudents, marksEntered };
-    });
-
-    res.json({ success: true, data: normalized });
-  } catch (error: any) {
-    sendError(res, error);
-  }
+const examPage = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50)
 });
 
-router.post('/exams', authenticate, async (req: Request, res: Response) => {
-  try {
-    const userId = String((req as any).user.id);
-    const { examName, semester, program, totalStudents, startDate, endDate, coordinator } = req.body;
+router.get(
+  '/exams',
+  authenticate,
+  validate({ query: examPage }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = req.query as unknown as { page: number; pageSize: number };
+    const result = await exams.listExams(getTenantContext(req), q);
+    res.json({ success: true, ...result });
+  })
+);
 
-    if (!examName || !semester || !program || !totalStudents || !startDate || !endDate) {
-      res.status(400).json({
-        success: false,
-        message: 'examName, semester, program, totalStudents, startDate and endDate are required'
-      });
-      return;
-    }
+router.post(
+  '/exams',
+  authenticate,
+  validate({ body: createExamSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const created = await exams.createExam(getTenantContext(req), req.body);
+    res.status(201).json({ success: true, data: created });
+  })
+);
 
-    const creator = await prisma.user.findUnique({ where: { id: userId } });
-    const created = await prisma.examProgress.create({
-      data: {
-        examName: String(examName),
-        semester: String(semester),
-        program: String(program),
-        totalStudents: Math.max(0, Number(totalStudents) || 0),
-        marksEntered: 0,
-        resultsPublished: false,
-        status: 'scheduling',
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        coordinator: String(coordinator || creator?.name || userId)
-      }
-    });
-
-    res.json({ success: true, data: created });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
-
-router.put('/exams/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.examProgress.update({ where: { id }, data: req.body });
+router.put(
+  '/exams/:id',
+  authenticate,
+  validate({ params: z.object({ id: z.string().trim().min(1).max(80) }), body: updateExamSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await exams.updateExam(
+      getTenantContext(req),
+      String(req.params.id),
+      req.body
+    );
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
-router.delete('/exams/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.examProgress.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+router.delete(
+  '/exams/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: z.string().trim().min(1).max(80) }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await exams.deleteExam(
+      getTenantContext(req),
+      String(req.params.id),
+      String(req.body.reason)
+    );
+    res.json({ success: true, data: result });
+  })
+);
 
 router.get('/dashboard', authenticate, async (_req: Request, res: Response) => {
   try {

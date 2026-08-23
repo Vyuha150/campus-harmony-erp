@@ -108,6 +108,8 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   // Approvals (0022). Was entirely unscoped — a cross-tenant AUTHORITY breach,
   // not merely a read leak: one institution's HOD could approve another's items.
   'ApprovalItem',
+  // 0027 — the examination schedule was shared across every institution.
+  'ExamProgress',
   // Workflow engine (0024). WorkflowStep and WorkflowTransition are NOT listed:
   // they carry no institutionId and are scoped through their parent.
   'WorkflowDefinition',

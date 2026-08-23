@@ -113,6 +113,7 @@ model Institution {
   approvalItems          ApprovalItem[]
   workflowDefinitions    WorkflowDefinition[]
   workflowInstances      WorkflowInstance[]
+  examProgress           ExamProgress[]
 
   @@index([isActive])
 }
@@ -1723,7 +1724,13 @@ model RecordChangeRequest {
 
 // Registrar — Exam Progress
 model ExamProgress {
-  id               String   @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// TENANT KEY, added in 0027. Without it the examination schedule was shared
+  /// across every institution, and two handlers wrote it with
+  /// `update({ where: { id }, data: req.body })` — a unique-key update the
+  /// tenant extension cannot constrain, carrying an unfiltered request body.
+  institutionId    String
   examName         String
   semester         String
   program          String
@@ -1734,6 +1741,10 @@ model ExamProgress {
   startDate        DateTime @db.Timestamptz(3)
   endDate          DateTime @db.Timestamptz(3)
   coordinator      String
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Finance — Fee Structures

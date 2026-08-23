@@ -324,8 +324,8 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
             body
           });
 
-          await basePrisma.notificationDelivery.update({
-            where: { id: delivery.id },
+          await basePrisma.notificationDelivery.updateMany({
+            where: { id: delivery.id, institutionId: ctx.institutionId },
             data: {
               status: outcome.delivered ? 'sent' : 'failed',
               provider: outcome.provider,
@@ -344,8 +344,8 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
           // the other channels still have to go out.
           const reason = error instanceof Error ? error.message : String(error);
 
-          await basePrisma.notificationDelivery.update({
-            where: { id: delivery.id },
+          await basePrisma.notificationDelivery.updateMany({
+            where: { id: delivery.id, institutionId: ctx.institutionId },
             data: {
               status: 'failed',
               attempts: 1,
@@ -410,8 +410,8 @@ export async function retryFailedDeliveries(limit = 50) {
         body: delivery.body
       });
 
-      await basePrisma.notificationDelivery.update({
-        where: { id: delivery.id },
+      await basePrisma.notificationDelivery.updateMany({
+        where: { id: delivery.id, institutionId: ctx.institutionId },
         data: {
           status: outcome.delivered ? 'sent' : 'failed',
           provider: outcome.provider,
@@ -424,8 +424,8 @@ export async function retryFailedDeliveries(limit = 50) {
 
       if (outcome.delivered) recovered += 1;
     } catch (error) {
-      await basePrisma.notificationDelivery.update({
-        where: { id: delivery.id },
+      await basePrisma.notificationDelivery.updateMany({
+        where: { id: delivery.id, institutionId: ctx.institutionId },
         data: {
           attempts: { increment: 1 },
           lastAttemptAt: new Date(),
@@ -503,8 +503,12 @@ export async function markRead(deliveryId: string, userId: string) {
   });
   if (!delivery) throw new NotFoundError('Notification');
 
-  return basePrisma.notificationDelivery.update({
-    where: { id: deliveryId },
-    data: { readAt: delivery.readAt ?? new Date() }
+  const readAt = delivery.readAt ?? new Date();
+
+  await basePrisma.notificationDelivery.updateMany({
+    where: { id: deliveryId, institutionId: ctx.institutionId, userId },
+    data: { readAt }
   });
+
+  return { ...delivery, readAt };
 }

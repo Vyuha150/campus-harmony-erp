@@ -1,0 +1,262 @@
+/**
+ * Service-layer tenant scoping (Phase 3a).
+ *
+ * THE HAZARD THIS GUARDS
+ *
+ * Automatic scoping comes from the Prisma extension, which wraps `prisma`. The
+ * service layer does not use it:
+ *
+ *   - services import `basePrisma`, the UNSCOPED client;
+ *   - `mutate()` opens its transaction on `basePrisma`, so the `tx` handed to
+ *     every service operation is unscoped too.
+ *
+ * So inside a service, tenant safety is not structural. It depends on the author
+ * writing `institutionId: context.institutionId` into each `where`. Nothing in
+ * the type system notices when they don't.
+ *
+ * That is not hypothetical. The first version of `modules/coe/exams.service.ts`
+ * used `basePrisma` without the filter, and live verification showed another
+ * institution's exam listed and then successfully renamed through
+ * `PUT /coe/exams/:id` — the same authority breach as the pre-0022 approvals
+ * routes, reintroduced through the service layer that was supposed to prevent it.
+ *
+ * These tests make that failure loud at build time.
+ */
+
+import { describe, it, expect } from 'vitest';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { TENANT_OWNED_MODELS } from '../lib/tenantExtension.js';
+
+const modulesDir = fileURLToPath(new URL('../modules', import.meta.url));
+const routesDir = () => fileURLToPath(new URL('../routes', import.meta.url));
+
+const stripComments = (s: string) =>
+  s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+/** Every `*.service.ts` under src/modules. */
+function serviceFiles(): { path: string; name: string; source: string }[] {
+  const out: { path: string; name: string; source: string }[] = [];
+  for (const dir of readdirSync(modulesDir, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue;
+    const full = join(modulesDir, dir.name);
+    if (!existsSync(full)) continue;
+    for (const f of readdirSync(full)) {
+      if (!f.endsWith('.service.ts')) continue;
+      out.push({
+        path: `${dir.name}/${f}`,
+        name: f,
+        source: stripComments(readFileSync(join(full, f), 'utf8'))
+      });
+    }
+  }
+  return out;
+}
+
+/** Model name as it appears on a Prisma client: `ExamProgress` -> `examProgress`. */
+const delegateOf = (model: string) => model[0]!.toLowerCase() + model.slice(1);
+
+const TENANT_DELEGATES = new Set([...TENANT_OWNED_MODELS].map(delegateOf));
+
+/**
+ * Find `<client>.<delegate>.<op>({ where: { id ... } })` calls whose where-clause
+ * names no `institutionId`.
+ *
+ * Only where-clauses whose KEY is `id` are examined. Two refinements, both from
+ * false positives this matcher produced on its first run:
+ *
+ *   - `where: { studentProfileId: student.id }` was flagged because a loose
+ *     `\bid\b` matched the `.id` property access on the right-hand side. The key
+ *     is `studentProfileId`, and the parent row was already tenant-checked.
+ *   - `where: { id: context.userId }` is a caller looking up their own user row.
+ *     That cannot cross a tenant boundary, because the id comes from their own
+ *     verified token rather than from the request.
+ *
+ * A query filtered by some other tenant-derived column is a judgement this test
+ * cannot make, so it does not try. It catches the specific shape that has
+ * actually gone wrong in this codebase.
+ */
+function unscopedByIdLookups(source: string): string[] {
+  const found: string[] = [];
+  const call =
+    /\b(?:basePrisma|tx)\.([a-zA-Z]+)\.(findFirst|findMany|updateMany|deleteMany|count|update|delete)\s*\(\s*\{\s*where:\s*\{([^{}]*)\}/g;
+
+  /**
+   * `id` used as a where KEY, not as a property access like `student.id`.
+   * Matches both `{ id: x }` and the shorthand `{ id }` — the shorthand is the
+   * form the original unscoped handlers actually used, and an earlier version of
+   * this matcher required a colon and so ignored exactly the shape it existed to
+   * catch.
+   */
+  const idIsAKey = /(?:^|[{,])\s*id\s*(?::|,|$)/;
+  /** The caller's own user row, taken from the verified token. */
+  const selfLookup = /id\s*:\s*(?:context|ctx)\.userId/;
+
+  let m: RegExpExecArray | null;
+  while ((m = call.exec(source)) !== null) {
+    const [, delegate, op, whereBody] = m;
+    if (!TENANT_DELEGATES.has(delegate!)) continue;
+    if (!idIsAKey.test(whereBody!)) continue;
+    if (selfLookup.test(whereBody!)) continue;
+    if (/institutionId/.test(whereBody!)) continue;
+    found.push(`${delegate}.${op}({ where: {${whereBody!.trim()} } })`);
+  }
+  return found;
+}
+
+describe('service modules scope tenant-owned models explicitly', () => {
+  const files = serviceFiles();
+
+  it('found service files to check — otherwise every result below is vacuous', () => {
+    expect(files.length).toBeGreaterThan(4);
+  });
+
+  it.each(files.map((f) => [f.path, f] as const))(
+    '%s filters tenant-owned lookups by institutionId',
+    (_path, file) => {
+      expect(
+        unscopedByIdLookups(file.source),
+        `${file.path} queries a tenant-owned model by id without institutionId. ` +
+          'The service layer runs on the UNSCOPED client, so this reads and writes ' +
+          'across every institution.'
+      ).toEqual([]);
+    }
+  );
+
+  it('NEGATIVE CONTROL: the matcher detects an unscoped lookup', () => {
+    // Without this, a regex that silently stopped matching would turn every
+    // check above into a guaranteed pass.
+    const bad = 'await basePrisma.examProgress.findFirst({ where: { id } });';
+    expect(unscopedByIdLookups(bad)).toHaveLength(1);
+
+    const good =
+      'await basePrisma.examProgress.findFirst({ where: { id, institutionId: context.institutionId } });';
+    expect(unscopedByIdLookups(good)).toHaveLength(0);
+  });
+
+  it('NEGATIVE CONTROL: a model outside the tenant set is ignored', () => {
+    // `Institution` itself is not tenant-owned; flagging it would be noise.
+    const notOwned = 'await basePrisma.institution.findFirst({ where: { id } });';
+    expect(unscopedByIdLookups(notOwned)).toHaveLength(0);
+  });
+
+  it('NEGATIVE CONTROL: the two known false-positive shapes are not flagged', () => {
+    // If these ever start matching again, the refinements have regressed and the
+    // suite will start failing on safe code — which is how a guard gets deleted.
+    const propertyAccess =
+      'await basePrisma.feeRecord.findMany({ where: { studentProfileId: student.id } });';
+    const ownUserRow =
+      'await basePrisma.user.findFirst({ where: { id: context.userId }, select: { name: true } });';
+    expect(unscopedByIdLookups(propertyAccess)).toHaveLength(0);
+    expect(unscopedByIdLookups(ownUserRow)).toHaveLength(0);
+  });
+});
+
+describe('the examination schedule is tenant-owned', () => {
+  it('ExamProgress is registered with the extension', () => {
+    expect(TENANT_OWNED_MODELS.has('ExamProgress')).toBe(true);
+  });
+
+  it('the model carries a tenant key', () => {
+    const schema = readFileSync(
+      fileURLToPath(new URL('../../prisma/schema.prisma', import.meta.url)),
+      'utf8'
+    );
+    const block = /model\s+ExamProgress\s*\{([\s\S]*?)\n\}/.exec(schema);
+    expect(block).toBeTruthy();
+    expect(block![1]).toMatch(/institutionId\s+String/);
+  });
+
+  it('no exam route writes straight from req.body', () => {
+    // `update({ where: { id }, data: req.body })` appeared in coe.ts AND
+    // registrar.ts: a unique-key update the extension cannot constrain, carrying
+    // every column as writable. Both now go through exams.service.ts.
+    for (const f of ['coe.ts', 'registrar.ts']) {
+      const src = stripComments(readFileSync(join(routesDir(), f), 'utf8'));
+      expect(src, `${f} still writes examProgress from req.body`).not.toMatch(
+        /examProgress\.update\s*\(\s*\{\s*where:\s*\{\s*id\s*\}\s*,\s*data:\s*req\.body/
+      );
+    }
+  });
+});
+
+/**
+ * A RATCHET, not a clean bill of health.
+ *
+ * Migrating the exam schedule exposed that `update({ where: { id }, data: req.body })`
+ * is not confined to the two handlers it was found in. It appears 16 more times
+ * across 8 route files. Every one carries both defects: a unique-key update the
+ * tenant extension cannot constrain, and an unfiltered request body that makes
+ * every column writable.
+ *
+ * Each fix needs its own validation schema and service — the exam pair took a
+ * migration, a schema, a service, two rewired routes and a live run. Claiming
+ * they are fixed, or quietly excluding them so the suite stays green, would both
+ * be false. So the count is recorded here instead:
+ *
+ *   - the total may not GROW, which stops the pattern spreading;
+ *   - lowering it requires editing this file, so a migration is deliberate;
+ *   - the debt is visible in a test run rather than buried in a document.
+ *
+ * Current inventory is in docs/development-plan/20_PHASE_3_BASELINE.md.
+ */
+describe('mass-assignment debt does not grow', () => {
+  /** Files still writing a model directly from `req.body`, with counts. */
+  const KNOWN_MASS_ASSIGNMENT: Record<string, number> = {
+    'admin.ts': 1,
+    'alumni.ts': 2,
+    'finance.ts': 1,
+    'grievances.ts': 1,
+    'iqac.ts': 1,
+    'registrar.ts': 3,
+    'security.ts': 1,
+    'sports.ts': 5,
+    'vc.ts': 2
+  };
+
+  const pattern = /\.update\s*\(\s*\{\s*where:\s*\{\s*id\s*\}\s*,\s*data:\s*req\.body/g;
+
+  function countIn(file: string): number {
+    const src = stripComments(readFileSync(join(routesDir(), file), 'utf8'));
+    return (src.match(pattern) ?? []).length;
+  }
+
+  it('no route file exceeds its recorded count', () => {
+    const actual: Record<string, number> = {};
+    for (const f of readdirSync(routesDir()).filter((n) => n.endsWith('.ts'))) {
+      const n = countIn(f);
+      if (n > 0) actual[f] = n;
+    }
+
+    for (const [file, count] of Object.entries(actual)) {
+      const allowed = KNOWN_MASS_ASSIGNMENT[file] ?? 0;
+      expect(
+        count,
+        `${file} has ${count} handler(s) writing a model from req.body; ${allowed} recorded. ` +
+          'Route the new one through a service with a .strict() schema rather than raising this number.'
+      ).toBeLessThanOrEqual(allowed);
+    }
+  });
+
+  it('recorded counts are not stale — a fixed file must be removed from the list', () => {
+    for (const [file, allowed] of Object.entries(KNOWN_MASS_ASSIGNMENT)) {
+      const actual = countIn(file);
+      expect(
+        actual,
+        `${file} is recorded as having ${allowed} but has ${actual}. ` +
+          'Lower or remove its entry so the ratchet keeps tightening.'
+      ).toBe(allowed);
+    }
+  });
+
+  it('NEGATIVE CONTROL: the pattern matches the shape it counts', () => {
+    const bad = 'const x = await prisma.thing.update({ where: { id }, data: req.body });';
+    expect((bad.match(pattern) ?? []).length).toBe(1);
+  });
+
+  it('NEGATIVE CONTROL: the req.body matcher still works', () => {
+    const bad = 'prisma.examProgress.update({ where: { id }, data: req.body });';
+    expect(bad).toMatch(/\.update\s*\(\s*\{\s*where:\s*\{\s*id\s*\}\s*,\s*data:\s*req\.body/);
+  });
+});

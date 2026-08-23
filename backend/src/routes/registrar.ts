@@ -4,6 +4,11 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { getTenantContext } from '../lib/tenant.js';
 import { sendError } from '../lib/errors.js';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { z } from 'zod';
+import * as exams from '../modules/coe/exams.service.js';
+import { updateExamSchema } from '../modules/coe/exams.schema.js';
 
 const router = Router();
 
@@ -261,15 +266,26 @@ router.get('/exams', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/exams/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const updated = await prisma.examProgress.update({ where: { id }, data: req.body });
+// Phase 3a. This handler carried the SAME line as coe.ts:
+//
+//     prisma.examProgress.update({ where: { id }, data: req.body })
+//
+// A unique-key update the tenant extension cannot constrain, carrying an
+// unfiltered request body. Both now go through one service, so the rule holds in
+// both places and cannot drift apart again.
+router.put(
+  '/exams/:id',
+  authenticate,
+  validate({ params: z.object({ id: z.string().trim().min(1).max(80) }), body: updateExamSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await exams.updateExam(
+      getTenantContext(req),
+      String(req.params.id),
+      req.body
+    );
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Documents ───
 router.get('/documents', authenticate, async (req: Request, res: Response) => {
