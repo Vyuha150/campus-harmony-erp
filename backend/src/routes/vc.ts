@@ -600,9 +600,13 @@ router.get('/revenue-streams', authenticate, async (_req: Request, res: Response
     const other = Math.max(0, tuition * 0.05);
     const total = tuition + grants + other;
     const rows = [
-      { source: 'Tuition Fees', amount: Math.round(tuition), trend: '+0.0%' },
-      { source: 'Research & Grants', amount: Math.round(grants), trend: '+0.0%' },
-      { source: 'Other Income', amount: Math.round(other), trend: '+0.0%' },
+      // `trend` was the literal '+0.0%' on every line. A trend needs a prior
+      // period to compare against, and none is loaded here, so the field is null
+      // rather than a number that looks measured. Restoring it means loading the
+      // comparable period, not typing a value.
+      { source: 'Tuition Fees', amount: Math.round(tuition), trend: null },
+      { source: 'Research & Grants', amount: Math.round(grants), trend: null },
+      { source: 'Other Income', amount: Math.round(other), trend: null },
     ].map((row) => ({
       ...row,
       percentage: total > 0 ? Math.round((row.amount / total) * 100) : 0

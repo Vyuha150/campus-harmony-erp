@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   CheckCircle, XCircle, Clock, Calendar, Filter,
-  TrendingUp, AlertCircle, ChevronLeft, ChevronRight
+  TrendingUp, AlertCircle, ChevronLeft, ChevronRight, MinusCircle
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -24,14 +24,24 @@ type AttendanceCourse = {
   courseCode: string;
   courseName: string;
   semester: number;
-  attendance: number;
+  // `null` means NO SESSIONS HAVE BEEN MARKED for this course — distinct from
+  // 0%, which means marked and absent throughout. The API used to send 100 here
+  // when it had no records at all; it now sends null, and this screen must not
+  // quietly turn that back into a number.
+  attendance: number | null;
+  // Real counts from the API. The UI used to divide by a hardcoded 46 — a
+  // "total classes" figure nobody had measured, applied to every course.
+  totalClasses: number;
+  present: number;
   faculty: string;
   records: AttendanceRecord[];
 };
 
 type AttendanceSummary = {
   courseId: string;
-  percentage: number;
+  percentage: number | null;
+  totalClasses: number;
+  present: number;
   records: AttendanceRecord[];
 };
 
@@ -50,7 +60,12 @@ function normalizeCourses(raw: any): AttendanceCourse[] {
       courseCode: safeString(course?.code, '-'),
       courseName: safeString(course?.name, 'Course'),
       semester: safeNumber(course?.semester, 1),
-      attendance: safeNumber(course?.attendance),
+      // NOT safeNumber(): that returns 0 for null, which would report "0%
+      // attendance" for a course nobody has marked — a different false statement
+      // from the 100% it replaced.
+      attendance: course?.attendance == null ? null : safeNumber(course.attendance),
+      totalClasses: safeNumber(course?.totalClasses),
+      present: safeNumber(course?.presentClasses ?? course?.present),
       faculty: safeString(facultyName),
       records: safeArray(course?.records).map((r: any) => ({
         date: safeDate(r?.date),
@@ -66,7 +81,9 @@ function normalizeAttendanceSummaries(raw: any): AttendanceSummary[] {
 
   return safeArray(raw).map((item: any) => ({
     courseId: safeString(item?.courseId),
-    percentage: safeNumber(item?.percentage),
+    percentage: item?.percentage == null ? null : safeNumber(item.percentage),
+    totalClasses: safeNumber(item?.totalClasses),
+    present: safeNumber(item?.present),
     records: safeArray(item?.records).map((record: any) => ({
       date: safeDate(record?.date),
       status: safeString(record?.status, 'present') as any,
@@ -132,6 +149,8 @@ export default function StudentAttendance() {
           return {
             ...course,
             attendance: summary ? summary.percentage : course.attendance,
+            totalClasses: summary ? summary.totalClasses : course.totalClasses,
+            present: summary ? summary.present : course.present,
             records: summary ? summary.records : course.records,
           };
         });
@@ -165,11 +184,20 @@ export default function StudentAttendance() {
     }
   }, [selectedSemester, selectedCourse, visibleCourses]);
 
-  const overallAttendance = visibleCourses.length > 0
-    ? Math.round(visibleCourses.reduce((sum, c) => sum + c.attendance, 0) / visibleCourses.length)
-    : 0;
+  // Only courses with marked sessions count toward the average. Including a
+  // null as 0 would drag the figure down for a course that simply has no data.
+  const markedCourses = visibleCourses.filter(
+    (c): c is AttendanceCourse & { attendance: number } => c.attendance !== null
+  );
 
-  const lowAttendanceCourses = visibleCourses.filter(c => c.attendance < 75);
+  const overallAttendance = markedCourses.length > 0
+    ? Math.round(markedCourses.reduce((sum, c) => sum + c.attendance, 0) / markedCourses.length)
+    : null;
+
+  // `null < 75` is TRUE in JavaScript, because null coerces to 0. Without the
+  // explicit filter, every unmarked course would be reported as being below the
+  // eligibility threshold.
+  const lowAttendanceCourses = markedCourses.filter(c => c.attendance < 75);
   const selectedCourseRecords = (selectedCourse === 'all'
     ? visibleCourses.flatMap((course) => course.records)
     : (visibleCourses.find((course) => course.courseId === selectedCourse)?.records || [])
@@ -183,17 +211,24 @@ export default function StudentAttendance() {
     return status === 'present' || status === 'late';
   }).length;
 
-  const getAttendanceColor = (attendance: number) => {
+  // A course with no marked sessions is neutral, not failing.
+  const getAttendanceColor = (attendance: number | null) => {
+    if (attendance === null) return 'text-muted-foreground';
     if (attendance >= 90) return 'text-success';
     if (attendance >= 75) return 'text-warning';
     return 'text-destructive';
   };
 
-  const getAttendanceBg = (attendance: number) => {
+  const getAttendanceBg = (attendance: number | null) => {
+    if (attendance === null) return 'bg-muted/30';
     if (attendance >= 90) return 'bg-success/10';
     if (attendance >= 75) return 'bg-warning/10';
     return 'bg-destructive/10';
   };
+
+  /** What to show in place of a percentage that does not exist. */
+  const formatAttendance = (attendance: number | null) =>
+    attendance === null ? 'No records' : `${attendance}%`;
 
   const monthData = attendanceCalendar;
 
@@ -215,7 +250,7 @@ export default function StudentAttendance() {
               <div>
                 <p className="text-sm text-muted-foreground">Overall Attendance</p>
                 <p className={cn('text-3xl font-bold', getAttendanceColor(overallAttendance))}>
-                  {overallAttendance}%
+                  {formatAttendance(overallAttendance)}
                 </p>
               </div>
               <TrendingUp className={cn('h-8 w-8', getAttendanceColor(overallAttendance))} />
@@ -272,7 +307,7 @@ export default function StudentAttendance() {
                   <div className="mt-2 flex flex-wrap gap-2">
                     {lowAttendanceCourses.map((course) => (
                       <Badge key={course.courseId} variant="destructive">
-                        {course.courseCode} - {course.attendance}%
+                        {course.courseCode} - {formatAttendance(course.attendance)}
                       </Badge>
                     ))}
                   </div>
@@ -327,32 +362,60 @@ export default function StudentAttendance() {
                       <div className="flex items-center gap-4">
                         <div className="text-right">
                           <span className={cn('text-lg font-bold', getAttendanceColor(course.attendance))}>
-                            {course.attendance}%
+                            {formatAttendance(course.attendance)}
                           </span>
                           <p className="text-xs text-muted-foreground">
-                            {Math.round((course.attendance / 100) * 46)}/46 classes
+                            {/* Real counts. Was `(attendance / 100) * 46` over a
+                                hardcoded 46-class total applied to every course. */}
+                            {course.totalClasses > 0
+                              ? `${course.present}/${course.totalClasses} classes`
+                              : 'No sessions marked'}
                           </p>
                         </div>
-                        {course.attendance >= 75 ? (
+                        {course.attendance === null ? (
+                          <MinusCircle className="h-5 w-5 text-muted-foreground" />
+                        ) : course.attendance >= 75 ? (
                           <CheckCircle className="h-5 w-5 text-success" />
                         ) : (
                           <AlertCircle className="h-5 w-5 text-destructive" />
                         )}
                       </div>
                     </div>
-                    <Progress 
-                      value={course.attendance} 
+                    <Progress
+                      value={course.attendance ?? 0}
                       className={cn(
                         'h-3',
-                        course.attendance >= 90 && '[&>div]:bg-success',
-                        course.attendance >= 75 && course.attendance < 90 && '[&>div]:bg-warning',
-                        course.attendance < 75 && '[&>div]:bg-destructive'
+                        course.attendance === null && '[&>div]:bg-muted',
+                        course.attendance !== null && course.attendance >= 90 && '[&>div]:bg-success',
+                        course.attendance !== null &&
+                          course.attendance >= 75 &&
+                          course.attendance < 90 &&
+                          '[&>div]:bg-warning',
+                        course.attendance !== null && course.attendance < 75 && '[&>div]:bg-destructive'
                       )}
                     />
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>Faculty: {course.faculty}</span>
-                      <span className={course.attendance >= 75 ? 'text-success' : 'text-destructive'}>
-                        {course.attendance >= 75 ? 'Eligible for exam' : `Need ${Math.ceil((75 - course.attendance) * 0.46)} more classes`}
+                      {/* The shortfall is computed from THIS course's own class
+                          count. It used to multiply by 0.46 — the same invented
+                          46-class total as above — so a course with no sessions
+                          marked reported "Need 35 more classes". */}
+                      <span
+                        className={
+                          course.attendance === null
+                            ? 'text-muted-foreground'
+                            : course.attendance >= 75
+                              ? 'text-success'
+                              : 'text-destructive'
+                        }
+                      >
+                        {course.attendance === null
+                          ? 'Attendance not yet marked'
+                          : course.attendance >= 75
+                            ? 'Eligible for exam'
+                            : course.totalClasses > 0
+                              ? `Short by ${Math.ceil(0.75 * course.totalClasses - course.present)} of ${course.totalClasses} classes`
+                              : 'Below the 75% threshold'}
                       </span>
                     </div>
                   </div>

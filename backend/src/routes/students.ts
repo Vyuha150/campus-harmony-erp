@@ -208,37 +208,164 @@ function resolveCurrentSemesterFromAcademicYear(academicYear: any): number | nul
   return null;
 }
 
-// Get Student Dashboard Data
+/**
+ * Student dashboard.
+ *
+ * WHAT THIS REPLACES - four fabrications on the screen students actually see:
+ *
+ *   1. `change: '+0.2', changeType: 'increase'` was a LITERAL. The CGPA tile
+ *      claimed a rise of 0.2 every time it rendered, including for a student
+ *      whose CGPA was 0 and who had never been graded.
+ *
+ *   2. `value: profile.cgpa` read a stored column that defaults to 0 and, by its
+ *      own schema comment, is never written directly. Real results live in
+ *      SemesterResult, so every student was shown a CGPA of 0 while their actual
+ *      published result sat one table away.
+ *
+ *   3. Attendance fell back to 100% when a student had no attendance records at
+ *      all. Absence of data was rendered as perfect attendance - the same shape
+ *      as the exam progress bar removed in Phase 3a, which forced marksEntered
+ *      to equal totalStudents once published.
+ *
+ *   4. `upcomingEvents` was a single invented entry, "Mid Semester Exams Check",
+ *      dated `new Date()` - an event that was always happening now.
+ *
+ * The rule applied throughout: when there is no data, say so. A dashboard that
+ * fills gaps with plausible numbers is worse than an empty one, because nobody
+ * can tell the difference.
+ */
 router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
+    const ctx = getTenantContext(req);
 
-    // Fetch actual db stats
-    const enrollments = await prisma.enrollment.count({ where: { studentProfileId: profile.id } });
-    
-    // Calculate attendance percentage (mocked via DB query structures if real data was populated)
-    const attendances = await prisma.attendance.findMany({ where: { studentProfileId: profile.id } });
+    const enrollments = await prisma.enrollment.count({
+      where: { studentProfileId: profile.id }
+    });
+
+    // -- CGPA, from published results --------------------------------------
+    // Only `published` results are shown. A draft result is a working figure,
+    // and showing it turns an internal step into a communication.
+    const results = await prisma.semesterResult.findMany({
+      where: { studentProfileId: profile.id, status: 'published' },
+      orderBy: { semester: 'desc' },
+      take: 2,
+      select: { semester: true, cgpa: true, sgpa: true }
+    });
+
+    const latest = results[0];
+    const previous = results[1];
+
+    // A real delta between the last two published semesters, or absent. Never
+    // asserted from nothing.
+    const cgpaChange =
+      latest && previous ? Number((latest.cgpa - previous.cgpa).toFixed(2)) : null;
+
+    const cgpaStat = latest
+      ? {
+          label: 'Current CGPA',
+          value: latest.cgpa.toFixed(2),
+          ...(cgpaChange !== null
+            ? {
+                change: `${cgpaChange >= 0 ? '+' : ''}${cgpaChange}`,
+                changeType:
+                  cgpaChange > 0 ? 'increase' : cgpaChange < 0 ? 'decrease' : 'stable'
+              }
+            : {}),
+          detail: `After semester ${latest.semester}`,
+          icon: 'TrendingUp',
+          color: 'text-primary'
+        }
+      : {
+          label: 'Current CGPA',
+          value: 'Not published',
+          detail: 'No published semester result yet',
+          icon: 'TrendingUp',
+          color: 'text-muted-foreground'
+        };
+
+    // -- Attendance ---------------------------------------------------------
+    const attendances = await prisma.attendance.findMany({
+      where: { studentProfileId: profile.id },
+      select: { status: true }
+    });
     const presentCount = attendances.filter((a: any) => a.status === 'present').length;
-    const attendancePercent = attendances.length > 0 ? Math.round((presentCount / attendances.length) * 100) : 100;
 
-    const pendingFees = await prisma.feeRecord.aggregate({
-      where: { studentProfileId: profile.id, status: 'pending' },
-      _sum: { amount: true }
+    const attendanceStat =
+      attendances.length > 0
+        ? {
+            label: 'Attendance',
+            value: `${Math.round((presentCount / attendances.length) * 100)}%`,
+            detail: `${presentCount} of ${attendances.length} sessions`,
+            icon: 'Calendar',
+            color: 'text-secondary'
+          }
+        : {
+            label: 'Attendance',
+            value: 'No records',
+            detail: 'No attendance has been marked yet',
+            icon: 'Calendar',
+            color: 'text-muted-foreground'
+          };
+
+    // -- Fees ---------------------------------------------------------------
+    // `pending` AND `partial` AND `overdue`: filtering on `pending` alone
+    // understated what a student owed the moment they made a part payment.
+    const feeTotals = await prisma.feeRecord.aggregate({
+      where: {
+        studentProfileId: profile.id,
+        status: { in: ['pending', 'partial', 'overdue'] }
+      },
+      _sum: { amount: true, paidAmount: true }
+    });
+    const billed = feeTotals._sum.amount ?? 0;
+    const paid = feeTotals._sum.paidAmount ?? 0;
+    const outstanding = Math.max(0, billed - paid);
+
+    // -- Upcoming events, from the real examination schedule ----------------
+    const upcoming = await prisma.examSchedule.findMany({
+      where: { institutionId: ctx.institutionId, examDate: { gte: new Date() } },
+      orderBy: { examDate: 'asc' },
+      take: 5,
+      select: {
+        id: true,
+        examDate: true,
+        startTime: true,
+        venue: true,
+        course: { select: { code: true, name: true } }
+      }
     });
 
     res.json({
       success: true,
       data: {
         stats: [
-          { label: 'Current CGPA', value: profile.cgpa.toString(), change: '+0.2', changeType: 'increase', icon: 'TrendingUp', color: 'text-primary' },
-          { label: 'Attendance', value: `${attendancePercent}%`, change: 0, changeType: 'stable', icon: 'Calendar', color: 'text-secondary' },
-          { label: 'Active Courses', value: enrollments.toString(), icon: 'BookOpen', color: 'text-warning' },
-          { label: 'Fee Due', value: `₹${pendingFees._sum.amount || 0}`, icon: 'IndianRupee', color: 'text-destructive' }
+          cgpaStat,
+          attendanceStat,
+          {
+            label: 'Active Courses',
+            value: enrollments.toString(),
+            icon: 'BookOpen',
+            color: 'text-warning'
+          },
+          {
+            label: 'Fee Due',
+            value: `\u20b9${outstanding}`,
+            detail:
+              outstanding > 0 ? `\u20b9${paid} paid of \u20b9${billed}` : 'Nothing outstanding',
+            icon: 'IndianRupee',
+            color: outstanding > 0 ? 'text-destructive' : 'text-muted-foreground'
+          }
         ],
-        upcomingEvents: [
-          { id: '1', title: 'Mid Semester Exams Check', date: new Date().toISOString() }
-        ]
+        // Empty when nothing is scheduled. It used to be one invented row.
+        upcomingEvents: upcoming.map((e: any) => ({
+          id: e.id,
+          title: e.course ? `${e.course.code} - ${e.course.name}` : 'Examination',
+          date: e.examDate.toISOString(),
+          startTime: e.startTime,
+          venue: e.venue ?? null
+        }))
       }
     });
   } catch (error: any) {
@@ -275,10 +402,15 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
       const totalClasses = courseRecords.length;
       const presentClasses = courseRecords.filter((record: any) => record.status === 'present').length;
       const absentClasses = totalClasses - presentClasses;
-      const attendance = totalClasses > 0 ? Math.round((presentClasses / totalClasses) * 100) : 100;
+      // `null`, not 100. A course with no sessions recorded has no attendance
+      // percentage; reporting 100% told a student they had attended classes that
+      // were never held.
+      const attendance = totalClasses > 0 ? Math.round((presentClasses / totalClasses) * 100) : null;
 
+      // `null`, not 0. "Not yet graded" and "scored zero" are different facts,
+      // and collapsing them shows a failing mark to every unassessed student.
       const numericGrade = enrollment.grade != null ? Number(enrollment.grade) : NaN;
-      const internalMarks = Number.isFinite(numericGrade) ? numericGrade : 0;
+      const internalMarks = Number.isFinite(numericGrade) ? numericGrade : null;
 
       coursePayload.push({
         ...enrollment.course,
@@ -328,7 +460,11 @@ router.get('/attendance', authenticate, async (req: Request, res: Response) => {
         totalClasses: total,
         present,
         absent,
-        percentage: total > 0 ? Math.round((present / total) * 100) : 100,
+        // `null`, not 100. This is the attendance SCREEN, where a student checks
+        // whether they are short of the exam eligibility threshold. Reporting
+        // 100% for a course with no sessions recorded tells them they are safe
+        // on a course that has never been marked.
+        percentage: total > 0 ? Math.round((present / total) * 100) : null,
         records: courseRecords.map((r: any) => ({
           date: r.session?.date,
           status: r.status,

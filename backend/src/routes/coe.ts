@@ -218,7 +218,11 @@ router.get('/results', authenticate, async (_req: Request, res: Response) => {
           passed,
           failed: totalEnrollments - passed,
           passPercentage: totalEnrollments > 0 ? Math.round((passed / totalEnrollments) * 100) : 0,
-          avgGPA: 7.2,
+          // REMOVED: `avgGPA: 7.2`, a literal presented as this department's
+          // average. It never varied by department, semester or cohort. The
+          // figure belongs to SemesterResult and is computed there; asserting it
+          // here put an invented academic statistic on an oversight screen.
+          avgGPA: null,
           status
         };
       })

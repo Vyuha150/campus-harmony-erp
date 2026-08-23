@@ -1607,3 +1607,75 @@ verification, rather than being swept into a change about something else.
 
 The structural fix remains the highest-value change: make the service layer
 scoped by construction, so a forgotten `where` clause cannot reach production.
+
+---
+
+## Checkpoint 24 — Fabricated figures removed from five modules
+
+Triggered by "fix the module with issues". Every module dashboard returned 200,
+so nothing was hard-broken; the issues were **figures that were invented rather
+than measured**. Found by reading responses, not by any failing test.
+
+### students.ts — the screen students actually see
+| Defect | What it did |
+|---|---|
+| `change: '+0.2', changeType: 'increase'` | A literal. The CGPA tile claimed a rise of 0.2 on **every render**, including for a student never graded. |
+| `value: profile.cgpa` | Read a stored column that defaults to 0 and, per its own schema comment, is never written directly. Real results are in `SemesterResult`, so every student saw 0. |
+| attendance `: 100` fallback (**3 sites**) | No attendance records rendered as **100%**. Absence of data shown as perfect attendance. |
+| `internalMarks : 0` | "Not yet graded" collapsed into "scored zero". |
+| `upcomingEvents` | One invented row, `title: 'Mid Semester Exams Check'`, dated `new Date()` — permanently happening now. |
+| fee filter | Only `pending`, so a part payment made the balance understate what was owed. |
+
+Now: CGPA from published `SemesterResult` with a **real** delta between the last
+two semesters; attendance reports "No records" with `present/total` provenance;
+events come from `ExamSchedule`; fees include `pending|partial|overdue`.
+
+**Proven on real data**, not just the empty branch — two published semesters were
+planted (7.80 → 8.15) and the tile returned `8.15` with `+0.35`, then the probe
+rows were removed.
+
+### faculty.ts — feedback scores were invented
+`responses.length > 0 ? 4.0 : 0`, plus 4.1 / 4.0 / 3.9 for three fixed
+categories. A course with one scathing response and one with fifty glowing ones
+both reported 4.0 — nothing read what students wrote. The category names
+("Course Delivery", "Clarity", "Assessment Quality") did not even match the
+questions; responses are JSON keyed by the actual form fields.
+
+Now averaged from the real answers, reporting the keys students answered.
+Verified live: the one seeded response `{content:5, teaching:4, engagement:4}`
+now yields **4.33**, not 4.0.
+
+### coe.ts / dean.ts / vc.ts
+`avgGPA: 7.2` — identical for every department, semester and cohort, on the
+result-oversight screens. `trend: '+0.0%'` on every VC revenue line with no prior
+period loaded. Both now null.
+
+### The frontend was fabricating too
+`StudentAttendance.tsx` divided by a **hardcoded 46** ("46 classes") for every
+course, and computed shortfall as `(75 - attendance) * 0.46`. With the API now
+sending `null`, `null < 75` is **true** in JavaScript — so an unmarked course
+would have been reported as *below the eligibility threshold*, and
+"Need 35 more classes" for a course with no sessions at all.
+
+Fixed to carry real `present`/`totalClasses`, exclude unmarked courses from the
+average and the low-attendance warning, and render "No records".
+
+### Guard added
+`noFabricatedMetrics.test.ts` bans three shapes across every route file:
+existence-scoring (`.length > 0 ? <literal> : <literal>`), literal trends, and
+`: 100` fallbacks — with negative controls.
+
+**The negative control earned its place immediately.** The `: 100` matcher used
+`[^)]*`, which cannot span the nested parens in `Math.round((p / n) * 100)` — so
+it was dead while all file checks passed. Fixing the regex then found a **third**
+`: 100` site in `students.ts` that I had missed by hand.
+
+### Status
+Typecheck **0** (backend + frontend) · Tests **460** (20 files) ·
+Live checks **54/54**
+
+### Not verified
+The rendered attendance screen was **not** visually confirmed in a browser: the
+preview tool resolves `.claude/launch.json` from the session directory, which is
+not this repository. Checked instead by typecheck, production build, and live API
+responses.

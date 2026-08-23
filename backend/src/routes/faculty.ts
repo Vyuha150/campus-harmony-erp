@@ -1238,21 +1238,55 @@ router.get('/feedback-summaries', authenticate, async (req: Request, res: Respon
       include: { feedbacks: { include: { responses: true } } }
     });
 
+    // WHAT THIS REPLACES
+    //
+    // The previous version returned `responses.length > 0 ? 4.0 : 0` for the
+    // overall rating, and 4.1 / 4.0 / 3.9 for three fixed categories. Those are
+    // literals: a course with one scathing response and a course with fifty
+    // glowing ones both reported 4.0. Nothing read what the students wrote.
+    //
+    // The invented category names ("Course Delivery", "Clarity", "Assessment
+    // Quality") did not even correspond to the questions asked - responses are
+    // stored as free-form JSON keyed by whatever the form used, e.g.
+    // { content: 5, teaching: 4, engagement: 4 }.
+    //
+    // Now: every numeric answer is averaged, and the categories reported are the
+    // keys students actually answered. A course with no responses reports null
+    // rather than 0, because "no feedback" and "rated zero" are different facts.
     const summaries = courses.map((course: any) => {
       const responses = course.feedbacks.flatMap((form: any) => form.responses || []);
+
+      // key -> the numeric answers given for it, across every response
+      const byKey = new Map<string, number[]>();
+      for (const response of responses) {
+        const answers = (response.responses ?? {}) as Record<string, unknown>;
+        for (const [key, value] of Object.entries(answers)) {
+          const n = typeof value === 'number' ? value : Number(value);
+          if (!Number.isFinite(n)) continue; // free-text answers are not scores
+          if (!byKey.has(key)) byKey.set(key, []);
+          byKey.get(key)!.push(n);
+        }
+      }
+
+      const mean = (xs: number[]) =>
+        xs.length > 0 ? Number((xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(2)) : null;
+
+      const allScores = [...byKey.values()].flat();
+
       return {
         courseId: course.id,
         courseCode: course.code,
         courseName: course.name,
         semester: `Semester ${course.semester}`,
         totalResponses: responses.length,
-        overallRating: responses.length > 0 ? 4.0 : 0,
+        overallRating: mean(allScores),
         maxRating: 5,
-        categories: [
-          { name: 'Course Delivery', score: responses.length > 0 ? 4.1 : 0, maxScore: 5 },
-          { name: 'Clarity', score: responses.length > 0 ? 4.0 : 0, maxScore: 5 },
-          { name: 'Assessment Quality', score: responses.length > 0 ? 3.9 : 0, maxScore: 5 }
-        ],
+        categories: [...byKey.entries()].map(([name, scores]) => ({
+          name,
+          score: mean(scores),
+          maxScore: 5,
+          responses: scores.length
+        })),
         suggestions: []
       };
     });
