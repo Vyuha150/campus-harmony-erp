@@ -76,7 +76,10 @@ export default function StudentDashboard() {
   const stats = safeArray(dashboard?.stats);
   const profile = {
     name: safeString(dashboard?.profile?.name, user.name),
-    cgpa: safeNumber(dashboard?.profile?.cgpa),
+    // NOT safeNumber(): that returns 0 for null, which renders as a confident
+    // "0.00 CGPA" for a student who simply has no published result yet. The tile
+    // above already says "Not published"; this panel used to contradict it.
+    cgpa: dashboard?.profile?.cgpa == null ? null : safeNumber(dashboard.profile.cgpa),
     program: safeString(dashboard?.profile?.program),
     branch: safeString(dashboard?.profile?.branch),
     semester: safeNumber(dashboard?.profile?.semester),
@@ -303,7 +306,12 @@ export default function StudentDashboard() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-3xl font-bold text-primary">{(profile.cgpa || 0).toFixed(2)}</p>
+                    <p className={cn(
+                      'font-bold',
+                      profile.cgpa === null ? 'text-lg text-muted-foreground' : 'text-3xl text-primary'
+                    )}>
+                      {profile.cgpa === null ? 'Not published' : profile.cgpa.toFixed(2)}
+                    </p>
                     <p className="text-sm text-muted-foreground">CGPA</p>
                   </div>
                   <div className="text-right">

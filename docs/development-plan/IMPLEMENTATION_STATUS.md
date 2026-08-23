@@ -1674,8 +1674,33 @@ it was dead while all file checks passed. Fixing the regex then found a **third*
 Typecheck **0** (backend + frontend) · Tests **460** (20 files) ·
 Live checks **54/54**
 
-### Not verified
-The rendered attendance screen was **not** visually confirmed in a browser: the
-preview tool resolves `.claude/launch.json` from the session directory, which is
-not this repository. Checked instead by typecheck, production build, and live API
-responses.
+### Verified in the browser — and it found two more defects
+The session was moved into this repository and the screens were opened against
+the running dev server. Authentication was done by injecting a token obtained
+from the API, rather than typing a password into the form.
+
+Confirmed on `/student/attendance`: **"No records"**, **"No sessions marked"** and
+**"Attendance not yet marked"** where the fabricated 100%, "46/46 classes" and
+"Need 35 more classes" used to be — and the course correctly excluded from the
+Low Attendance count. Proven by temporarily removing the 31 attendance rows and
+restoring them afterwards.
+
+**The browser check earned its place.** Two defects the API-level checks could
+not see:
+
+1. **"Semester 0"** — the long-standing bug, now diagnosed. The dashboard
+   endpoint returned only `stats` and `upcomingEvents`, while
+   `StudentDashboard.tsx` reads `dashboard.profile.semester`, `.cgpa`,
+   `.rollNumber` and the credit totals. Every one resolved to `undefined` and was
+   normalised to **0**, so a student in semester 5 saw "Semester 0", no
+   programme and no roll number. The frontend's own defaults turned missing data
+   into confident zeroes — the same defect as the fabrications, arriving from the
+   other direction. Now returns a real `profile` block.
+
+2. **The Academic Performance panel contradicted the tile above it** — "0.00
+   CGPA" beside "Not published". It used `(profile.cgpa || 0).toFixed(2)`. Now
+   reports "Not published" consistently.
+
+Header now reads **"B.Tech Computer Science • Semester 5 • CH2024CS001"**. With
+two published semesters planted, both CGPA displays showed **8.15** with
+**46/48 credits** and **96% completion**; the probe rows were then removed.

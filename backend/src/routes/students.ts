@@ -244,6 +244,11 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       where: { studentProfileId: profile.id }
     });
 
+    const profileUser = await prisma.user.findFirst({
+      where: { id: profile.userId },
+      select: { name: true }
+    });
+
     // -- CGPA, from published results --------------------------------------
     // Only `published` results are shown. A draft result is a working figure,
     // and showing it turns an internal step into a communication.
@@ -251,7 +256,13 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       where: { studentProfileId: profile.id, status: 'published' },
       orderBy: { semester: 'desc' },
       take: 2,
-      select: { semester: true, cgpa: true, sgpa: true }
+      select: {
+        semester: true,
+        cgpa: true,
+        sgpa: true,
+        cumulativeCreditsEarned: true,
+        cumulativeCreditsRegistered: true
+      }
     });
 
     const latest = results[0];
@@ -340,6 +351,29 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: {
+        // THE "SEMESTER 0" BUG. This block was absent entirely: the response
+        // carried only `stats` and `upcomingEvents`, while StudentDashboard.tsx
+        // reads `dashboard.profile.semester`, `.cgpa`, `.rollNumber` and the
+        // credit totals. Every one of them resolved to undefined and was
+        // normalised to 0, so the header read "Semester 0" for a student in
+        // semester 5, and the Academic Performance panel showed 0.00 CGPA and
+        // 0 credits earned.
+        //
+        // Nothing failed. The frontend's own defaults turned missing data into
+        // confident zeroes, which is the same defect as the fabrications above,
+        // arriving from the other direction.
+        profile: {
+          name: profileUser?.name ?? null,
+          rollNumber: profile.rollNumber,
+          program: profile.program,
+          branch: profile.branch,
+          semester: profile.semester,
+          // From published results, not the stale `StudentProfile.cgpa` column.
+          // `null` where nothing is published, so the panel can say so.
+          cgpa: latest ? latest.cgpa : null,
+          earnedCredits: latest ? latest.cumulativeCreditsEarned : 0,
+          totalCredits: latest ? latest.cumulativeCreditsRegistered : 0
+        },
         stats: [
           cgpaStat,
           attendanceStat,
