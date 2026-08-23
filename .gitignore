@@ -35,3 +35,7 @@ backend/backups/
 # the content that change was made to protect, permanently, in git history.
 backend/uploads/
 !backend/uploads/.gitkeep
+
+# Working copies taken before a large schema edit. Useful locally, but a second
+# schema in the repo is a schema someone will eventually read by mistake.
+backend/prisma/*.bak-*
