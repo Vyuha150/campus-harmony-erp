@@ -123,41 +123,48 @@ export default function StudentFees() {
   };
 
   const handlePayFee = async (feeId: string, description: string) => {
-    const transactionId = `TXN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // The transaction id used to be MADE UP HERE — `TXN-${Date.now()}-${random}`
+    // — posted to the server, which marked the fee paid and returned success.
+    // Nothing moved money. The screen told students their fees were settled.
+    //
+    // The server now refuses, because no payment gateway is configured. This
+    // surfaces that answer instead of inventing one.
     try {
       setPayingFeeId(feeId);
-      await postApi('/students/fees/pay', { feeRecordId: feeId, transactionId });
-      setFeeRecords((prev) => prev.map((fee) => (
-        fee.id === feeId
-          ? { ...fee, status: 'paid', paidDate: new Date(), transactionId }
-          : fee
-      )));
-      toast({ title: 'Payment successful', description: `Paid ${description}.` });
+      await postApi('/students/fees/pay', { feeRecordId: feeId });
+      // Unreachable while the server returns 501; kept so that wiring a real
+      // gateway later does not require rewriting this handler.
+      toast({ title: 'Payment recorded', description: `Paid ${description}.` });
     } catch (error: any) {
-      toast({ title: 'Payment failed', description: safeString(error?.message, 'Could not process payment.'), variant: 'destructive' });
+      toast({
+        title: 'Online payment unavailable',
+        description: safeString(
+          error?.message,
+          'Payment must be made through the finance office, which records it and issues a receipt.'
+        )
+      });
     } finally {
       setPayingFeeId(null);
     }
   };
 
   const handlePayAllPending = async () => {
+    // Was a loop that posted a fabricated transaction id per fee and then set
+    // every pending row to `paid` in local state — so the screen showed a
+    // settled account even when the requests had failed.
     if (!pendingFees.length) return;
     try {
       setIsPayingAll(true);
-      for (const fee of pendingFees) {
-        const transactionId = `TXN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        // eslint-disable-next-line no-await-in-loop
-        await postApi('/students/fees/pay', { feeRecordId: fee.id, transactionId });
-      }
-
-      setFeeRecords((prev) => prev.map((fee) => (
-        fee.status === 'pending' || fee.status === 'overdue'
-          ? { ...fee, status: 'paid', paidDate: new Date(), transactionId: fee.transactionId || `TXN-${Date.now()}` }
-          : fee
-      )));
-      toast({ title: 'Payments completed', description: 'All pending fees were paid successfully.' });
+      await postApi('/students/fees/pay', { feeRecordId: pendingFees[0]?.id });
+      toast({ title: 'Payments recorded' });
     } catch (error: any) {
-      toast({ title: 'Payment failed', description: safeString(error?.message, 'Could not complete pending payments.'), variant: 'destructive' });
+      toast({
+        title: 'Online payment unavailable',
+        description: safeString(
+          error?.message,
+          'Payment must be made through the finance office, which records it and issues a receipt.'
+        )
+      });
     } finally {
       setIsPayingAll(false);
     }

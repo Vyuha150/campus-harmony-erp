@@ -9,6 +9,16 @@ import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import * as libraryService from '../modules/library/library.service.js';
+import {
+  submitAssignmentSchema,
+  revaluationSchema,
+  certificateRequestSchema,
+  placementApplySchema,
+  feedbackSubmitSchema,
+  studentGrievanceSchema,
+  enrollSchema,
+  payFeeSchema
+} from '../modules/students/students.schemas.js';
 
 const router = Router();
 
@@ -713,6 +723,7 @@ router.get('/assignments', authenticate, async (req: Request, res: Response) => 
     const classIds = classEnrollments.map((enrollment: any) => enrollment.classId);
     
     const assignments = await db.assignment.findMany({
+      take: 200,
       where: {
         classId: { in: classIds },
         ...(Number.isFinite(semesterQuery) ? { class: { course: { semester: semesterQuery } } } : {})
@@ -765,7 +776,7 @@ router.get('/assignments', authenticate, async (req: Request, res: Response) => 
 });
 
 // Submit Assignment
-router.post('/assignments/:id/submit', authenticate, async (req: Request, res: Response) => {
+router.post('/assignments/:id/submit', authenticate, validate({ body: submitAssignmentSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
@@ -928,7 +939,7 @@ router.get('/results/transcript', authenticate, async (req: Request, res: Respon
 });
 
 // Request Exam Revaluation
-router.post('/examinations/:id/revaluation', authenticate, async (req: Request, res: Response) => {
+router.post('/examinations/:id/revaluation', authenticate, validate({ body: revaluationSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const examId = String(req.params.id);
@@ -996,21 +1007,71 @@ router.get('/fees', authenticate, async (req: Request, res: Response) => {
 });
 
 // Pay Fees
-router.post('/fees/pay', authenticate, async (req: Request, res: Response) => {
+/**
+ * Student-initiated fee payment.
+ *
+ * THIS ENDPOINT NO LONGER MARKS A FEE PAID, AND THAT IS THE FIX.
+ *
+ * What it did:
+ *
+ *     const { feeRecordId, transactionId } = req.body;
+ *     await prisma.feeRecord.updateMany({
+ *       where: { id: feeRecordId, studentProfileId: profile.id },
+ *       data: { status: 'paid', paidDate: new Date(), transactionId }
+ *     });
+ *
+ * The student supplied the transaction id. `StudentFees.tsx` generated it in the
+ * browser — `TXN-${Date.now()}-${Math.random()}` — and the server believed it.
+ * No amount was checked, no gateway was called, nothing was reconciled, and the
+ * screen then said "Payment successful".
+ *
+ * So any student could clear any of their own dues, in one request, and the fee
+ * ledger would agree with them. Of everything found in this codebase, this is the
+ * one that most directly turns a record into a fiction: an institution's
+ * receivables reporting money it never received.
+ *
+ * WHY IT REFUSES RATHER THAN ROUTES TO THE REAL FLOW
+ *
+ * `modules/finance` has a proper payment path — transactional, idempotent, with
+ * a receipt. But it exists to RECORD MONEY ALREADY RECEIVED, and is reached by a
+ * finance officer. Letting a student call it would produce genuine receipts for
+ * money nobody paid: the same defect behind a better API.
+ *
+ * There is no payment gateway in this system. `gateway` on a Payment is a string
+ * column, not an integration. Until one exists, the honest answer to "let me pay
+ * online" is that we cannot take the money, not a success message.
+ */
+router.post('/fees/pay', authenticate, validate({ body: payFeeSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
-    const { feeRecordId, transactionId } = req.body;
+    const { feeRecordId } = req.body ?? {};
 
-    const fee = await prisma.feeRecord.updateMany({
-      where: { id: feeRecordId, studentProfileId: profile.id },
-      data: {
-        status: 'paid',
-        paidDate: new Date(),
-        transactionId
+    // Confirm the due is real and theirs, so the message can name it.
+    const due = feeRecordId
+      ? await prisma.feeRecord.findFirst({
+          where: { id: String(feeRecordId), studentProfileId: profile.id },
+          select: { id: true, amount: true, paidAmount: true, status: true }
+        })
+      : null;
+
+    res.status(501).json({
+      success: false,
+      error: {
+        code: 'NOT_IMPLEMENTED',
+        message:
+          'Online payment is not available: no payment gateway is configured. ' +
+          'Your dues are shown here, but payment must be made through the finance ' +
+          'office, which records it against your account and issues a receipt.',
+        details: due
+          ? {
+              feeRecordId: due.id,
+              outstanding: Math.max(0, due.amount - (due.paidAmount ?? 0)),
+              status: due.status
+            }
+          : undefined
       }
     });
-    res.json({ success: true, data: fee });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1060,6 +1121,7 @@ router.get('/placements', authenticate, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
     const drives = await prisma.placementDrive.findMany({
+      take: 200,
       include: {
         company: true,
         applications: {
@@ -1081,7 +1143,7 @@ router.get('/placements', authenticate, async (req: Request, res: Response) => {
 });
 
 // Apply for Placement
-router.post('/placements/:id/apply', authenticate, async (req: Request, res: Response) => {
+router.post('/placements/:id/apply', authenticate, validate({ body: placementApplySchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
@@ -1147,6 +1209,7 @@ router.get('/grievances', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const grievances = await prisma.grievanceCase.findMany({
+      take: 200,
       where: {
         complainantId: userId,
         complainantType: 'student'
@@ -1211,7 +1274,7 @@ router.get('/grievances/:id', authenticate, async (req: Request, res: Response) 
 });
 
 // Post Grievance
-router.post('/grievances', authenticate, async (req: Request, res: Response) => {
+router.post('/grievances', authenticate, validate({ body: studentGrievanceSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { category, subject, description, priority, attachments } = req.body;
@@ -1339,7 +1402,7 @@ router.get('/feedback', authenticate, async (req: Request, res: Response) => {
 });
 
 // Submit Feedback Form
-router.post('/feedback/:id/submit', authenticate, async (req: Request, res: Response) => {
+router.post('/feedback/:id/submit', authenticate, validate({ body: feedbackSubmitSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
@@ -1381,6 +1444,7 @@ router.get('/certificates', authenticate, async (req: Request, res: Response) =>
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
     const certificates = await prisma.certificateRequest.findMany({
+      take: 200,
       where: { studentProfileId: profile.id },
       orderBy: { requestedAt: 'desc' }
     });
@@ -1391,7 +1455,7 @@ router.get('/certificates', authenticate, async (req: Request, res: Response) =>
 });
 
 // Request Certificate
-router.post('/certificates/request', authenticate, async (req: Request, res: Response) => {
+router.post('/certificates/request', authenticate, validate({ body: certificateRequestSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
@@ -1412,7 +1476,7 @@ router.post('/certificates/request', authenticate, async (req: Request, res: Res
 });
 
 // ─── Enrollment ───
-router.post('/enroll', authenticate, async (req: Request, res: Response) => {
+router.post('/enroll', authenticate, validate({ body: enrollSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
