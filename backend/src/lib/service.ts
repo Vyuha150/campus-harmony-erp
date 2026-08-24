@@ -22,7 +22,7 @@
 
 import { prisma, basePrisma } from './prisma.js';
 import { recordInTransaction, type AuditAction, type AuditSeverity } from './audit.js';
-import { currentTenant } from './tenantStore.js';
+import { currentTenant, runServiceAudited } from './tenantStore.js';
 import { AuthorizationError, ValidationError, NotFoundError } from './errors.js';
 import type { TenantContext } from './tenant.js';
 
@@ -83,25 +83,31 @@ export async function mutate<T>(
   audit: AuditSpec,
   operation: (tx: TransactionClient) => Promise<T>
 ): Promise<T> {
-  return prisma.$transaction(async (tx) => {
-    const result = await operation(tx);
+  // The structural audit in the Prisma extension records any write that has no
+  // deliberate entry. This one has: the block below describes the operation in
+  // the domain's own words, with a reason and a severity the extension cannot
+  // know. Suppressing it here is what stops one action producing two rows.
+  return runServiceAudited(async () =>
+    prisma.$transaction(async (tx) => {
+      const result = await operation(tx);
 
-    await recordInTransaction(tx as never, {
-      userId: context.userId,
-      role: context.role,
-      action: audit.action,
-      module: audit.module,
-      resource:
-        typeof audit.resource === 'function' ? audit.resource(result) : audit.resource,
-      details: typeof audit.details === 'function' ? audit.details(result) : audit.details,
-      oldValue: audit.oldValue,
-      newValue: audit.newValue,
-      reason: audit.reason,
-      severity: audit.severity
-    });
+      await recordInTransaction(tx as never, {
+        userId: context.userId,
+        role: context.role,
+        action: audit.action,
+        module: audit.module,
+        resource:
+          typeof audit.resource === 'function' ? audit.resource(result) : audit.resource,
+        details: typeof audit.details === 'function' ? audit.details(result) : audit.details,
+        oldValue: audit.oldValue,
+        newValue: audit.newValue,
+        reason: audit.reason,
+        severity: audit.severity
+      });
 
-    return result;
-  });
+      return result;
+    })
+  );
 }
 
 /**

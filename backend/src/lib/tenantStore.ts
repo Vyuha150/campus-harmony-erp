@@ -41,6 +41,12 @@ interface TenantStoreValue {
    * must account for removals. Every use is justified at the call site.
    */
   includeDeleted?: boolean;
+  /**
+   * When true, a service is already writing its own audit entry for this
+   * operation, so the extension's structural one is suppressed. See
+   * `runServiceAudited`.
+   */
+  serviceAudited?: boolean;
 }
 
 const storage = new AsyncLocalStorage<TenantStoreValue>();
@@ -126,6 +132,30 @@ export async function includeDeleted<T>(reason: string, fn: () => T | Promise<T>
 /** True when the current context has opted into seeing soft-deleted rows. */
 export function isIncludingDeleted(): boolean {
   return storage.getStore()?.includeDeleted === true;
+}
+
+/**
+ * Run `fn` with the structural audit suppressed.
+ *
+ * `mutate()` writes a deliberate audit entry describing the operation in the
+ * domain's own words — what changed, why, and at what severity. The extension
+ * writes a generic one for any write that has no such entry. Both firing would
+ * put two rows in the log for one action, and the reader would have to work out
+ * that they are the same event.
+ *
+ * The domain entry wins. This flag is how the extension knows one is coming.
+ */
+export async function runServiceAudited<T>(fn: () => Promise<T>): Promise<T> {
+  const current = storage.getStore();
+  if (!current) return fn();
+  // Awaited INSIDE the context, for the reason given on `runUnscoped`: a Prisma
+  // promise returned from `storage.run` executes after the context has exited.
+  return storage.run({ ...current, serviceAudited: true }, async () => await fn());
+}
+
+/** True when a service is already recording this write itself. */
+export function isServiceAudited(): boolean {
+  return storage.getStore()?.serviceAudited === true;
 }
 
 /** True when the current execution context has opted out of tenant filtering. */

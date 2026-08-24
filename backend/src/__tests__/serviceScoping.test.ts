@@ -370,8 +370,26 @@ describe('mutate() is scoped by construction', () => {
     readFileSync(fileURLToPath(new URL('../lib/service.ts', import.meta.url)), 'utf8')
   );
 
+  /**
+   * WHICH client, not which statement.
+   *
+   * These matchers used to require `return prisma.$transaction(`. That held
+   * until `mutate()` was wrapped in `runServiceAudited(...)` to suppress the
+   * duplicate structural audit, which put the call on its own line and broke a
+   * test whose subject had not changed at all: the transaction still opens on
+   * the extended client.
+   *
+   * Pinning the statement made the guard fire on a safe refactor. The thing
+   * worth protecting is the identifier, so that is what is matched now. The
+   * lookbehind is what keeps `basePrisma.$transaction(` from satisfying it —
+   * the two names differ only by a prefix, and a plain `prisma` match would
+   * accept the very thing this guards against.
+   */
+  const OPENS_ON_EXTENDED = /(?<![A-Za-z])prisma\.\$transaction\(/;
+  const OPENS_ON_BASE = /basePrisma\.\$transaction\(/;
+
   it('opens its transaction on the extended client', () => {
-    expect(serviceSrc).toMatch(/return\s+prisma\.\$transaction\(/);
+    expect(serviceSrc).toMatch(OPENS_ON_EXTENDED);
   });
 
   it('does NOT open it on basePrisma', () => {
@@ -379,13 +397,14 @@ describe('mutate() is scoped by construction', () => {
       serviceSrc,
       'mutate() is back on basePrisma — the transaction client is unscoped again, ' +
         'and every service silently depends on hand-written institutionId filters.'
-    ).not.toMatch(/return\s+basePrisma\.\$transaction\(/);
+    ).not.toMatch(OPENS_ON_BASE);
   });
 
   it('NEGATIVE CONTROL: the matchers distinguish the two clients', () => {
-    expect('  return prisma.$transaction(async (tx) => {').toMatch(/return\s+prisma\.\$transaction\(/);
-    expect('  return basePrisma.$transaction(async (tx) => {').toMatch(/return\s+basePrisma\.\$transaction\(/);
+    expect('  return prisma.$transaction(async (tx) => {').toMatch(OPENS_ON_EXTENDED);
+    expect('    prisma.$transaction(async (tx) => {').toMatch(OPENS_ON_EXTENDED);
+    expect('  return basePrisma.$transaction(async (tx) => {').toMatch(OPENS_ON_BASE);
     // `basePrisma` must not satisfy the `prisma` matcher.
-    expect('  return basePrisma.$transaction(async (tx) => {').not.toMatch(/return\s+prisma\.\$transaction\(/);
+    expect('  return basePrisma.$transaction(async (tx) => {').not.toMatch(OPENS_ON_EXTENDED);
   });
 });

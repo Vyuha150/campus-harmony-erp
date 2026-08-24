@@ -28,6 +28,7 @@
 
 import { Prisma } from '@prisma/client';
 import { currentTenant, isUnscoped, isIncludingDeleted } from './tenantStore.js';
+import { recordStructuralWrite } from './structuralAudit.js';
 import { AuthorizationError } from './errors.js';
 import { logger } from './logger.js';
 
@@ -279,7 +280,22 @@ export const tenantExtension = Prisma.defineExtension({
   name: 'tenant-isolation',
   query: {
     $allModels: {
-      async $allOperations({ model, operation, args, query }) {
+      async $allOperations({ model, operation, args, query: rawQuery }) {
+        /**
+         * Every branch below ends in `query(args)`. Wrapping the query function
+         * here — rather than auditing at each `return` — means the audit is
+         * reached by construction: a branch added later cannot forget it,
+         * because there is no other way out.
+         *
+         * The same reasoning as injecting the tenant filter here instead of
+         * asking 300 handlers to write a where clause.
+         */
+        const query = async (auditedArgs: typeof args): Promise<unknown> => {
+          const result = await rawQuery(auditedArgs);
+          await recordStructuralWrite(model, operation, auditedArgs, result);
+          return result;
+        };
+
         // ── Soft delete ─────────────────────────────────────────────────────
         //
         // Applied FIRST and independently of tenancy: a model can be
