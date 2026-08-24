@@ -244,3 +244,60 @@ scoped by construction — either by having `mutate()` open its transaction on t
 extended client, or by a repository wrapper that requires a `TenantContext`.
 Until then, every new service is one forgotten `where` clause away from the
 breach described above, and a test is the only thing standing in the way.
+
+---
+
+## Phase 3c outcome (2026-08-24)
+
+Three of the four measured categories were closed **structurally** rather than by
+sweeping handlers. The reasoning was the same each time, and it is worth stating
+once: editing N handlers closes today's N and does nothing about the N+1th, which
+arrives the first time someone adds a handler without knowing the convention.
+That argument settled tenant scoping in Phase 3a; 3c applied it three more times.
+
+| Category | Before | After | How |
+|---|---|---|---|
+| Unaudited hard deletes | 20 | **0** | `deleteTenantEntity` — captures the row before it goes, requires a reason, refuses deletes that would orphan dependents |
+| Mass assignment (spread form) | 17 | **0** | `validate({ body })` on the route; the middleware *replaces* `req.body`, so the existing spread now spreads a `.strict()`-checked object |
+| Unaudited writes | 105 | **0** | The Prisma extension wraps the query function, so every write leaves a row whether or not its handler asks |
+| Unpaginated list reads | 109 | **0** | The extension refuses a `findMany` past 1000 rows rather than truncating it |
+| **Unvalidated writes** | 131 | **84** | *Remaining. See below.* |
+
+### What remains: 84 unvalidated writes
+
+Distributed hod 27, dean 16, faculty 15, placements 9, iqac 5, vc 5, sports 3,
+grievances 3, alumni 1.
+
+**These are not mass assignment.** The ratchet in `serviceScoping.test.ts` reads
+zero: every one of them writes explicitly named fields, so a caller cannot reach
+a column the handler did not choose. What they lack is a schema, which means:
+
+- no `.strict()`, so an unknown key is silently ignored rather than refused — a
+  client typo becomes a successful no-op
+- no length or range bounds, so an arbitrarily long string reaches the column
+- a missing required field surfaces as a 500 from Prisma rather than a 400 with
+  field errors
+
+Real, and worth closing; materially less severe than what 3c closed.
+
+**Why this one was not made structural.** Validation is per-endpoint semantics —
+which fields, which ranges, which combinations are coherent — and no generic rule
+can supply them. The generated-schema approach used for the 17 spread-form
+handlers does not transfer either: it worked there because those handlers took
+whole models, whereas these transform, derive and default individual fields, so
+each needs its handler read before a schema can be written without breaking it.
+Estimated at roughly a day of careful work, and it must not be rushed: a schema
+that rejects a body the handler currently accepts breaks a working endpoint.
+
+### Two mistakes worth keeping
+
+**The ratchet measured the wrong thing.** It counted the syntax
+`data: { ...req.body }`. After 3c that string appears in all seventeen *fixed*
+handlers and is dangerous in none. It now reads the route and counts only spreads
+of an **unvalidated** body. A guard that cannot tell a fixed call site from a
+broken one will eventually be silenced rather than fixed.
+
+**The row cap was nearly placed before the tenancy branches.** It read correctly
+and would have executed every `findMany` before the `institutionId` filter was
+injected. Both the cap and the structural audit now live in the wrapper that
+every branch converges on — which is *after* scoping, not before.
