@@ -1462,6 +1462,7 @@ router.post('/certificates/request', authenticate, validate({ body: certificateR
     const { type, purpose, copies } = req.body;
     const certificate = await prisma.certificateRequest.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         studentProfileId: profile.id,
         type,
         purpose,

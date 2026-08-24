@@ -6,6 +6,11 @@ import { sendError } from '../lib/errors.js';
 import * as exams from '../modules/coe/exams.service.js';
 import { updateExamSchema } from '../modules/coe/exams.schema.js';
 import { getTenantContext } from '../lib/tenant.js';
+import * as registrarService from '../modules/registrar/registrar.service.js';
+import {
+  updateStudentRecordSchema,
+  decideRequestSchema
+} from '../modules/registrar/registrar.schemas.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { z } from 'zod';
@@ -99,21 +104,40 @@ router.get('/students/:id', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.put('/students/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const { name, email, ...profileData } = req.body;
-    if (name || email) {
-      await prisma.user.update({ where: { id }, data: { ...(name && { name }), ...(email && { email }) } });
-    }
-    if (Object.keys(profileData).length > 0) {
-      await prisma.studentProfile.updateMany({ where: { userId: id }, data: profileData });
-    }
-    res.json({ success: true, message: 'Student record updated' });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Amend a student's record.
+ *
+ * Was:
+ *
+ *     const { name, email, ...profileData } = req.body;
+ *     await prisma.studentProfile.updateMany({ where: { userId: id }, data: profileData });
+ *
+ * Every column writable for ANY student — cgpa, earnedCredits, semester,
+ * rollNumber, admissionYear, programmeId — unvalidated and unaudited. A CGPA
+ * could be changed and nothing anywhere would record that it had been, or what
+ * it was before. T-104 built GradeHistory so an academic figure could not move
+ * without a record; this route went round it.
+ *
+ * `cgpa`, `totalCredits` and `earnedCredits` are now not editable here at any
+ * privilege level: they are derived from published results, and editing the
+ * summary would leave it disagreeing with what it summarises. `rollNumber`
+ * appears on issued documents and is excluded rather than quietly permitted.
+ */
+router.put(
+  '/students/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: updateStudentRecordSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { reason, ...fields } = req.body as Record<string, unknown> & { reason: string };
+    const updated = await registrarService.updateStudentRecord(
+      getTenantContext(req),
+      String(req.params.id),
+      fields,
+      reason
+    );
+    res.json({ success: true, data: updated });
+  })
+);
 
 // ─── Record Change Requests ───
 router.get('/record-changes', authenticate, async (req: Request, res: Response) => {
@@ -125,17 +149,26 @@ router.get('/record-changes', authenticate, async (req: Request, res: Response) 
   }
 });
 
-router.put('/record-changes/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const userId = (req as any).user.id;
-    const { status } = req.body;
-    const updated = await prisma.recordChangeRequest.update({ where: { id }, data: { status, approvedBy: userId } });
+/**
+ * Decide a record changes request. Previously a status flip with no
+ * record of who decided it.
+ */
+router.put(
+  '/record-changes/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: decideRequestSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body as { status: string; note?: string };
+    const updated = await registrarService.decideRequest(getTenantContext(req), {
+      model: 'recordChangeRequest',
+      entity: 'RecordChangeRequest',
+      id: String(req.params.id),
+      status: body.status,
+      note: body.note
+    });
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Transfers ───
 router.get('/transfers', authenticate, async (req: Request, res: Response) => {
@@ -202,16 +235,26 @@ router.get('/certificates', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.put('/certificates/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const { status, remarks } = req.body;
-    const updated = await prisma.certificateRequest.update({ where: { id }, data: { status, ...(remarks && { remarks }) } });
+/**
+ * Decide a certificates request. Previously a status flip with no
+ * record of who decided it.
+ */
+router.put(
+  '/certificates/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: decideRequestSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body as { status: string; note?: string };
+    const updated = await registrarService.decideRequest(getTenantContext(req), {
+      model: 'certificateRequest',
+      entity: 'CertificateRequest',
+      id: String(req.params.id),
+      status: body.status,
+      note: body.note
+    });
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Verification Requests ───
 router.get('/verifications', authenticate, async (req: Request, res: Response) => {
@@ -223,19 +266,26 @@ router.get('/verifications', authenticate, async (req: Request, res: Response) =
   }
 });
 
-router.put('/verifications/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const { status, response } = req.body;
-    const updated = await prisma.verificationRequest.update({
-      where: { id },
-      data: { status, response, respondedAt: new Date() }
+/**
+ * Decide a verifications request. Previously a status flip with no
+ * record of who decided it.
+ */
+router.put(
+  '/verifications/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: decideRequestSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body as { status: string; note?: string };
+    const updated = await registrarService.decideRequest(getTenantContext(req), {
+      model: 'verificationRequest',
+      entity: 'VerificationRequest',
+      id: String(req.params.id),
+      status: body.status,
+      note: body.note
     });
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Exam Oversight ───
 router.get('/exams', authenticate, async (req: Request, res: Response) => {
@@ -450,6 +500,7 @@ router.post('/documents', authenticate, async (req: Request, res: Response) => {
     const normalizedRoles = Array.isArray(accessRoles) ? accessRoles : [];
     const doc = await prisma.adminDocument.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         title,
         category,
         uploadedBy: userId,
@@ -663,24 +714,26 @@ router.get('/promotions', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/promotions/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const userId = (req as any).user.id;
-    const { status } = req.body;
-    const updateData: any = { status, approvedBy: userId };
-    if (status === 'approved') {
-      updateData.approvedAt = new Date();
-    }
-    const updated = await prisma.promotionRequest.update({
-      where: { id },
-      data: updateData
+/**
+ * Decide a promotions request. Previously a status flip with no
+ * record of who decided it.
+ */
+router.put(
+  '/promotions/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: decideRequestSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body as { status: string; note?: string };
+    const updated = await registrarService.decideRequest(getTenantContext(req), {
+      model: 'promotionRequest',
+      entity: 'PromotionRequest',
+      id: String(req.params.id),
+      status: body.status,
+      note: body.note
     });
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 // ─── Retirements ───
 router.get('/retirements', authenticate, async (req: Request, res: Response) => {
@@ -692,23 +745,25 @@ router.get('/retirements', authenticate, async (req: Request, res: Response) => 
   }
 });
 
-router.put('/retirements/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const userId = (req as any).user.id;
-    const { status } = req.body;
-    const updateData: any = { status, approvedBy: userId };
-    if (status === 'approved') {
-      updateData.approvedAt = new Date();
-    }
-    const updated = await prisma.retirementRequest.update({
-      where: { id },
-      data: updateData
+/**
+ * Decide a retirements request. Previously a status flip with no
+ * record of who decided it.
+ */
+router.put(
+  '/retirements/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: decideRequestSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body as { status: string; note?: string };
+    const updated = await registrarService.decideRequest(getTenantContext(req), {
+      model: 'retirementRequest',
+      entity: 'RetirementRequest',
+      id: String(req.params.id),
+      status: body.status,
+      note: body.note
     });
     res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+  })
+);
 
 export default router;

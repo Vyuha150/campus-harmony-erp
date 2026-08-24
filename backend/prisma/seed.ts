@@ -568,6 +568,7 @@ async function main() {
   });
 
   await upsertById(prisma.gatePass, 'seed-gate-pass-1', {
+    institutionId: SEED_INSTITUTION_ID,
     studentProfileId: IDS.student.profile,
     type: 'day-pass',
     fromDate: daysFromNow(1),
@@ -578,6 +579,7 @@ async function main() {
   });
 
   await upsertById(prisma.certificateRequest, 'seed-certificate-request-1', {
+    institutionId: SEED_INSTITUTION_ID,
     studentProfileId: IDS.student.profile,
     type: 'bonafide',
     purpose: 'Education loan renewal',
@@ -1677,6 +1679,7 @@ async function main() {
   });
 
   await upsertById(prisma.adminDocument, 'seed-admin-document-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Academic Council Proceedings',
     category: 'governance',
     uploadedBy: IDS.users.registrar,
@@ -1713,6 +1716,7 @@ async function main() {
   });
 
   await upsertById(prisma.verificationRequest, 'seed-verification-request-1', {
+    institutionId: SEED_INSTITUTION_ID,
     type: 'degree_verification',
     requesterName: 'ABC Corp HR',
     requesterOrg: 'ABC Corp',
@@ -1726,6 +1730,7 @@ async function main() {
   });
 
   await upsertById(prisma.recordChangeRequest, 'seed-record-change-1', {
+    institutionId: SEED_INSTITUTION_ID,
     studentId: IDS.student.profile,
     studentName: 'Ananya Student',
     field: 'address',

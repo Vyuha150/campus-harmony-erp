@@ -136,6 +136,13 @@ model Institution {
   purchaseOrders          PurchaseOrder[]
   budgetAllocations       BudgetAllocation[]
   payrollRecords          PayrollRecord[]
+  certificateRequests     CertificateRequest[]
+  verificationRequests    VerificationRequest[]
+  recordChangeRequests    RecordChangeRequest[]
+  promotionRequests       PromotionRequest[]
+  retirementRequests      RetirementRequest[]
+  adminDocuments          AdminDocument[]
+  gatePasses              GatePass[]
 
   @@index([isActive])
 }
@@ -912,6 +919,10 @@ model FeeRecord {
 
 model GatePass {
   id               String   @id @default(uuid())
+  /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
+  /// VerificationRequest is how an employer or another university confirms a
+  /// degree is real — decided, before this, by any registrar in the deployment.
+  institutionId    String
   studentProfileId String
   type             String
   fromDate         DateTime @db.Timestamptz(3)
@@ -921,6 +932,10 @@ model GatePass {
   status           String   @default("pending")
 
   student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Research
@@ -1316,6 +1331,10 @@ model HostelAllocation {
 // Certificates
 model CertificateRequest {
   id               String    @id @default(uuid())
+  /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
+  /// VerificationRequest is how an employer or another university confirms a
+  /// degree is real — decided, before this, by any registrar in the deployment.
+  institutionId    String
   studentProfileId String
   type             String // bonafide, transcript, migration
   purpose          String
@@ -1326,6 +1345,10 @@ model CertificateRequest {
   collectionDate   DateTime? @db.Timestamptz(3)
 
   student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Feedback
@@ -1385,6 +1408,10 @@ model LeaveRequest {
 // Faculty — Promotions
 model PromotionRequest {
   id                 String    @id @default(uuid())
+  /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
+  /// VerificationRequest is how an employer or another university confirms a
+  /// degree is real — decided, before this, by any registrar in the deployment.
+  institutionId      String
   facultyProfileId   String
   currentDesignation String
   newDesignation     String
@@ -1396,11 +1423,19 @@ model PromotionRequest {
   documents          Json?
 
   faculty FacultyProfile @relation("PromotionRequests", fields: [facultyProfileId], references: [id], onDelete: Cascade)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Faculty — Retirements
 model RetirementRequest {
   id                 String    @id @default(uuid())
+  /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
+  /// VerificationRequest is how an employer or another university confirms a
+  /// degree is real — decided, before this, by any registrar in the deployment.
+  institutionId      String
   facultyProfileId   String
   currentDesignation String
   yearsOfService     Int
@@ -1412,6 +1447,10 @@ model RetirementRequest {
   remarks            String?
 
   faculty FacultyProfile @relation("RetirementRequests", fields: [facultyProfileId], references: [id], onDelete: Cascade)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // ─── Phase 2: Full Backend Coverage ───
@@ -1717,6 +1756,10 @@ model DegreeRecord {
 // Registrar — Admin Documents
 model AdminDocument {
   id             String   @id @default(uuid())
+  /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
+  /// VerificationRequest is how an employer or another university confirms a
+  /// degree is real — decided, before this, by any registrar in the deployment.
+  institutionId  String
   title          String
   category       String
   uploadedBy     String
@@ -1729,6 +1772,10 @@ model AdminDocument {
   tags           Json?
   isConfidential Boolean  @default(false)
   accessRoles    Json?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Registrar — Vacancies
@@ -1777,6 +1824,10 @@ model AccreditationChecklist {
 // Registrar — Verification Requests
 model VerificationRequest {
   id            String    @id @default(uuid())
+  /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
+  /// VerificationRequest is how an employer or another university confirms a
+  /// degree is real — decided, before this, by any registrar in the deployment.
+  institutionId String
   type          String
   requesterName String
   requesterOrg  String
@@ -1790,25 +1841,37 @@ model VerificationRequest {
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Registrar — Record Change Requests
 model RecordChangeRequest {
-  id          String   @id @default(uuid())
-  studentId   String
-  studentName String
-  field       String
-  oldValue    String
-  newValue    String
-  reason      String
-  requestedBy String
-  requestedAt DateTime @default(now()) @db.Timestamptz(3)
-  status      String   @default("pending")
-  approvedBy  String?
-  documents   Json?
+  id            String   @id @default(uuid())
+  /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
+  /// VerificationRequest is how an employer or another university confirms a
+  /// degree is real — decided, before this, by any registrar in the deployment.
+  institutionId String
+  studentId     String
+  studentName   String
+  field         String
+  oldValue      String
+  newValue      String
+  reason        String
+  requestedBy   String
+  requestedAt   DateTime @default(now()) @db.Timestamptz(3)
+  status        String   @default("pending")
+  approvedBy    String?
+  documents     Json?
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Registrar — Exam Progress

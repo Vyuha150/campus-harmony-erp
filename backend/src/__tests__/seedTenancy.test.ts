@@ -28,10 +28,21 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { TENANT_OWNED_MODELS } from '../lib/tenantExtension.js';
 
+/**
+ * Comments are stripped before scanning.
+ *
+ * Without this the scan matched COMMENTED-OUT seed calls — PromotionRequest and
+ * RetirementRequest are disabled blocks awaiting their migrations — and reported
+ * them as missing a tenant key. A commented call cannot throw at runtime, so
+ * that was a false failure, and a guard that cries wolf is a guard someone
+ * eventually deletes.
+ */
 const seed = readFileSync(
   fileURLToPath(new URL('../../prisma/seed.ts', import.meta.url)),
   'utf8'
-);
+)
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
 const schema = readFileSync(
   fileURLToPath(new URL('../../prisma/schema.prisma', import.meta.url)),
   'utf8'
