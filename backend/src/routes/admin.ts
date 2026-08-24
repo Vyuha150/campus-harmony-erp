@@ -5,6 +5,7 @@ import { authenticate, authorizeRoles } from '../middleware/auth.js';
 import { hashPassword } from '../lib/password.js';
 import { ValidationError, NotFoundError , sendError} from '../lib/errors.js';
 import { recordFromRequest } from '../lib/audit.js';
+import * as adminService from '../modules/admin/admin.service.js';
 import {
   getTenantContext,
   campusScope,
@@ -99,6 +100,9 @@ router.post('/users', authenticate, async (req: Request, res: Response, next: Ne
     // Previously: `bcrypt.hash(password || 'password123', 10)` — omitting the
     // password silently created a real account with a password published in a
     // public repository. hashPassword() requires and validates it instead.
+    // Reject an unrecognised role before the account exists, rather than after.
+    adminService.assertKnownRole(String(role));
+
     const hashedPassword = await hashPassword(password);
 
     // `withInstitution` FORCES the creator's institutionId onto the row,
@@ -165,6 +169,14 @@ router.put('/users/:id', authenticate, async (req: Request, res: Response, next:
       data.password = await hashPassword(password);
     }
 
+    // The field was whitelisted but its VALUE was not checked: any string was
+    // accepted, so a user could be given a role no route recognises (locking
+    // them out silently) or one granting more than intended. This also refuses a
+    // change that would leave the institution with no administrator.
+    if (typeof data.role === 'string') {
+      await adminService.assertRoleChangeAllowed(getTenantContext(req), id, data.role);
+    }
+
     const updated = await prisma.user.update({ where: { id }, data });
 
     await recordFromRequest(req, {
@@ -189,33 +201,54 @@ router.put('/users/:id', authenticate, async (req: Request, res: Response, next:
   }
 });
 
-router.delete('/users/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.user.delete({ where: { id } });
-    res.json({ success: true, message: 'User deleted' });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.user.delete({ where: { id } })` and nothing else — an account
+ * removed with no record of who did it or what the account was, in the module
+ * whose whole purpose is controlling access.
+ */
+router.delete(
+  '/users/:id',
+  authenticate,
+  authorizeRoles('super_admin'),
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await adminService.deleteUser(
+      getTenantContext(req),
+      String(req.params.id),
+      String(req.body.reason)
+    );
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── System Configuration ───
-router.get('/config', authenticate, async (req: Request, res: Response) => {
-  try {
-    const departments = await prisma.department.findMany();
-    const academicYears = await db.academicYear.findMany({ orderBy: { year: 'desc' } });
+/**
+ * The institution's own particulars.
+ *
+ * Every field here used to be a STRING LITERAL in this handler, including
+ * `accreditation: 'NAAC A+'` — an accreditation grade reported to every caller
+ * of every deployment regardless of what had actually been awarded. The
+ * Institution row carries real naacGrade / aisheCode / nirfId columns; where one
+ * is unrecorded this now returns null rather than inventing a regulator's
+ * finding.
+ */
+router.get(
+  '/config',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = getTenantContext(req);
+    const [institution, departments, academicYears] = await Promise.all([
+      adminService.institutionConfig(ctx),
+      prisma.department.findMany({ take: 200 }),
+      db.academicYear.findMany({ orderBy: { year: 'desc' }, take: 100 })
+    ]);
 
-    res.json({
-      success: true,
-      data: {
-        university: { name: 'Campus Harmony University', code: 'CHU', type: 'Private', accreditation: 'NAAC A+' },
-        departments, academicYears
-      }
-    });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+    res.json({ success: true, data: { institution, departments, academicYears } });
+  })
+);
 
 router.put('/config', authenticate, async (_req: Request, res: Response) => {
   try {
