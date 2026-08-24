@@ -22,6 +22,11 @@ import {
   createInventorySchema,
   createTeamSchema
 } from '../modules/common/entityCreate.schemas.js';
+import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
+import {
+  fitnessRecordCreateSchema,
+  sportsEventCreateSchema
+} from '../modules/common/legacyWrite.schemas.js';
 
 const router = Router();
 
@@ -95,15 +100,29 @@ router.put(
   })
 );
 
-router.delete('/athletes/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const deleted = await prisma.sportsAthlete.delete({ where: { id } });
-    res.json({ success: true, data: deleted });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.sportsAthlete.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/athletes/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'sportsAthlete',
+      entity: 'SportsAthlete',
+      module: 'sports',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Teams ───
 router.get('/teams', authenticate, async (req: Request, res: Response) => {
@@ -151,15 +170,32 @@ router.put(
   })
 );
 
-router.delete('/teams/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const deleted = await prisma.sportsTeam.delete({ where: { id } });
-    res.json({ success: true, data: deleted });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.sportsTeam.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/teams/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'sportsTeam',
+      entity: 'SportsTeam',
+      module: 'sports',
+      id: String(req.params.id),
+      blockers: [
+        { model: 'sportsAttendance', foreignKey: 'teamId', describe: 'attendance records' }
+      ],
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Attendance ───
 router.get('/attendance', authenticate, async (req: Request, res: Response) => {
@@ -211,15 +247,29 @@ router.put(
   })
 );
 
-router.delete('/attendance/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const deleted = await prisma.sportsAttendance.delete({ where: { id } });
-    res.json({ success: true, data: deleted });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.sportsAttendance.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/attendance/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'sportsAttendance',
+      entity: 'SportsAttendance',
+      module: 'sports',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Facilities ───
 router.get('/facilities', authenticate, async (req: Request, res: Response) => {
@@ -258,15 +308,29 @@ router.put(
   })
 );
 
-router.delete('/facilities/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const deleted = await prisma.sportsFacility.delete({ where: { id } });
-    res.json({ success: true, data: deleted });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.sportsFacility.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/facilities/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'sportsFacility',
+      entity: 'SportsFacility',
+      module: 'sports',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Inventory ───
 router.get('/inventory', authenticate, async (req: Request, res: Response) => {
@@ -334,15 +398,29 @@ router.put(
   })
 );
 
-router.delete('/inventory/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const deleted = await prisma.sportsInventoryItem.delete({ where: { id } });
-    res.json({ success: true, data: deleted });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.sportsInventoryItem.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/inventory/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'sportsInventoryItem',
+      entity: 'SportsInventoryItem',
+      module: 'sports',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Events ───
 router.get('/events', authenticate, async (req: Request, res: Response) => {
@@ -354,7 +432,9 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/events', authenticate, async (req: Request, res: Response) => {
+router.post('/events', authenticate,
+  validate({ body: sportsEventCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const event = await prisma.sportsEvent.create({
       data: { ...req.body, startDate: new Date(req.body.startDate), endDate: new Date(req.body.endDate) }
@@ -380,15 +460,29 @@ router.put('/events/:id', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/events/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const deleted = await prisma.sportsEvent.delete({ where: { id } });
-    res.json({ success: true, data: deleted });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.sportsEvent.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/events/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'sportsEvent',
+      entity: 'SportsEvent',
+      module: 'sports',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 router.get('/events/:id/results', authenticate, async (req: Request, res: Response) => {
   try {
@@ -414,7 +508,9 @@ router.get('/health', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/health/fitness-test', authenticate, async (req: Request, res: Response) => {
+router.post('/health/fitness-test', authenticate,
+  validate({ body: fitnessRecordCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const record = await prisma.fitnessRecord.create({
@@ -441,14 +537,28 @@ router.put('/health/:id', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/health/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const deleted = await prisma.fitnessRecord.delete({ where: { id } });
-    res.json({ success: true, data: deleted });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.fitnessRecord.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/health/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'fitnessRecord',
+      entity: 'FitnessRecord',
+      module: 'sports',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 export default router;

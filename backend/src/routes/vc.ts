@@ -13,6 +13,10 @@ import {
   updateMeetingSchema,
   updateBroadcastSchema
 } from '../modules/common/entityUpdate.schemas.js';
+import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
+import {
+  complianceReportUpdateSchema
+} from '../modules/common/legacyWrite.schemas.js';
 
 const router = Router();
 
@@ -223,15 +227,29 @@ router.post('/policyscenarios', authenticate, async (req: Request, res: Response
   }
 });
 
-router.delete('/policyscenarios/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.policyScenario.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.policyScenario.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/policyscenarios/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'policyScenario',
+      entity: 'PolicyScenario',
+      module: 'governance',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 router.post('/policies/simulate', authenticate, async (req: Request, res: Response) => {
   try {
@@ -381,7 +399,9 @@ router.get('/compliance', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/compliance/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/compliance/:id', authenticate,
+  validate({ params: z.object({ id: entityId }), body: complianceReportUpdateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const updated = await prisma.complianceReport.update({

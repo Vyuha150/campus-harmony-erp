@@ -17,6 +17,12 @@ import {
   createCommunicationSchema,
   createDonationSchema
 } from '../modules/common/entityCreate.schemas.js';
+import {
+  alumniEventLegacyCreateSchema,
+  alumniJobLegacyCreateSchema,
+  mentorshipProgramCreateSchema,
+  progressionSurveyCreateSchema
+} from '../modules/common/legacyWrite.schemas.js';
 
 const router = Router();
 const currentYear = new Date().getFullYear();
@@ -194,7 +200,9 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/events', authenticate, async (req: Request, res: Response) => {
+router.post('/events', authenticate,
+  validate({ body: alumniEventLegacyCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const event = await prisma.alumniEvent.create({
       data: {
@@ -237,7 +245,9 @@ router.get('/mentorship/programs', authenticate, async (req: Request, res: Respo
   }
 });
 
-router.post('/mentorship/programs', authenticate, async (req: Request, res: Response) => {
+router.post('/mentorship/programs', authenticate,
+  validate({ body: mentorshipProgramCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const program = await prisma.mentorshipProgram.create({
       data: { ...req.body, startDate: new Date(req.body.startDate), ...(req.body.endDate && { endDate: new Date(req.body.endDate) }) }
@@ -306,7 +316,9 @@ router.get('/progression/surveys', authenticate, async (req: Request, res: Respo
   }
 });
 
-router.post('/progression/surveys', authenticate, async (req: Request, res: Response) => {
+router.post('/progression/surveys', authenticate,
+  validate({ body: progressionSurveyCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const survey = await prisma.progressionSurvey.create({
       data: { ...req.body, startDate: new Date(req.body.startDate), endDate: new Date(req.body.endDate) }
@@ -352,7 +364,9 @@ router.get('/jobs', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/jobs', authenticate, async (req: Request, res: Response) => {
+router.post('/jobs', authenticate,
+  validate({ body: alumniJobLegacyCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const job = await prisma.alumniJobPosting.create({

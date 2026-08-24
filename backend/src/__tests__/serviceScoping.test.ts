@@ -207,26 +207,17 @@ describe('the examination schedule is tenant-owned', () => {
  * Detail: docs/development-plan/20_PHASE_3_BASELINE.md.
  */
 describe('mass-assignment debt does not grow', () => {
-  /** Files still writing a model directly from `req.body`, with counts. */
   /**
+   * Files still writing a model from an UNVALIDATED `req.body`, with counts.
+   *
    * EMPTY, and that is the point.
    *
-   * All 17 handlers were migrated in Phase 3b. The inventory stays here rather
-   * than being deleted so the ratchet keeps working: any file that reintroduces
-   * the pattern now exceeds its recorded count of zero and fails the build.
+   * The last seventeen — admin 2, alumni 4, hod 2, iqac 4, security 2, sports 2,
+   * vc 1 — were closed in Phase 3c. The inventory stays here rather than being
+   * deleted so the ratchet keeps working: any file that reintroduces the pattern
+   * now exceeds its recorded count of zero and fails the build.
    */
-  const KNOWN_MASS_ASSIGNMENT: Record<string, number> = {
-    // The SPREAD form, `data: { ...req.body }`, surfaced when the pattern was
-    // widened a third time. Being worked down module by module in Phase 3b;
-    // finance.ts is first because it moves money.
-    'admin.ts': 2,
-    'alumni.ts': 4,
-    'hod.ts': 2,
-    'iqac.ts': 4,
-    'security.ts': 2,
-    'sports.ts': 2,
-    'vc.ts': 1
-  };
+  const KNOWN_MASS_ASSIGNMENT: Record<string, number> = {};
 
   /**
    * Any write whose `data` is the raw request body.
@@ -259,9 +250,37 @@ describe('mass-assignment debt does not grow', () => {
   const pattern =
     /\.(?:create|createMany|update|updateMany|upsert)\s*\(\s*\{[\s\S]{0,200}?data:\s*\{?\s*(?:\.\.\.\s*)?req\.body/g;
 
+  /**
+   * Is the handler containing `index` fed a VALIDATED body?
+   *
+   * `validate({ body: … })` does not merely check the body, it REPLACES it with
+   * the parsed result — see middleware/validate.ts. So on a route that carries
+   * it, `{ ...req.body }` spreads an object that is already stripped of unknown
+   * keys by `.strict()`, and the spread is no longer mass assignment.
+   *
+   * This is why the ratchet must read the ROUTE and not just the write. The
+   * seventeen Phase 3c sites were closed by adding middleware, not by deleting
+   * the spread; a purely syntactic count went on reporting all seventeen as
+   * outstanding after they were fixed. The reverse error is worse: a count that
+   * looks only at the write can be "fixed" by rewording the spread while the
+   * hole stays open.
+   */
+  function isValidated(src: string, index: number): boolean {
+    const start = src.lastIndexOf('router.', index);
+    if (start === -1) return false;
+    // The middleware chain is everything before the handler function opens.
+    const handler = src.indexOf('async (', start);
+    if (handler === -1 || handler > index) return false;
+    return /validate\s*\(\s*\{[\s\S]*?\bbody\s*:/.test(src.slice(start, handler));
+  }
+
   function countIn(file: string): number {
     const src = stripComments(readFileSync(join(routesDir(), file), 'utf8'));
-    return (src.match(pattern) ?? []).length;
+    let unvalidated = 0;
+    for (const match of src.matchAll(pattern)) {
+      if (!isValidated(src, match.index ?? 0)) unvalidated += 1;
+    }
+    return unvalidated;
   }
 
   it('no route file exceeds its recorded count', () => {
@@ -302,6 +321,30 @@ describe('mass-assignment debt does not grow', () => {
     // A validated body must NOT trip it.
     const good = 'await prisma.thing.create({ data: { ...body, institutionId: ctx.institutionId } });';
     expect((good.match(new RegExp(pattern.source, 'g')) ?? []).length).toBe(0);
+  });
+
+  it('NEGATIVE CONTROL: isValidated separates a guarded route from a bare one', () => {
+    const guarded = `router.post('/x', authenticate,
+  validate({ body: thingSchema }),
+  async (req: Request, res: Response) => {
+    await prisma.thing.create({ data: { ...req.body } });`;
+
+    const bare = `router.post('/x', authenticate, async (req: Request, res: Response) => {
+    await prisma.thing.create({ data: { ...req.body } });`;
+
+    // The write itself is identical in both; only the route differs.
+    const at = (s: string) => s.indexOf('prisma.thing.create');
+
+    expect(isValidated(guarded, at(guarded)), 'a validated route was counted as debt').toBe(true);
+    expect(
+      isValidated(bare, at(bare)),
+      'an unvalidated route was treated as safe — the ratchet would report zero ' +
+        'while every spread in the codebase stayed open'
+    ).toBe(false);
+
+    // `validate({ params })` alone must not count: it leaves the body untouched.
+    const paramsOnly = guarded.replace('body: thingSchema', 'params: z.object({ id: entityId })');
+    expect(isValidated(paramsOnly, at(paramsOnly))).toBe(false);
   });
 
   it('NEGATIVE CONTROL: the req.body matcher still works', () => {

@@ -15,6 +15,10 @@ import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
 import {
   updateIncidentSchema
 } from '../modules/common/entityUpdate.schemas.js';
+import {
+  supportTicketCreateSchema,
+  vigilanceCaseCreateSchema
+} from '../modules/common/legacyWrite.schemas.js';
 
 const router = Router();
 
@@ -766,7 +770,9 @@ router.get('/vigilance-cases', authenticate, async (req: Request, res: Response)
   }
 });
 
-router.post('/vigilance-cases', authenticate, async (req: Request, res: Response) => {
+router.post('/vigilance-cases', authenticate,
+  validate({ body: vigilanceCaseCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const count = await prisma.vigilanceCase.count();
     const caseRecord = await prisma.vigilanceCase.create({
@@ -856,7 +862,9 @@ router.get('/support-tickets', authenticate, async (req: Request, res: Response)
   }
 });
 
-router.post('/support-tickets', authenticate, async (req: Request, res: Response) => {
+router.post('/support-tickets', authenticate,
+  validate({ body: supportTicketCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const count = await prisma.supportTicket.count();
     const ticket = await prisma.supportTicket.create({

@@ -4,6 +4,12 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
 import { hashPassword, generateTemporaryPassword } from '../lib/password.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
+import { getTenantContext } from '../lib/tenant.js';
 
 const router = Router();
 const customCommunicationTemplates: Array<{ id: string; name: string; category: string; desc: string }> = [];
@@ -131,7 +137,11 @@ router.get('/students', authenticate, async (req: Request, res: Response) => {
       data: students.map((s: any) => ({
         id: s.id, name: s.user.name, rollNumber: s.rollNumber, program: s.program,
         branch: s.branch, semester: s.semester, section: s.section, batch: s.batch, admissionYear: s.admissionYear, cgpa: s.cgpa, email: s.user.email,
-        resumeVerified: true,
+        // Was `resumeVerified: true` — every student reported as having a
+        // verified resume, whether or not anyone had looked at one. There is no
+        // verification record in the schema, so the honest answer is that we do
+        // not know.
+        resumeVerified: null,
         status: s.applications.some((a: any) => a.status === 'selected') ? 'placed' : 'eligible',
         placed: s.applications.some((a: any) => a.status === 'selected'),
         placedAt: s.applications.find((a: any) => a.status === 'selected')?.drive?.role ?? null,
@@ -263,63 +273,57 @@ router.get('/students/:id', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.put('/students/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const { name, email, program, branch, semester, cgpa, section, batch, admissionYear } = req.body ?? {};
-
-    const existing = await prisma.studentProfile.findUnique({ where: { id }, select: { userId: true } });
-    if (!existing) {
-      res.status(404).json({ success: false, message: 'Student not found' });
-      return;
+/**
+ * REFUSED for academic fields.
+ *
+ * This accepted `program`, `branch`, `semester` and `cgpa` and wrote them to the
+ * StudentProfile. A placement officer editing a CGPA is the same defect as the
+ * registrar route that allowed it — except that here it is not even the office
+ * that owns the data, and a CGPA is the number recruiters shortlist on.
+ */
+router.put('/students/:id', authenticate, async (_req: Request, res: Response) => {
+  res.status(403).json({
+    success: false,
+    error: {
+      code: 'FORBIDDEN',
+      message:
+        'Placements cannot amend a student record. Programme, semester and CGPA ' +
+        'belong to the registrar and to published results; a CGPA edited here ' +
+        'would be the figure recruiters shortlist on.'
     }
-
-    const updated = await prisma.$transaction(async (tx: any) => {
-      if (name !== undefined || email !== undefined) {
-        await tx.user.update({
-          where: { id: existing.userId },
-          data: {
-            ...(name !== undefined ? { name: String(name) } : {}),
-            ...(email !== undefined ? { email: String(email).toLowerCase() } : {})
-          }
-        });
-      }
-
-      return tx.studentProfile.update({
-        where: { id },
-        data: {
-          ...(program !== undefined ? { program: String(program) } : {}),
-          ...(branch !== undefined ? { branch: String(branch) } : {}),
-          ...(semester !== undefined ? { semester: Number(semester) } : {}),
-          ...(cgpa !== undefined ? { cgpa: Number(cgpa) } : {}),
-          ...(section !== undefined ? { section: String(section) } : {}),
-          ...(batch !== undefined ? { batch: String(batch) } : {}),
-          ...(admissionYear !== undefined ? { admissionYear: Number(admissionYear) } : {})
-        }
-      });
-    });
-
-    res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
+  });
 });
 
-router.delete('/students/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const profile = await prisma.studentProfile.findUnique({ where: { id }, select: { userId: true } });
-
-    if (!profile) {
-      res.status(404).json({ success: false, message: 'Student not found' });
-      return;
+/**
+ * REFUSED, and that is the fix.
+ *
+ * This deleted a USER:
+ *
+ *     const profile = await prisma.studentProfile.findUnique({ where: { id }, select: { userId: true } });
+ *     await prisma.user.delete({ where: { id: profile.userId } });
+ *
+ * `/api/placements` is mounted for `placement_officer`. A placement officer
+ * could therefore delete a student's entire account — cascading away their
+ * enrolments, results, fees and library history — from a screen about campus
+ * recruitment. Nothing was audited, and nothing about the placements domain
+ * makes that a reasonable thing to be able to do.
+ *
+ * There is no "remove from the placement pool" concept in the schema to fall
+ * back on: eligibility is derived from StudentProfile, and a student's
+ * involvement with a drive is a StudentApplication. Withdrawing an application
+ * is what this screen actually wants, and that endpoint already exists.
+ */
+router.delete('/students/:id', authenticate, async (_req: Request, res: Response) => {
+  res.status(403).json({
+    success: false,
+    error: {
+      code: 'FORBIDDEN',
+      message:
+        'Placements cannot delete student accounts. Removing a student from the ' +
+        'register is an action for the registrar; to take a student out of a drive, ' +
+        'withdraw their application instead.'
     }
-
-    await prisma.user.delete({ where: { id: profile.userId } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
+  });
 });
 
 // ─── Companies ───
@@ -384,15 +388,32 @@ router.put('/companies/:id', authenticate, async (req: Request, res: Response) =
   }
 });
 
-router.delete('/companies/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.company.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.company.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/companies/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'company',
+      entity: 'Company',
+      module: 'placements',
+      id: String(req.params.id),
+      blockers: [
+        { model: 'placementDrive', foreignKey: 'companyId', describe: 'placement drives' }
+      ],
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Drives ───
 router.get('/drives', authenticate, async (req: Request, res: Response) => {
@@ -477,15 +498,32 @@ router.put('/drives/:id', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/drives/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.placementDrive.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.placementDrive.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/drives/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'placementDrive',
+      entity: 'PlacementDrive',
+      module: 'placements',
+      id: String(req.params.id),
+      blockers: [
+        { model: 'studentApplication', foreignKey: 'driveId', describe: 'student applications' }
+      ],
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 router.get('/drives/:id/applications', authenticate, async (req: Request, res: Response) => {
   try {
@@ -600,15 +638,29 @@ router.put('/training/:id', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.delete('/training/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.trainingSession.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.trainingSession.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/training/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'trainingSession',
+      entity: 'TrainingSession',
+      module: 'placements',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Reports ───
 router.get('/reports', authenticate, async (req: Request, res: Response) => {

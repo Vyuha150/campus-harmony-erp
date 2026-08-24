@@ -8,6 +8,14 @@ import { getTenantContext } from '../lib/tenant.js';
 import * as workflow from '../modules/workflow/workflow.service.js';
 import { openInstanceFor, ensureDefinition } from '../modules/workflow/bridge.js';
 import { PURCHASE_REQUEST, CURRICULUM_PROPOSAL } from '../modules/workflow/builtins.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+import { entityId } from '../schemas/common.js';
+import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
+import {
+  accreditationDataUpdateSchema
+} from '../modules/common/legacyWrite.schemas.js';
 
 const router = Router();
 const db: any = prisma;
@@ -390,7 +398,9 @@ router.get('/accreditation', authenticate, async (req: Request, res: Response) =
   }
 });
 
-router.put('/accreditation/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/accreditation/:id', authenticate,
+  validate({ params: z.object({ id: entityId }), body: accreditationDataUpdateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const updated = await db.accreditationData.update({ where: { id }, data: { ...req.body, lastUpdated: new Date() } });
@@ -947,15 +957,29 @@ router.put('/workload/course/:id', authenticate, authorizeRoles('hod', 'dean'), 
   }
 });
 
-router.delete('/workload/course/:id', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.courseClass.delete({ where: { id } });
-    res.json({ success: true, message: 'Class removed' });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.courseClass.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/workload/course/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'courseClass',
+      entity: 'CourseClass',
+      module: 'academics',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 router.get('/courseresults', authenticate, async (req: Request, res: Response) => {
   try {
@@ -1116,7 +1140,9 @@ router.post('/accreditationdata', authenticate, async (req: Request, res: Respon
   }
 });
 
-router.put('/accreditationdata/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/accreditationdata/:id', authenticate,
+  validate({ params: z.object({ id: entityId }), body: accreditationDataUpdateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const updated = await db.accreditationData.update({
@@ -1455,25 +1481,32 @@ router.put('/course-management/:id', authenticate, authorizeRoles('hod', 'dean')
   }
 });
 
-router.delete('/course-management/:id', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.id;
-    const department = await getHODDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
+/**
+ * Was `prisma.course.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/course-management/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'course',
+      entity: 'Course',
+      module: 'academics',
+      id: String(req.params.id),
+      blockers: [
+        { model: 'enrollment', foreignKey: 'courseId', describe: 'enrolments' }
+      ],
+      reason: String(req.body.reason)
+    });
 
-    const id = String(req.params.id);
-    const existing = await prisma.course.findFirst({ where: { id, departmentId: department.id } });
-    if (!existing) {
-      res.status(404).json({ success: false, message: 'Course not found' });
-      return;
-    }
-
-    await prisma.course.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+    res.json({ success: true, data: result });
+  })
+);
 
 router.get('/curriculum-proposals', authenticate, async (req: Request, res: Response) => {
   try {
@@ -1621,27 +1654,29 @@ router.put('/facility-management/:id', authenticate, authorizeRoles('hod', 'dean
   }
 });
 
-router.delete('/facility-management/:id', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const facility = await prisma.facility.findUnique({ where: { id } });
-    if (!facility) {
-      res.status(404).json({ success: false, message: 'Facility not found' });
-      return;
-    }
+/**
+ * Was `prisma.facility.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/facility-management/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'facility',
+      entity: 'Facility',
+      module: 'academics',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
 
-    const usageCount = await prisma.timetableSlot.count({ where: { room: facility.name } });
-    if (usageCount > 0) {
-      res.status(400).json({ success: false, message: 'Cannot delete facility used in timetable slots' });
-      return;
-    }
-
-    await prisma.facility.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+    res.json({ success: true, data: result });
+  })
+);
 
 router.get('/communication/messages', authenticate, async (_req: Request, res: Response) => {
   try {
@@ -1737,15 +1772,29 @@ router.post('/communication/messages', authenticate, async (req: Request, res: R
   }
 });
 
-router.delete('/communication/messages/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await db.broadcastMessage.delete({ where: { id } });
-    res.json({ success: true, message: 'Message deleted' });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.broadcastMessage.delete({ where: { id } })` with nothing recorded.
+ * Now audited, with the row captured before it goes and a reason required.
+ */
+router.delete(
+  '/communication/messages/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'broadcastMessage',
+      entity: 'BroadcastMessage',
+      module: 'governance',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 router.get('/communication/recipient-options', authenticate, async (req: Request, res: Response) => {
   try {

@@ -12,6 +12,12 @@ import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
 import {
   updateQualityMetricSchema
 } from '../modules/common/entityUpdate.schemas.js';
+import {
+  iqacActionCreateSchema,
+  iqacActionUpdateSchema,
+  qualityDocumentCreateSchema,
+  qualityDocumentUpdateSchema
+} from '../modules/common/legacyWrite.schemas.js';
 
 const router = Router();
 
@@ -125,7 +131,9 @@ router.get('/actions', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/actions', authenticate, async (req: Request, res: Response) => {
+router.post('/actions', authenticate,
+  validate({ body: iqacActionCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const action = await prisma.iQACActionItem.create({
       data: { ...req.body, dueDate: new Date(req.body.dueDate) }
@@ -136,7 +144,9 @@ router.post('/actions', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/actions/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/actions/:id', authenticate,
+  validate({ params: z.object({ id: entityId }), body: iqacActionUpdateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const updated = await prisma.iQACActionItem.update({
@@ -159,7 +169,9 @@ router.get('/documents', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/documents', authenticate, async (req: Request, res: Response) => {
+router.post('/documents', authenticate,
+  validate({ body: qualityDocumentCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const doc = await prisma.qualityDocument.create({
@@ -171,7 +183,9 @@ router.post('/documents', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/documents/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/documents/:id', authenticate,
+  validate({ params: z.object({ id: entityId }), body: qualityDocumentUpdateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const userId = (req as any).user.id;

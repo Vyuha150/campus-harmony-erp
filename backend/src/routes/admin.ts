@@ -21,6 +21,10 @@ import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
 import {
   updateCourseSchema
 } from '../modules/common/entityUpdate.schemas.js';
+import {
+  academicYearCreateSchema,
+  systemNotificationCreateSchema
+} from '../modules/common/legacyWrite.schemas.js';
 
 const router = Router();
 const db: any = prisma;
@@ -360,7 +364,9 @@ router.get('/academicyears', authenticate, async (req: Request, res: Response) =
   }
 });
 
-router.post('/academic-years', authenticate, authorizeRoles('dean'), async (req: Request, res: Response) => {
+router.post('/academic-years', authenticate, authorizeRoles('dean'),
+  validate({ body: academicYearCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const yearValue = String(req.body?.year || '').trim();
     if (!yearValue) {
@@ -470,7 +476,9 @@ router.get('/systemnotifications', authenticate, async (req: Request, res: Respo
   }
 });
 
-router.post('/notifications', authenticate, async (req: Request, res: Response) => {
+router.post('/notifications', authenticate,
+  validate({ body: systemNotificationCreateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const notification = await db.systemNotificationRecord.create({
