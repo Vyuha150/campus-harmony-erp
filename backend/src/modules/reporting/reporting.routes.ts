@@ -14,6 +14,7 @@ import { entityId, academicYear } from '../../schemas/common.js';
 import { getTenantContext } from '../../lib/tenant.js';
 import { NotFoundError, ValidationError } from '../../lib/errors.js';
 import { recordFromRequest } from '../../lib/audit.js';
+import { unbounded } from '../../lib/tenantStore.js';
 import { REPORTS, findReport } from './reports.js';
 import { toCsv, exportMeta, UNSUPPORTED_FORMATS, type ExportFormat } from './export.js';
 
@@ -88,12 +89,18 @@ router.get(
     }
 
     const startedAt = Date.now();
-    const result = await report.run(ctx, {
-      academicYear: query.academicYear,
-      departmentId: query.departmentId,
-      programmeId: query.programmeId,
-      semester: query.semester
-    });
+    // A report reads every row that matches its filters and computes totals from
+    // them. The unpaginated-read cap must not apply: a capped input would give a
+    // total that is wrong and looks right, which is the one outcome a report may
+    // never produce. Bounded instead by the report's own filters.
+    const result = await unbounded('reports aggregate over the full filtered set', () =>
+      report.run(ctx, {
+        academicYear: query.academicYear,
+        departmentId: query.departmentId,
+        programmeId: query.programmeId,
+        semester: query.semester
+      })
+    );
     const durationMs = Date.now() - startedAt;
 
     // Exports leave the system, so they are audited. A report of student

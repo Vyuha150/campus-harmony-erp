@@ -27,7 +27,7 @@
  */
 
 import { Prisma } from '@prisma/client';
-import { currentTenant, isUnscoped, isIncludingDeleted } from './tenantStore.js';
+import { currentTenant, isUnscoped, isIncludingDeleted, isUnboundedReads } from './tenantStore.js';
 import { recordStructuralWrite } from './structuralAudit.js';
 import { AuthorizationError } from './errors.js';
 import { logger } from './logger.js';
@@ -228,6 +228,31 @@ const UNIQUE_OPERATIONS = new Set(['findUnique', 'findUniqueOrThrow']);
  * RESULT was checked — by which point the row had already been written or
  * deleted. See the comment at the call site.
  */
+/**
+ * Largest result an unpaginated `findMany` may return before it is refused.
+ *
+ * Generous on purpose: every legitimate SCREEN is far below it, so this never
+ * fires in normal use, and the queries it does catch are the ones reading a
+ * whole table.
+ */
+const UNPAGINATED_ROW_CAP = 1000;
+
+/**
+ * What a developer is told when the cap fires.
+ *
+ * Exported so its wording can be asserted directly. Reproducing the condition
+ * takes a thousand rows and a database, so without this the message would be
+ * the one part of the mechanism that nothing checks — and a cap that fires
+ * correctly while explaining nothing gets worked around instead of fixed.
+ */
+export function unpaginatedReadMessage(model: string): string {
+  return (
+    `${model}.findMany read more than ${UNPAGINATED_ROW_CAP} rows without a page size. ` +
+    'Paginate it, or wrap the call in unbounded("<reason>") if it genuinely needs every row — ' +
+    'truncating here would silently change any figure computed from them.'
+  );
+}
+
 const UNIQUE_WRITE_OPERATIONS = new Set(['update', 'delete']);
 
 const CREATE_OPERATIONS = new Set(['create', 'createMany']);
@@ -290,9 +315,63 @@ export const tenantExtension = Prisma.defineExtension({
          * The same reasoning as injecting the tenant filter here instead of
          * asking 300 handlers to write a where clause.
          */
-        const query = async (auditedArgs: typeof args): Promise<unknown> => {
-          const result = await rawQuery(auditedArgs);
-          await recordStructuralWrite(model, operation, auditedArgs, result);
+        /**
+         * Everything below ends in `query(args)`, so this wrapper is the one
+         * place every branch converges on — AFTER each has finished amending
+         * `args` with the tenant filter. Both the audit and the row cap live
+         * here for that reason: a branch added later reaches them by
+         * construction, and neither can run before scoping has been applied.
+         *
+         * An earlier draft put the cap ahead of the branches instead. It read
+         * correctly and would have executed the query before the tenant filter
+         * was ever injected.
+         */
+        const query = async (finalArgs: typeof args): Promise<unknown> => {
+          /**
+           * An unpaginated `findMany` returns the whole table.
+           *
+           * Phase 3c counted 109 list endpoints with no `take`. On seeded data
+           * they are indistinguishable from correct code; against an
+           * institution with 40,000 students they load 40,000 rows to render a
+           * page showing twenty.
+           *
+           * IT REFUSES RATHER THAN TRUNCATES, and that is the whole design.
+           * A silent `take: 1000` would fix the memory problem just as well —
+           * and would quietly change the answer of every query that computes
+           * something from the rows it reads. The OBE attainment engine and the
+           * reporting layer both do exactly that, so a silent cap would turn a
+           * correct attainment percentage into a plausible wrong one with
+           * nothing anywhere to show it had happened. Wrong numbers that look
+           * right are the failure this codebase spends the most effort
+           * avoiding.
+           *
+           * So: read one row past the cap, and if it is there, throw. Nothing
+           * is truncated, the memory ceiling still holds, and the caller is
+           * told to paginate or to declare `unbounded('why')`.
+           */
+          const capped =
+            operation === 'findMany' &&
+            !isUnboundedReads() &&
+            (finalArgs as { take?: number }).take === undefined;
+
+          if (capped) {
+            (finalArgs as { take?: number }).take = UNPAGINATED_ROW_CAP + 1;
+          }
+
+          const result = await rawQuery(finalArgs);
+
+          if (capped && Array.isArray(result) && result.length > UNPAGINATED_ROW_CAP) {
+            const message = unpaginatedReadMessage(model);
+            // Logged as well as thrown. The error handler returns a generic
+            // INTERNAL_ERROR to the caller, which is right — the model name and
+            // the shape of the fix are the developer's business, not a client's
+            // — but it means the server log is the only place the remedy is
+            // legible, so it is put there deliberately rather than by luck.
+            logger.error(message, { module: 'tenancy', operation, resource: model });
+            throw new Error(message);
+          }
+
+          await recordStructuralWrite(model, operation, finalArgs, result);
           return result;
         };
 

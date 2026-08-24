@@ -47,6 +47,11 @@ interface TenantStoreValue {
    * `runServiceAudited`.
    */
   serviceAudited?: boolean;
+  /**
+   * When true, `findMany` without an explicit `take` is not capped. See
+   * `unbounded`.
+   */
+  unboundedReads?: boolean;
 }
 
 const storage = new AsyncLocalStorage<TenantStoreValue>();
@@ -156,6 +161,30 @@ export async function runServiceAudited<T>(fn: () => Promise<T>): Promise<T> {
 /** True when a service is already recording this write itself. */
 export function isServiceAudited(): boolean {
   return storage.getStore()?.serviceAudited === true;
+}
+
+/**
+ * Run `fn` with the row cap on unpaginated `findMany` lifted.
+ *
+ * For work that genuinely needs every row: attainment computation, a report
+ * that sums a column, an export. These must not be capped, because a truncated
+ * input produces a number that is wrong and looks right — the failure the
+ * no-fabricated-metrics guard exists to prevent.
+ *
+ * `reason` is required so the justification sits at the call site, the same
+ * shape as `runUnscoped`. Anything that merely renders a screen should paginate
+ * instead of coming here.
+ */
+export async function unbounded<T>(reason: string, fn: () => T | Promise<T>): Promise<T> {
+  const current = storage.getStore();
+  void reason; // documented at the call site; retained for greppability
+  if (!current) return fn();
+  return storage.run({ ...current, unboundedReads: true }, async () => await fn());
+}
+
+/** True when the current context has lifted the unpaginated-read cap. */
+export function isUnboundedReads(): boolean {
+  return storage.getStore()?.unboundedReads === true;
 }
 
 /** True when the current execution context has opted out of tenant filtering. */

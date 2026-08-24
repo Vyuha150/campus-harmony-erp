@@ -13,6 +13,7 @@ import { validate } from '../../middleware/validate.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { entityId, academicYear } from '../../schemas/common.js';
 import { getTenantContext } from '../../lib/tenant.js';
+import { unbounded } from '../../lib/tenantStore.js';
 import * as service from './obe.service.js';
 
 const router = Router();
@@ -192,10 +193,16 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const query = req.query as unknown as { academicYear: string };
 
-    const report = await service.courseAttainment(
-      getTenantContext(req),
-      pathParam(req, 'schemeCourseId'),
-      query.academicYear
+    // Attainment divides by the number of marks it reads, so the
+    // unpaginated-read cap must not apply: a capped input yields a
+    // percentage that is wrong and indistinguishable from right. Bounded
+    // instead by the course/scheme this request names.
+    const report = await unbounded('CO attainment reads every mark in the course', () =>
+      service.courseAttainment(
+        getTenantContext(req),
+        pathParam(req, 'schemeCourseId'),
+        query.academicYear
+      )
     );
 
     res.json({ success: true, data: report });
@@ -212,10 +219,16 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const query = req.query as unknown as { academicYear: string };
 
-    const report = await service.programmeAttainment(
-      getTenantContext(req),
-      pathParam(req, 'schemeId'),
-      query.academicYear
+    // Attainment divides by the number of marks it reads, so the
+    // unpaginated-read cap must not apply: a capped input yields a
+    // percentage that is wrong and indistinguishable from right. Bounded
+    // instead by the course/scheme this request names.
+    const report = await unbounded('PO attainment reads every course in the scheme', () =>
+      service.programmeAttainment(
+        getTenantContext(req),
+        pathParam(req, 'schemeId'),
+        query.academicYear
+      )
     );
 
     res.json({ success: true, data: report });

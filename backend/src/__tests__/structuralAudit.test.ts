@@ -16,6 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { redact } from '../lib/structuralAudit.js';
+import { unpaginatedReadMessage } from '../lib/tenantExtension.js';
 
 describe('audit redaction', () => {
   it('removes credentials at the top level', () => {
@@ -115,5 +116,30 @@ describe('audit redaction', () => {
     let deep: Record<string, unknown> = { password: 'x' };
     for (let i = 0; i < 20; i += 1) deep = { nested: deep };
     expect(() => redact(deep)).not.toThrow();
+  });
+});
+
+/**
+ * The unpaginated-read cap's message.
+ *
+ * The cap itself needs a thousand rows and a database to trigger, and is proven
+ * live in scripts/verify/verify-3c-row-cap.sh. What can be checked here is the
+ * part that decides whether the cap gets respected or worked around: whether a
+ * developer who hits it is told what to do.
+ */
+describe('unpaginated-read cap message', () => {
+  it('names the model, the limit, and both remedies', () => {
+    const message = unpaginatedReadMessage('StudentProfile');
+
+    expect(message).toContain('StudentProfile');
+    expect(message).toContain('1000');
+    expect(message).toMatch(/paginate/i);
+    expect(message).toContain('unbounded(');
+  });
+
+  it('says WHY it refuses instead of truncating', () => {
+    // Without the reason, capping silently looks like the obvious simpler fix,
+    // and the next person applies it.
+    expect(unpaginatedReadMessage('CourseResult')).toMatch(/silently|computed/i);
   });
 });
