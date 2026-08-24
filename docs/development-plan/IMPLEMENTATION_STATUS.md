@@ -1966,3 +1966,54 @@ Live checks **103/103** across 8 scripts
 
 **Phase 2 now meets its exit criteria.** Verified by
 `verify-2-exit-criteria.sh`, which checks the wording literally: 15/15.
+
+---
+
+## Checkpoint 29 — Phase 3b complete (5 of 5 modules)
+
+`finance.ts`, `students.ts`, `admin.ts`, `registrar.ts`, `security.ts` — 159
+handlers. Every module yielded a genuine integrity or security defect rather
+than mechanical refactoring.
+
+| Module | The finding |
+|---|---|
+| `finance.ts` | Not one write audited or validated, in the module that moves money. Purchase orders could be recorded approved/delivered/paid before anything happened; budgets accepted `availableAmount` so one could report headroom it lacked; payroll took `netSalary` as client input and could disburse twice. |
+| `students.ts` | **A student could clear their own fees.** `transactionId` came from the request body — generated in the browser as `TXN-${Date.now()}-${random}` — and the server marked the fee paid and said "Payment successful". |
+| `admin.ts` | **`accreditation: 'NAAC A+'` hardcoded**, reported to every caller of every deployment. Plus unaudited account deletion, an unvalidated `role`, and nothing stopping the last administrator being removed. |
+| `registrar.ts` | The register could be rewritten without a trace: `...profileData` spread into `StudentProfile` for ANY student, unvalidated and unaudited. |
+| `security.ts` | **Eight unaudited DELETE endpoints**, including vigilance cases — confidential investigations the investigating office could destroy with no record. |
+
+### Tenant keys added in this phase
+33 tables that were globally shared. Migrations 0033–0035:
+payroll, purchase orders, budgets, vendors; certificate and degree-verification
+requests, record changes, staff promotions and retirements, admin documents,
+gate passes; visitor passes, patrol logs, ID cards, vehicle passes, vigilance
+cases, support tickets, hostel access.
+
+### Soft delete where deletion destroys evidence
+`VigilanceCase` and `IncidentReport` are now soft-deleted. An investigation the
+investigating office can erase is not evidence of anything, and the erasure is
+precisely what an auditor would want to see. Verified live: the row is retained,
+`deletedAt` set, the case disappears from the API, and the deletion is audited
+at `critical` with the row captured before removal.
+
+### Mistakes made and corrected in this phase
+- A verification run reported a record "unchanged" while **the dev server was
+  down** — nothing had been tested. Re-run live. Second vacuous check this
+  session; both were caught by looking at the evidence rather than the result.
+- `seedTenancy.test.ts` flagged two **commented-out** seed blocks. A commented
+  call cannot throw; the guard now strips comments like the others.
+- A migration assumed `studentProfileId` where the column is `studentId` —
+  the same assumption 0034 had already been rewritten to avoid. Both now read
+  `information_schema` instead of guessing.
+- The mass-assignment ratchet missed the SPREAD form `data: { ...req.body }`,
+  its **third** too-narrow pattern. Widened; 17 sites remain recorded.
+
+### Status
+Typecheck **0** · Tests **494** · Migrations **35** ·
+Live checks **103/103** across 8 scripts
+
+### Remaining in Phase 3
+3c: `hod.ts` (70), `faculty.ts` (44), `dean.ts` (40), `vc.ts` (33),
+`placements.ts` (33), `sports.ts` (30), `alumni.ts` (20), `iqac.ts` (17) —
+about 287 handlers, plus `grievances.ts` 8 of 14 still legacy.

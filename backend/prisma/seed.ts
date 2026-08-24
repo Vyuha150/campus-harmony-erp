@@ -831,6 +831,7 @@ async function main() {
   });
 
   await upsertById(prisma.visitorPass, 'seed-visitor-pass-1', {
+    institutionId: SEED_INSTITUTION_ID,
     visitorName: 'Suresh Parent',
     purpose: 'Faculty meeting',
     hostName: 'Dr. Ravi Faculty',
@@ -1464,6 +1465,7 @@ async function main() {
     where: { requestNumber: 'IDC-00001' },
     update: {
       id: 'seed-id-card-request-1',
+      institutionId: SEED_INSTITUTION_ID,
       applicantId: IDS.users.student,
       applicantName: 'Ananya Student',
       applicantType: 'student',
@@ -1478,6 +1480,7 @@ async function main() {
       documents: ['photo.jpg'],
     },
     create: {
+      institutionId: SEED_INSTITUTION_ID,
       id: 'seed-id-card-request-1',
       requestNumber: 'IDC-00001',
       applicantId: IDS.users.student,
@@ -1499,6 +1502,7 @@ async function main() {
     where: { passNumber: 'VP-00001' },
     update: {
       id: 'seed-vehicle-pass-1',
+      institutionId: SEED_INSTITUTION_ID,
       ownerName: 'Ananya Student',
       ownerType: 'student',
       ownerIdNumber: 'CH2024CS001',
@@ -1513,6 +1517,7 @@ async function main() {
       documents: ['rc.pdf'],
     },
     create: {
+      institutionId: SEED_INSTITUTION_ID,
       id: 'seed-vehicle-pass-1',
       passNumber: 'VP-00001',
       ownerName: 'Ananya Student',
@@ -1531,6 +1536,7 @@ async function main() {
   });
 
   await upsertById(prisma.patrolLog, 'seed-patrol-log-1', {
+    institutionId: SEED_INSTITUTION_ID,
     officerId: IDS.users.security,
     officerName: 'Kabir Security',
     shift: 'night',
@@ -1544,6 +1550,7 @@ async function main() {
   });
 
   await upsertById(prisma.hostelAccessLog, 'seed-hostel-access-1', {
+    institutionId: SEED_INSTITUTION_ID,
     studentId: IDS.student.profile,
     studentName: 'Ananya Student',
     hostelBlock: 'A',
@@ -1561,6 +1568,7 @@ async function main() {
     where: { caseNumber: 'VIG-00001' },
     update: {
       id: 'seed-vigilance-case-1',
+      institutionId: SEED_INSTITUTION_ID,
       type: 'disciplinary',
       subject: 'Unauthorized hostel entry',
       description: 'Reported unauthorized entry attempt after curfew.',
@@ -1576,6 +1584,7 @@ async function main() {
       confidentialityLevel: 'high',
     },
     create: {
+      institutionId: SEED_INSTITUTION_ID,
       id: 'seed-vigilance-case-1',
       caseNumber: 'VIG-00001',
       type: 'disciplinary',
@@ -1598,6 +1607,7 @@ async function main() {
     where: { ticketNumber: 'TKT-00001' },
     update: {
       id: 'seed-support-ticket-1',
+      institutionId: SEED_INSTITUTION_ID,
       reportedBy: IDS.users.student,
       reporterType: 'student',
       contactInfo: 'student@campusharmony.edu',
@@ -1615,6 +1625,7 @@ async function main() {
       satisfactionRating: null,
     },
     create: {
+      institutionId: SEED_INSTITUTION_ID,
       id: 'seed-support-ticket-1',
       ticketNumber: 'TKT-00001',
       reportedBy: IDS.users.student,

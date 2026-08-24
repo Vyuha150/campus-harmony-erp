@@ -6,6 +6,7 @@ import { authenticate } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
 import { hashPassword } from '../lib/password.js';
 import { getTenantContext } from '../lib/tenant.js';
+import * as securityService from '../modules/security/security.service.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -64,6 +65,7 @@ router.post('/visitors', authenticate, async (req: Request, res: Response) => {
 
     const visitor = await prisma.visitorPass.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         visitorName: String(visitorName),
         purpose: String(purpose),
         hostName: String(hostName),
@@ -105,20 +107,35 @@ router.put('/visitors/:id', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.delete('/visitors/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.visitorPass.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.visitorPass.delete({ where: { id } })` and a success message —
+ * no record of who removed it or what it was.
+ *
+ * Hard deleted, but audited with the row captured before it goes.
+ */
+router.delete(
+  '/visitors/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await securityService.removeRecord(getTenantContext(req), {
+      model: 'visitorPass',
+      entity: 'VisitorPass',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Incidents ───
 router.get('/incidents', authenticate, async (req: Request, res: Response) => {
   try {
-    const incidents = await prisma.incidentReport.findMany({ orderBy: { reportedAt: 'desc' } });
+    const incidents = await prisma.incidentReport.findMany({
+      take: 200, orderBy: { reportedAt: 'desc' } });
     res.json({ success: true, data: incidents });
   } catch (error: any) {
     sendError(res, error);
@@ -165,15 +182,31 @@ router.put(
   })
 );
 
-router.delete('/incidents/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.incidentReport.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.incidentReport.delete({ where: { id } })` and a success message —
+ * no record of who removed it or what it was.
+ *
+ * SOFT deleted: this is the record that something was investigated, and
+ * an investigation the investigating office can erase is not evidence of
+ * anything. The row stays and the extension hides it.
+ */
+router.delete(
+  '/incidents/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await securityService.removeRecord(getTenantContext(req), {
+      model: 'incidentReport',
+      entity: 'IncidentReport',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Patrols ───
 router.get('/patrols', authenticate, async (req: Request, res: Response) => {
@@ -194,6 +227,7 @@ router.post('/patrols', authenticate, async (req: Request, res: Response) => {
 
     const created = await prisma.patrolLog.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         officerId: String(officerId),
         officerName: String(officerName),
         shift: String(shift),
@@ -235,20 +269,35 @@ router.put('/patrols/:id', authenticate, async (req: Request, res: Response) => 
   }
 });
 
-router.delete('/patrols/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.patrolLog.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.patrolLog.delete({ where: { id } })` and a success message —
+ * no record of who removed it or what it was.
+ *
+ * Hard deleted, but audited with the row captured before it goes.
+ */
+router.delete(
+  '/patrols/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await securityService.removeRecord(getTenantContext(req), {
+      model: 'patrolLog',
+      entity: 'PatrolLog',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Guards ───
 router.get('/guards', authenticate, async (req: Request, res: Response) => {
   try {
     const guards = await prisma.user.findMany({
+      take: 200,
       where: { role: 'security_officer' },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -451,6 +500,7 @@ router.put('/guards/:id/duty', authenticate, async (req: Request, res: Response)
     } else {
       duty = await prisma.patrolLog.create({
         data: {
+        institutionId: getTenantContext(req).institutionId,
           officerId,
           officerName: guard.name,
           shift: String(shift),
@@ -483,7 +533,8 @@ router.delete('/guards/:id', authenticate, async (req: Request, res: Response) =
 // ─── ID Cards ───
 router.get('/id-cards', authenticate, async (req: Request, res: Response) => {
   try {
-    const requests = await prisma.iDCardRequest.findMany({ orderBy: { requestDate: 'desc' } });
+    const requests = await prisma.iDCardRequest.findMany({
+      take: 200, orderBy: { requestDate: 'desc' } });
     res.json({ success: true, data: requests });
   } catch (error: any) {
     sendError(res, error);
@@ -500,6 +551,7 @@ router.post('/id-cards', authenticate, async (req: Request, res: Response) => {
 
     const request = await prisma.iDCardRequest.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         requestNumber: `IDC-${(count + 1).toString().padStart(5, '0')}`,
         applicantId: String(applicantId),
         applicantName: String(applicantName),
@@ -549,20 +601,35 @@ router.put('/id-cards/:id', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.delete('/id-cards/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.iDCardRequest.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.iDCardRequest.delete({ where: { id } })` and a success message —
+ * no record of who removed it or what it was.
+ *
+ * Hard deleted, but audited with the row captured before it goes.
+ */
+router.delete(
+  '/id-cards/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await securityService.removeRecord(getTenantContext(req), {
+      model: 'iDCardRequest',
+      entity: 'IDCardRequest',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Vehicle Passes ───
 router.get('/vehicle-passes', authenticate, async (req: Request, res: Response) => {
   try {
-    const passes = await prisma.vehiclePass.findMany({ orderBy: { validFrom: 'desc' } });
+    const passes = await prisma.vehiclePass.findMany({
+      take: 200, orderBy: { validFrom: 'desc' } });
     res.json({ success: true, data: passes });
   } catch (error: any) {
     sendError(res, error);
@@ -593,6 +660,7 @@ router.post('/vehicle-passes', authenticate, async (req: Request, res: Response)
 
     const pass = await prisma.vehiclePass.create({
       data: {
+        institutionId: getTenantContext(req).institutionId,
         passNumber: `VP-${(count + 1).toString().padStart(5, '0')}`,
         ownerName: String(ownerName),
         ownerType: String(ownerType),
@@ -653,15 +721,29 @@ router.put('/vehicle-passes/:id', authenticate, async (req: Request, res: Respon
   }
 });
 
-router.delete('/vehicle-passes/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.vehiclePass.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.vehiclePass.delete({ where: { id } })` and a success message —
+ * no record of who removed it or what it was.
+ *
+ * Hard deleted, but audited with the row captured before it goes.
+ */
+router.delete(
+  '/vehicle-passes/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await securityService.removeRecord(getTenantContext(req), {
+      model: 'vehiclePass',
+      entity: 'VehiclePass',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Hostel Access ───
 router.get('/hostel-access', authenticate, async (req: Request, res: Response) => {
@@ -676,7 +758,8 @@ router.get('/hostel-access', authenticate, async (req: Request, res: Response) =
 // ─── Vigilance Cases ───
 router.get('/vigilance-cases', authenticate, async (req: Request, res: Response) => {
   try {
-    const cases = await prisma.vigilanceCase.findMany({ orderBy: { dateReported: 'desc' } });
+    const cases = await prisma.vigilanceCase.findMany({
+      take: 200, orderBy: { dateReported: 'desc' } });
     res.json({ success: true, data: cases });
   } catch (error: any) {
     sendError(res, error);
@@ -736,20 +819,37 @@ router.put('/vigilance-cases/:id', authenticate, async (req: Request, res: Respo
   }
 });
 
-router.delete('/vigilance-cases/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.vigilanceCase.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.vigilanceCase.delete({ where: { id } })` and a success message —
+ * no record of who removed it or what it was.
+ *
+ * SOFT deleted: this is the record that something was investigated, and
+ * an investigation the investigating office can erase is not evidence of
+ * anything. The row stays and the extension hides it.
+ */
+router.delete(
+  '/vigilance-cases/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await securityService.removeRecord(getTenantContext(req), {
+      model: 'vigilanceCase',
+      entity: 'VigilanceCase',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── Support Tickets ───
 router.get('/support-tickets', authenticate, async (req: Request, res: Response) => {
   try {
-    const tickets = await prisma.supportTicket.findMany({ orderBy: { createdDate: 'desc' } });
+    const tickets = await prisma.supportTicket.findMany({
+      take: 200, orderBy: { createdDate: 'desc' } });
     res.json({ success: true, data: tickets });
   } catch (error: any) {
     sendError(res, error);
@@ -809,14 +909,28 @@ router.put('/support-tickets/:id', authenticate, async (req: Request, res: Respo
   }
 });
 
-router.delete('/support-tickets/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.supportTicket.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.supportTicket.delete({ where: { id } })` and a success message —
+ * no record of who removed it or what it was.
+ *
+ * Hard deleted, but audited with the row captured before it goes.
+ */
+router.delete(
+  '/support-tickets/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await securityService.removeRecord(getTenantContext(req), {
+      model: 'supportTicket',
+      entity: 'SupportTicket',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+    res.json({ success: true, data: result });
+  })
+);
 
 export default router;

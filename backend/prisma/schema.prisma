@@ -143,6 +143,13 @@ model Institution {
   retirementRequests      RetirementRequest[]
   adminDocuments          AdminDocument[]
   gatePasses              GatePass[]
+  visitorPasses           VisitorPass[]
+  patrolLogs              PatrolLog[]
+  idCardRequests          IDCardRequest[]
+  vehiclePasses           VehiclePass[]
+  vigilanceCases          VigilanceCase[]
+  supportTickets          SupportTicket[]
+  hostelAccessLogs        HostelAccessLog[]
 
   @@index([isActive])
 }
@@ -1140,13 +1147,21 @@ model Team {
 
 // Security
 model VisitorPass {
-  id           String    @id @default(uuid())
-  visitorName  String
-  purpose      String
-  hostName     String
-  checkInTime  DateTime  @default(now()) @db.Timestamptz(3)
-  checkOutTime DateTime? @db.Timestamptz(3)
-  status       String    @default("active")
+  id            String    @id @default(uuid())
+  /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
+  /// VigilanceCase is the sensitive one: confidential investigations with
+  /// evidence files, readable and deletable by any security officer anywhere.
+  institutionId String
+  visitorName   String
+  purpose       String
+  hostName      String
+  checkInTime   DateTime  @default(now()) @db.Timestamptz(3)
+  checkOutTime  DateTime? @db.Timestamptz(3)
+  status        String    @default("active")
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 model IncidentReport {
@@ -1163,6 +1178,12 @@ model IncidentReport {
   reportedAt    DateTime @default(now()) @db.Timestamptz(3)
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  /// SOFT DELETE (0035). An investigation that the office conducting it can
+  /// erase is not evidence of anything, and the erasure is precisely what an
+  /// auditor would want to see. The extension filters these structurally.
+  deletedAt DateTime? @db.Timestamptz(3)
+  deletedBy String?
 
   @@index([institutionId])
 }
@@ -2506,6 +2527,10 @@ model AntiRaggingAffidavit {
 // Security — ID Card Requests
 model IDCardRequest {
   id             String    @id @default(uuid())
+  /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
+  /// VigilanceCase is the sensitive one: confidential investigations with
+  /// evidence files, readable and deletable by any security officer anywhere.
+  institutionId  String
   requestNumber  String    @unique
   applicantId    String
   applicantName  String
@@ -2522,11 +2547,19 @@ model IDCardRequest {
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   applicant User @relation(fields: [applicantId], references: [id], onDelete: Restrict)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Security — Vehicle Passes
 model VehiclePass {
   id            String   @id @default(uuid())
+  /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
+  /// VigilanceCase is the sensitive one: confidential investigations with
+  /// evidence files, readable and deletable by any security officer anywhere.
+  institutionId String
   passNumber    String   @unique
   ownerName     String
   ownerType     String
@@ -2540,29 +2573,45 @@ model VehiclePass {
   status        String   @default("active")
   feesPaid      Boolean  @default(false)
   documents     Json?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Security — Patrol Logs
 model PatrolLog {
-  id          String    @id @default(uuid())
-  officerId   String
-  officerName String
-  shift       String
-  patrolRoute String
-  startTime   DateTime  @db.Timestamptz(3)
-  endTime     DateTime? @db.Timestamptz(3)
-  checkpoints Json?
-  status      String    @default("on_duty")
-  location    String?
-  lastUpdate  DateTime  @default(now()) @db.Timestamptz(3)
+  id            String    @id @default(uuid())
+  /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
+  /// VigilanceCase is the sensitive one: confidential investigations with
+  /// evidence files, readable and deletable by any security officer anywhere.
+  institutionId String
+  officerId     String
+  officerName   String
+  shift         String
+  patrolRoute   String
+  startTime     DateTime  @db.Timestamptz(3)
+  endTime       DateTime? @db.Timestamptz(3)
+  checkpoints   Json?
+  status        String    @default("on_duty")
+  location      String?
+  lastUpdate    DateTime  @default(now()) @db.Timestamptz(3)
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   officer User @relation(fields: [officerId], references: [id], onDelete: Restrict)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Security — Hostel Access Logs
 model HostelAccessLog {
   id               String    @id @default(uuid())
+  /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
+  /// VigilanceCase is the sensitive one: confidential investigations with
+  /// evidence files, readable and deletable by any security officer anywhere.
+  institutionId    String
   studentId        String
   studentName      String
   hostelBlock      String
@@ -2577,11 +2626,19 @@ model HostelAccessLog {
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Security — Vigilance Cases
 model VigilanceCase {
   id                   String    @id @default(uuid())
+  /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
+  /// VigilanceCase is the sensitive one: confidential investigations with
+  /// evidence files, readable and deletable by any security officer anywhere.
+  institutionId        String
   caseNumber           String    @unique
   type                 String
   subject              String
@@ -2596,11 +2653,25 @@ model VigilanceCase {
   actionTaken          String?
   closeDate            DateTime? @db.Timestamptz(3)
   confidentialityLevel String    @default("medium")
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  /// SOFT DELETE (0035). An investigation that the office conducting it can
+  /// erase is not evidence of anything, and the erasure is precisely what an
+  /// auditor would want to see. The extension filters these structurally.
+  deletedAt DateTime? @db.Timestamptz(3)
+  deletedBy String?
+
+  @@index([institutionId])
 }
 
 // Security — Support Tickets
 model SupportTicket {
   id                 String    @id @default(uuid())
+  /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
+  /// VigilanceCase is the sensitive one: confidential investigations with
+  /// evidence files, readable and deletable by any security officer anywhere.
+  institutionId      String
   ticketNumber       String    @unique
   reportedBy         String
   reporterType       String
@@ -2617,6 +2688,10 @@ model SupportTicket {
   resolutionDate     DateTime? @db.Timestamptz(3)
   resolutionNotes    String?
   satisfactionRating Int?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Admin — Audit Logs (system-wide)

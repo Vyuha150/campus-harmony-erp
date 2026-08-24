@@ -148,6 +148,15 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   'RetirementRequest',
   'AdminDocument',
   'GatePass',
+  // 0035 - the security tables. Vigilance cases are confidential
+  // investigations; all seven were globally readable.
+  'VisitorPass',
+  'PatrolLog',
+  'IDCardRequest',
+  'VehiclePass',
+  'VigilanceCase',
+  'SupportTicket',
+  'HostelAccessLog',
   // Workflow engine (0024). WorkflowStep and WorkflowTransition are NOT listed:
   // they carry no institutionId and are scoped through their parent.
   'WorkflowDefinition',
@@ -181,7 +190,10 @@ export const SOFT_DELETABLE_MODELS = new Set<string>([
   'CourseResult',
   'SemesterResult',
   'LibraryBook',
-  'FeeRecord'
+  'FeeRecord',
+  // 0035 - an investigation the office conducting it can erase is not evidence.
+  'VigilanceCase',
+  'IncidentReport',
 ]);
 
 /** Operations whose `where` clause must be constrained. */
