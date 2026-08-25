@@ -168,7 +168,15 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   // same defect: no institutionId filter at all.
   'MentorshipProgram',
   'AlumniCommunicationRecord',
-  'ProgressionSurvey'
+  'ProgressionSurvey',
+  // 0037 — the VC dashboard's three orphan models. Same gap, found by the
+  // same audit: no relation to derive an owner from, no institutionId filter
+  // anywhere in vc.ts, every institution's KPIs/compliance reports/policy
+  // scenarios visible (and, for InstitutionKPI, fabricated once and shared)
+  // across the whole deployment.
+  'InstitutionKPI',
+  'ComplianceReport',
+  'PolicyScenario'
 ]);
 
 

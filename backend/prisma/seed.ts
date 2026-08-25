@@ -733,6 +733,7 @@ async function main() {
   });
 
   await upsertById(prisma.institutionKPI, 'seed-kpi-1', {
+    institutionId: SEED_INSTITUTION_ID,
     category: 'academics',
     label: 'Overall Pass Percentage',
     value: '88%',
@@ -927,6 +928,7 @@ async function main() {
   });
 
   await upsertById(prisma.complianceReport, 'seed-compliance-report-1', {
+    institutionId: SEED_INSTITUTION_ID,
     framework: 'NAAC',
     title: 'NAAC Self Study Progress',
     status: 'draft',
@@ -937,6 +939,7 @@ async function main() {
   });
 
   await upsertById(prisma.policyScenario, 'seed-policy-scenario-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Attendance Requirement Adjustment',
     description: 'Model impact of changing minimum attendance from 75% to 80%.',
     category: 'academic',

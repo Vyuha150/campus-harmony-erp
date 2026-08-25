@@ -119,6 +119,9 @@ model Institution {
   mentorshipPrograms      MentorshipProgram[]
   alumniCommunicationRecords AlumniCommunicationRecord[]
   progressionSurveys      ProgressionSurvey[]
+  institutionKPIs         InstitutionKPI[]
+  complianceReports       ComplianceReport[]
+  policyScenarios         PolicyScenario[]
   journalEntries          JournalEntry[]
   antiRaggingAffidavits   AntiRaggingAffidavit[]
   qualityMetrics          QualityMetric[]
@@ -1099,12 +1102,20 @@ model QualityMetric {
 
 model InstitutionKPI {
   id       String @id @default(uuid())
+  /// TENANT KEY, added in 0037. No relation to derive an owner from at all —
+  /// this table was fully global, and `GET /dashboard` fabricated three KPI
+  /// rows the first time it was empty with nothing to scope that check by.
+  institutionId String
   category String
   label    String
   value    String
   target   String
   trend    String
   status   String
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Alumni
@@ -1714,6 +1725,8 @@ model BroadcastMessage {
 // VC — Compliance Reports
 model ComplianceReport {
   id          String   @id @default(uuid())
+  /// TENANT KEY, added in 0037. No relation to derive an owner from either.
+  institutionId String
   framework   String
   title       String
   status      String   @default("draft")
@@ -1721,11 +1734,17 @@ model ComplianceReport {
   maxScore    Float    @default(100)
   lastUpdated DateTime @default(now()) @db.Timestamptz(3)
   criteria    Json?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // VC — Policy Scenarios
 model PolicyScenario {
   id               String   @id @default(uuid())
+  /// TENANT KEY, added in 0037. Backfilled from createdBy -> User.institutionId.
+  institutionId    String
   title            String
   description      String
   category         String
@@ -1734,6 +1753,10 @@ model PolicyScenario {
   impact           String   @default("neutral")
   createdBy        String
   createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Registrar — Transfer Requests

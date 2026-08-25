@@ -378,7 +378,14 @@ router.put('/results/:id/approve', authenticate, validate({ body: resultApproval
 // ─── Finance ───
 router.get('/finance', authenticate, async (req: Request, res: Response) => {
   try {
-    const budgets = await prisma.departmentBudget.findMany({ include: { department: true } });
+    const context = getTenantContext(req);
+    // DepartmentBudget carries no institutionId of its own — reach it through
+    // the (tenant-owned, auto-scoped) Department relation instead. Without
+    // this every dean saw every institution's department budgets.
+    const budgets = await prisma.departmentBudget.findMany({
+      where: { department: { institutionId: context.institutionId } },
+      include: { department: true }
+    });
     res.json({
       success: true,
       data: budgets.map((b: any) => ({

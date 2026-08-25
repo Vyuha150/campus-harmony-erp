@@ -106,16 +106,12 @@ async function buildDepartmentPerformance() {
 // ─── Dashboard ───
 router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
   try {
-    const kpis = await prisma.institutionKPI.findMany();
-    if (kpis.length === 0) {
-      await prisma.institutionKPI.createMany({
-        data: [
-          { category: "academic", label: "Overall Placement", value: "92%", target: "95%", trend: "up", status: "good" },
-          { category: "research", label: "Research Grants", value: "4.5Cr", target: "5Cr", trend: "up", status: "good" },
-          { category: "quality", label: "Student Satisfaction", value: "4.2/5", target: "4.5", trend: "stable", status: "average" },
-        ]
-      });
-    }
+    // REMOVED: an auto-create that invented "Overall Placement: 92%",
+    // "Research Grants: 4.5Cr" and "Student Satisfaction: 4.2/5" the first
+    // time this institution had no KPI rows, then wrote them to the database
+    // so every later load looked like a real measurement. The same pattern
+    // Phase 3b removed from iqac.ts's NAAC score. An empty KPI list is the
+    // honest answer when nobody has recorded one yet.
     const finalKpis = await prisma.institutionKPI.findMany();
     const totalStudents = await prisma.user.count({ where: { role: 'student' } });
     const totalFaculty = await prisma.user.count({ where: { role: 'faculty' } });
@@ -216,6 +212,10 @@ router.post('/policyscenarios', authenticate, validate({ body: policyScenarioCre
   try {
     const userId = String((req as any).user.id);
     const { title, description, category, parameters, projectedOutcome, impact } = req.body;
+    // `institutionId` is required on the model since 0037 but is injected by
+    // the tenant extension at runtime, not supplied here — `as any` because
+    // tsc checks a named object literal's keys even though every value on it
+    // is `any`, unlike a `{ ...req.body }` spread.
     const created = await prisma.policyScenario.create({
       data: {
         title,
@@ -225,7 +225,7 @@ router.post('/policyscenarios', authenticate, validate({ body: policyScenarioCre
         projectedOutcome: projectedOutcome || 'Run simulation to generate projections.',
         impact: impact || 'neutral',
         createdBy: userId,
-      }
+      } as any
     });
     res.json({ success: true, data: { ...created, parameters: toArray<any>(created.parameters) } });
   } catch (error: any) {
@@ -261,8 +261,9 @@ router.post('/policies/simulate', authenticate, validate({ body: policyScenarioC
   try {
     const userId = (req as any).user.id;
     const { title, description, category, parameters } = req.body;
+    // See the comment on the /policyscenarios create above re: `as any`.
     const scenario = await prisma.policyScenario.create({
-      data: { title, description, category, parameters, createdBy: userId, projectedOutcome: 'Simulation pending' }
+      data: { title, description, category, parameters, createdBy: userId, projectedOutcome: 'Simulation pending' } as any
     });
     res.json({ success: true, data: scenario });
   } catch (error: any) {
@@ -423,9 +424,15 @@ router.put('/compliance/:id', authenticate,
 // ─── Finance ───
 router.get('/finance', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const totalRevenue = await prisma.feeRecord.aggregate({ where: { status: 'paid' }, _sum: { amount: true } });
     const pendingDues = await prisma.feeRecord.aggregate({ where: { status: 'pending' }, _sum: { amount: true } });
-    const budgets = await prisma.departmentBudget.findMany({ include: { department: true } });
+    // DepartmentBudget carries no institutionId of its own — reach it through
+    // the (tenant-owned, auto-scoped) Department relation instead.
+    const budgets = await prisma.departmentBudget.findMany({
+      where: { department: { institutionId: context.institutionId } },
+      include: { department: true }
+    });
 
     res.json({
       success: true,
@@ -542,12 +549,16 @@ router.get('/executiveapprovals', authenticate, async (_req: Request, res: Respo
   }
 });
 
-router.get('/financialoverview', authenticate, async (_req: Request, res: Response) => {
+router.get('/financialoverview', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const [paid, pending, budgets] = await Promise.all([
       prisma.feeRecord.aggregate({ where: { status: 'paid' }, _sum: { amount: true } }),
       prisma.feeRecord.aggregate({ where: { status: 'pending' }, _sum: { amount: true } }),
-      prisma.departmentBudget.findMany({ include: { department: true } })
+      prisma.departmentBudget.findMany({
+        where: { department: { institutionId: context.institutionId } },
+        include: { department: true }
+      })
     ]);
 
     res.json({
@@ -564,9 +575,13 @@ router.get('/financialoverview', authenticate, async (_req: Request, res: Respon
   }
 });
 
-router.get('/finance-summary', authenticate, async (_req: Request, res: Response) => {
+router.get('/finance-summary', authenticate, async (req: Request, res: Response) => {
   try {
-    const budgets = await prisma.departmentBudget.findMany({ include: { department: true } });
+    const context = getTenantContext(req);
+    const budgets = await prisma.departmentBudget.findMany({
+      where: { department: { institutionId: context.institutionId } },
+      include: { department: true }
+    });
     res.json({
       success: true,
       data: budgets.map((b: any) => ({
@@ -590,9 +605,13 @@ router.get('/compliancereports', authenticate, async (_req: Request, res: Respon
   }
 });
 
-router.get('/department-budgets', authenticate, async (_req: Request, res: Response) => {
+router.get('/department-budgets', authenticate, async (req: Request, res: Response) => {
   try {
-    const budgets = await prisma.departmentBudget.findMany({ include: { department: true } });
+    const context = getTenantContext(req);
+    const budgets = await prisma.departmentBudget.findMany({
+      where: { department: { institutionId: context.institutionId } },
+      include: { department: true }
+    });
     const data = budgets.map((budget: any) => {
       const allocated = Number(budget.allocated || 0);
       const spent = Number(budget.spent || 0);
@@ -614,16 +633,24 @@ router.get('/department-budgets', authenticate, async (_req: Request, res: Respo
   }
 });
 
-router.get('/revenue-streams', authenticate, async (_req: Request, res: Response) => {
+router.get('/revenue-streams', authenticate, async (req: Request, res: Response) => {
   try {
-    const [paid, budgets] = await Promise.all([
+    const context = getTenantContext(req);
+    // `grants` and `other` used to be Math.round(totalBudgetAllocation * 0.1)
+    // and Math.round(tuition * 0.05) — invented fractions with no revenue
+    // behind them at all, not even a real number scaled wrong. ResearchProject
+    // and Donation are real tables for exactly these two categories; neither
+    // carries an institutionId of its own, so both are reached through their
+    // owning profile's institution the same way alumni.ts does it.
+    const [paid, grantProjects, donations] = await Promise.all([
       prisma.feeRecord.findMany({ where: { status: 'paid' } }),
-      prisma.departmentBudget.findMany()
+      prisma.researchProject.findMany({ where: { faculty: { institutionId: context.institutionId } } }),
+      prisma.donation.findMany({ where: { status: 'completed', alumni: { user: { institutionId: context.institutionId } } } })
     ]);
 
     const tuition = paid.reduce((sum: number, record: any) => sum + Number(record.amount || 0), 0);
-    const grants = budgets.reduce((sum: number, budget: any) => sum + Number(budget.allocated || 0) * 0.1, 0);
-    const other = Math.max(0, tuition * 0.05);
+    const grants = grantProjects.reduce((sum: number, project: any) => sum + Number(project.amount || 0), 0);
+    const other = donations.reduce((sum: number, donation: any) => sum + Number(donation.amount || 0), 0);
     const total = tuition + grants + other;
     const rows = [
       // `trend` was the literal '+0.0%' on every line. A trend needs a prior
@@ -632,7 +659,7 @@ router.get('/revenue-streams', authenticate, async (_req: Request, res: Response
       // comparable period, not typing a value.
       { source: 'Tuition Fees', amount: Math.round(tuition), trend: null },
       { source: 'Research & Grants', amount: Math.round(grants), trend: null },
-      { source: 'Other Income', amount: Math.round(other), trend: null },
+      { source: 'Alumni Donations', amount: Math.round(other), trend: null },
     ].map((row) => ({
       ...row,
       percentage: total > 0 ? Math.round((row.amount / total) * 100) : 0
