@@ -85,6 +85,36 @@ async function getFacultyProfile(userId: string) {
   return profile;
 }
 
+/**
+ * Real per-student attendance, from `Attendance` records.
+ *
+ * REPLACES the literal `attendance: 80` that every mentee showed regardless of
+ * whether they had ever been marked present. A student with no marked sessions
+ * is simply absent from the returned map — `null`, not a plausible 80%.
+ */
+async function attendancePercentageByStudent(studentProfileIds: string[]): Promise<Map<string, number>> {
+  if (studentProfileIds.length === 0) return new Map();
+
+  const records = await prisma.attendance.findMany({
+    where: { studentProfileId: { in: studentProfileIds } },
+    select: { studentProfileId: true, status: true }
+  });
+
+  const totals = new Map<string, { present: number; total: number }>();
+  for (const record of records) {
+    const bucket = totals.get(record.studentProfileId) ?? { present: 0, total: 0 };
+    bucket.total += 1;
+    if (record.status === 'present') bucket.present += 1;
+    totals.set(record.studentProfileId, bucket);
+  }
+
+  const percentages = new Map<string, number>();
+  for (const [studentProfileId, { present, total }] of totals) {
+    percentages.set(studentProfileId, Math.round((present / total) * 100));
+  }
+  return percentages;
+}
+
 function parseSemesterNumber(input: any): number | null {
   if (typeof input === 'number' && Number.isFinite(input)) return input;
   if (typeof input === 'string') {
@@ -1064,6 +1094,9 @@ router.get('/mentees', authenticate, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
     const assignments = await db.menteeAssignment.findMany({ where: { facultyId: profile.id } });
+    const attendanceByStudent = await attendancePercentageByStudent(
+      assignments.map((a: any) => a.studentId)
+    );
 
     const mentees = [];
     for (const a of assignments) {
@@ -1077,7 +1110,7 @@ router.get('/mentees', authenticate, async (req: Request, res: Response) => {
           id: student.id, rollNumber: student.rollNumber, name: student.user.name,
           program: student.program, semester: student.semester, section: student.section,
           cgpa: student.cgpa, email: student.user.email, phone: '', riskLevel: student.cgpa < 5 ? 'high' : student.cgpa < 7 ? 'medium' : 'low',
-            attendance: 80,
+            attendance: attendanceByStudent.get(student.id) ?? null,
             lastMeetingDate: a.lastMeeting ? a.lastMeeting.toLocaleDateString('en-IN') : null,
             counselingNotes: notes.map((note: any) => ({
               id: note.id,

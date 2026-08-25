@@ -86,7 +86,73 @@ async function resolveStudentProfileIdsByEmails(departmentId: string, emails: st
     .filter((id: string | undefined): id is string => Boolean(id));
 }
 
+/**
+ * Real per-student attendance, from `Attendance` records.
+ *
+ * REPLACES the literal `attendance: 85` that appeared on every student in
+ * three list endpoints in this file, regardless of whether the student had
+ * ever been marked present, absent, or not at all.
+ *
+ * A student with no marked sessions is simply ABSENT from the returned map —
+ * not present at 0%, and not defaulted to a plausible-looking number. Callers
+ * render that as "No records", the same convention used in
+ * `routes/students.ts`.
+ */
+async function attendancePercentageByStudent(studentProfileIds: string[]): Promise<Map<string, number>> {
+  if (studentProfileIds.length === 0) return new Map();
+
+  const records = await prisma.attendance.findMany({
+    where: { studentProfileId: { in: studentProfileIds } },
+    select: { studentProfileId: true, status: true }
+  });
+
+  const totals = new Map<string, { present: number; total: number }>();
+  for (const record of records) {
+    const bucket = totals.get(record.studentProfileId) ?? { present: 0, total: 0 };
+    bucket.total += 1;
+    if (record.status === 'present') bucket.present += 1;
+    totals.set(record.studentProfileId, bucket);
+  }
+
+  const percentages = new Map<string, number>();
+  for (const [studentProfileId, { present, total }] of totals) {
+    percentages.set(studentProfileId, Math.round((present / total) * 100));
+  }
+  return percentages;
+}
+
+/**
+ * Tally of the REAL grade values on a set of enrolments.
+ *
+ * REPLACES a fixed 25% / 35% / 40% A/B/C split that was computed from
+ * `totalStudents` alone — the same three numbers regardless of what any
+ * student had actually been graded, on the one screen that reports a
+ * department's grade distribution to its own head. Ungraded enrolments
+ * (`grade` null — not yet evaluated) are excluded, the same way an unpublished
+ * result is excluded elsewhere in this system.
+ */
+function tallyGrades(enrollments: { grade: string | null }[]): { grade: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const enrollment of enrollments) {
+    if (!enrollment.grade) continue;
+    counts.set(enrollment.grade, (counts.get(enrollment.grade) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([grade, count]) => ({ grade, count }));
+}
+
 // ─── Dashboard ───
+/**
+ * Department dashboard.
+ *
+ * `avgPassPercentage: 88.5, avgAttendance: 82.3` were literals — the same two
+ * numbers for every department in every institution, regardless of how any
+ * student had actually done. Both are now real: pass percentage from the
+ * department's own `Enrollment.grade` values, attendance from the department's
+ * own `Attendance` records. Either reports `null` rather than a plausible
+ * number when nothing has been graded or marked yet.
+ */
 router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -98,10 +164,40 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
     const courses = await prisma.course.count({ where: { departmentId: department.id } });
     const pendingApprovals = await prisma.approvalItem.count({ where: { status: 'pending' } });
 
+    const [deptEnrollments, deptStudentProfileIds] = await Promise.all([
+      prisma.enrollment.findMany({
+        where: { course: { departmentId: department.id } },
+        select: { grade: true }
+      }),
+      prisma.studentProfile.findMany({
+        where: { user: { departmentId: department.id, role: 'student' } },
+        select: { id: true }
+      })
+    ]);
+
+    const gradedEnrollments = deptEnrollments.filter((e) => e.grade);
+    const avgPassPercentage =
+      gradedEnrollments.length > 0
+        ? Math.round(
+            (gradedEnrollments.filter((e) => !['F', 'I'].includes(String(e.grade))).length /
+              gradedEnrollments.length) *
+              100 *
+              10
+          ) / 10
+        : null;
+
+    const attendanceByStudent = await attendancePercentageByStudent(deptStudentProfileIds.map((s) => s.id));
+    const avgAttendance =
+      attendanceByStudent.size > 0
+        ? Math.round(
+            ([...attendanceByStudent.values()].reduce((sum, v) => sum + v, 0) / attendanceByStudent.size) * 10
+          ) / 10
+        : null;
+
     res.json({
       success: true,
       data: {
-        departmentSummary: { name: department.name, totalFaculty, totalStudents, avgPassPercentage: 88.5, avgAttendance: 82.3 },
+        departmentSummary: { name: department.name, totalFaculty, totalStudents, avgPassPercentage, avgAttendance },
         stats: [
           { label: "Total Faculty", value: totalFaculty.toString(), icon: "Users" },
           { label: "Total Students", value: totalStudents.toString(), icon: "GraduationCap", color: "text-blue-500" },
@@ -369,13 +465,21 @@ router.get('/students', authenticate, async (req: Request, res: Response) => {
       include: { studentProfile: true }
     });
 
+    const attendanceByStudent = await attendancePercentageByStudent(
+      students.map((s: any) => s.studentProfile?.id).filter((id: string | undefined): id is string => Boolean(id))
+    );
+
     res.json({
       success: true,
       data: students.map((s: any) => ({
         id: s.studentProfile?.id || s.id, rollNumber: s.studentProfile?.rollNumber, name: s.name,
         program: s.studentProfile?.program, year: Math.ceil((s.studentProfile?.semester || 1) / 2),
         semester: s.studentProfile?.semester, section: s.studentProfile?.section,
-        cgpa: s.studentProfile?.cgpa || 0, attendance: 85, status: 'active', email: s.email
+        cgpa: s.studentProfile?.cgpa || 0,
+        // `null`, not the literal 85: a student with no marked sessions has no
+        // attendance figure, not a plausible-looking one.
+        attendance: s.studentProfile?.id ? attendanceByStudent.get(s.studentProfile.id) ?? null : null,
+        status: 'active', email: s.email
       }))
     });
   } catch (error: any) {
@@ -397,14 +501,29 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
 
     res.json({
       success: true,
+      // `avgScore: 65, highestScore: 95, gradeDistribution: []` were literals —
+      // the same two numbers and an always-empty distribution for every course
+      // in every department, on the screen a head of department reads to judge
+      // how a course actually went. Numeric marks come from `Enrollment.grade`
+      // where it parses as a number; `null` when nothing does, rather than a
+      // plausible-looking score. The distribution is a real tally, not an
+      // invented percentage split.
       data: courses.map((c: any) => {
         const total = c.enrollments.length;
         const passed = c.enrollments.filter((e: any) => e.grade && !['F', 'I'].includes(e.grade)).length;
+        const numericMarks = c.enrollments
+          .map((e: any) => Number(e.grade))
+          .filter((v: number) => Number.isFinite(v));
         return {
           courseCode: c.code, courseName: c.name, faculty: c.faculty?.user?.name || 'N/A',
           totalStudents: total, passed, failed: total - passed,
           passPercentage: total > 0 ? Math.round((passed / total) * 100) : 0,
-          avgScore: 65, highestScore: 95, gradeDistribution: []
+          avgScore:
+            numericMarks.length > 0
+              ? Math.round(numericMarks.reduce((s: number, v: number) => s + v, 0) / numericMarks.length)
+              : null,
+          highestScore: numericMarks.length > 0 ? Math.max(...numericMarks) : null,
+          gradeDistribution: tallyGrades(c.enrollments)
         };
       })
     });
@@ -614,11 +733,41 @@ router.get('/departmentstudents', authenticate, async (req: Request, res: Respon
       include: { studentProfile: true }
     });
 
-    const faculty = await prisma.user.findMany({ where: { departmentId: department.id, role: 'faculty' } });
+    const studentProfileIds = students
+      .map((s: any) => s.studentProfile?.id)
+      .filter((id: string | undefined): id is string => Boolean(id));
+
+    const [attendanceByStudent, assignments] = await Promise.all([
+      attendancePercentageByStudent(studentProfileIds),
+      // The REAL advisor, from MenteeAssignment. Was
+      // `faculty[index % faculty.length]` — every student in the department
+      // assigned an "advisor" by cycling through the faculty list in list
+      // order, with no assignment record behind it. A HOD reading this could
+      // believe a named professor was mentoring students who had never been
+      // assigned to them.
+      studentProfileIds.length > 0
+        ? prisma.menteeAssignment.findMany({
+            where: { studentId: { in: studentProfileIds } },
+            select: { studentId: true, facultyId: true }
+          })
+        : Promise.resolve([])
+    ]);
+
+    const facultyIds = [...new Set(assignments.map((a: any) => a.facultyId))];
+    const advisorProfiles = facultyIds.length > 0
+      ? await prisma.facultyProfile.findMany({
+          where: { id: { in: facultyIds } },
+          include: { user: { select: { name: true } } }
+        })
+      : [];
+    const advisorNameByFacultyId = new Map(advisorProfiles.map((p: any) => [p.id, p.user?.name]));
+    const advisorByStudent = new Map(
+      assignments.map((a: any) => [a.studentId, advisorNameByFacultyId.get(a.facultyId) ?? null])
+    );
 
     res.json({
       success: true,
-      data: students.map((student: any, index: number) => ({
+      data: students.map((student: any) => ({
         id: student.studentProfile?.id || student.id,
         rollNumber: student.studentProfile?.rollNumber || '',
         name: student.name,
@@ -627,8 +776,8 @@ router.get('/departmentstudents', authenticate, async (req: Request, res: Respon
         semester: student.studentProfile?.semester || 1,
         section: student.studentProfile?.section || 'A',
         cgpa: student.studentProfile?.cgpa || 0,
-        attendance: 85,
-        advisor: faculty[index % Math.max(faculty.length, 1)]?.name || 'Not assigned',
+        attendance: student.studentProfile?.id ? attendanceByStudent.get(student.studentProfile.id) ?? null : null,
+        advisor: (student.studentProfile?.id && advisorByStudent.get(student.studentProfile.id)) || 'Not assigned',
         status: 'active',
         email: student.email
       }))
@@ -1033,10 +1182,14 @@ router.get('/courseresults', authenticate, async (req: Request, res: Response) =
             }).length
           : 0;
 
+        // `65` / `95` / a fixed 25%-35%-40% split were literals — see the
+        // identical fabrication in GET /results above, fixed the same way:
+        // null when there is nothing to average, a real tally instead of an
+        // invented distribution.
         const avgScore = numericMarks.length > 0
           ? Math.round(numericMarks.reduce((sum: number, value: number) => sum + value, 0) / numericMarks.length)
-          : 65;
-        const highestScore = numericMarks.length > 0 ? Math.max(...numericMarks) : 95;
+          : null;
+        const highestScore = numericMarks.length > 0 ? Math.max(...numericMarks) : null;
 
         return {
           courseCode: course.code,
@@ -1048,11 +1201,7 @@ router.get('/courseresults', authenticate, async (req: Request, res: Response) =
           passPercentage: totalStudents > 0 ? Math.round((passed / totalStudents) * 100) : 0,
           avgScore,
           highestScore,
-          gradeDistribution: [
-            { grade: 'A', count: Math.round(totalStudents * 0.25) },
-            { grade: 'B', count: Math.round(totalStudents * 0.35) },
-            { grade: 'C', count: Math.max(0, totalStudents - Math.round(totalStudents * 0.6)) }
-          ]
+          gradeDistribution: tallyGrades(course.enrollments)
         };
       })
     });

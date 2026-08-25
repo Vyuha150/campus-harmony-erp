@@ -33,6 +33,25 @@
  *                 3.5 whenever the metrics table was empty, and wrote them to
  *                 the database on first page load. (Fixed in Phase 3b.)
  *
+ *   hod.ts        FIVE literals, all in the department head's own screens:
+ *                 `avgPassPercentage: 88.5, avgAttendance: 82.3` on the
+ *                 dashboard; `attendance: 85` on every student in TWO list
+ *                 endpoints; `avgScore: 65, highestScore: 95` on every course
+ *                 in TWO results endpoints; and a grade distribution computed
+ *                 as a fixed 25% / 35% / 40% A/B/C split of `totalStudents`
+ *                 rather than a tally of the real `Enrollment.grade` values
+ *                 already loaded in the same query. Also: `advisor` was
+ *                 `faculty[index % faculty.length]` — every student assigned a
+ *                 mentor by cycling through the department's faculty list in
+ *                 array order, with no `MenteeAssignment` behind it. (Phase 4.)
+ *
+ *   faculty.ts    `attendance: 80` on every mentee, regardless of whether they
+ *                 had ever been marked present. (Phase 4.)
+ *
+ *   admin.ts      `systemHealth: { status: 'operational', uptime: '99.9%' }` —
+ *                 a reliability percentage no monitoring in this system has
+ *                 ever measured. (Phase 4.)
+ *
  * The rule: when there is no data, say so. A dashboard that fills gaps with
  * plausible numbers is worse than an empty one, because nobody can tell which
  * figures were measured.
@@ -73,6 +92,25 @@ const LITERAL_TREND = /\b(?:change|trend)\s*:\s*['"][+-]\d/;
  * while the matcher was dead.
  */
 const EMPTY_MEANS_FULL = /\?\s*Math\.round\([\s\S]{0,120}?\)\s*:\s*100\b/;
+
+/**
+ * A literal number assigned directly to a field name that this codebase's own
+ * history has already shown gets read as a measured academic figure: an
+ * attendance percentage, an average or highest score, an average pass
+ * percentage. Not `attendance: value` (a variable) or `attendance: x ?? null`
+ * — only a bare digit, which is the shape every fixed instance had.
+ */
+const HARDCODED_METRIC =
+  /\b(?:attendance|avgScore|highestScore|avgGPA|avgPassPercentage|avgAttendance)\s*:\s*-?\d+(?:\.\d+)?\s*[,}]/;
+
+/**
+ * A grade or category distribution computed as a fixed fraction of a count,
+ * rather than a tally of the real values already loaded in the same query —
+ * `hod.ts`'s `{ grade: 'A', count: Math.round(totalStudents * 0.25) }`. The
+ * multiplier can be any decimal fraction; the point is that a *count* field is
+ * being invented from a *fraction*, not read from a record.
+ */
+const INVENTED_DISTRIBUTION = /count\s*:\s*Math\.(?:round|max|min)\([\s\S]{0,60}?\*\s*0\.\d+/;
 
 describe('handlers do not fabricate figures', () => {
   it('found route files to scan — otherwise every check below is vacuous', () => {
@@ -118,11 +156,35 @@ describe('handlers do not fabricate figures', () => {
     }
   );
 
-  it('no handler hard-codes an average GPA', () => {
-    for (const [file, src] of sources) {
-      expect(src, `${file} hard-codes avgGPA`).not.toMatch(/avgGPA\s*:\s*\d/);
+  it.each([...sources.keys()].map((f) => [f] as const))(
+    '%s does not hard-code a measured academic figure',
+    (file) => {
+      const src = sources.get(file)!;
+      const hit = HARDCODED_METRIC.exec(src);
+      expect(
+        hit?.[0] ?? null,
+        `${file} assigns a literal number to a field this codebase has already ` +
+          'shown gets read as measured (attendance, avgScore, highestScore, ' +
+          'avgGPA, avgPassPercentage, avgAttendance). Compute it from the rows, ' +
+          'or report null.'
+      ).toBeNull();
     }
-  });
+  );
+
+  it.each([...sources.keys()].map((f) => [f] as const))(
+    '%s does not invent a distribution from a fixed fraction of a count',
+    (file) => {
+      const src = sources.get(file)!;
+      const hit = INVENTED_DISTRIBUTION.exec(src);
+      expect(
+        hit?.[0] ?? null,
+        `${file} computes a category count as a fraction of a total rather than ` +
+          'tallying the real values. hod.ts did this for a grade distribution: ' +
+          "every course reported the same 25%/35%/40% A/B/C split regardless of " +
+          'what any student was actually graded.'
+      ).toBeNull();
+    }
+  );
 
   describe('NEGATIVE CONTROLS: each matcher detects what it bans', () => {
     // Without these, a regex that silently stopped matching would turn every
@@ -148,6 +210,28 @@ describe('handlers do not fabricate figures', () => {
       expect(
         EMPTY_MEANS_FULL.test('const a = n > 0 ? Math.round((p / n) * 100) : null;')
       ).toBe(false);
+    });
+
+    it('hardcoded metric', () => {
+      expect(HARDCODED_METRIC.test('attendance: 85, status: "active"')).toBe(true);
+      expect(HARDCODED_METRIC.test('avgScore: 65, highestScore: 95, gradeDistribution: []')).toBe(true);
+      expect(HARDCODED_METRIC.test('avgPassPercentage: 88.5, avgAttendance: 82.3 }')).toBe(true);
+      // a real value — a variable, a computed expression, or null — must NOT trip it
+      expect(HARDCODED_METRIC.test('attendance: attendanceByStudent.get(id) ?? null,')).toBe(false);
+      expect(HARDCODED_METRIC.test('avgScore: numericMarks.length > 0 ? avg : null,')).toBe(false);
+    });
+
+    it('invented distribution', () => {
+      expect(
+        INVENTED_DISTRIBUTION.test("{ grade: 'A', count: Math.round(totalStudents * 0.25) }")
+      ).toBe(true);
+      expect(
+        INVENTED_DISTRIBUTION.test(
+          "{ grade: 'C', count: Math.max(0, totalStudents - Math.round(totalStudents * 0.6)) }"
+        )
+      ).toBe(true);
+      // a real tally — counting actual rows — must NOT trip it
+      expect(INVENTED_DISTRIBUTION.test('counts.set(grade, (counts.get(grade) ?? 0) + 1)')).toBe(false);
     });
   });
 });

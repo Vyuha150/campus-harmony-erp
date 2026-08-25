@@ -37,6 +37,20 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
     const faculty = await prisma.user.count({ where: { role: 'faculty' } });
     const incidents = await prisma.incidentReport.count({ where: { status: 'pending' } });
 
+    // `status: 'operational', uptime: '99.9%'` were literals — a health claim
+    // and a specific reliability percentage that no monitoring in this system
+    // has ever measured. `status` is now a real database check, the same one
+    // `/api/ready` performs; `uptime` is this PROCESS's real uptime since its
+    // last start (Node's own `process.uptime()`), not a historical SLA figure —
+    // this system does not track the latter, and inventing one would be the
+    // same defect with a decimal point added for plausibility.
+    let dbConnected = true;
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+    } catch {
+      dbConnected = false;
+    }
+
     res.json({
       success: true,
       data: {
@@ -47,7 +61,8 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
           { label: "System Errors", value: incidents.toString(), icon: "AlertTriangle", color: "text-destructive" }
         ],
         systemHealth: {
-          status: 'operational', uptime: '99.9%'
+          status: dbConnected ? 'operational' : 'degraded',
+          processUptimeSeconds: Math.floor(process.uptime())
         }
       }
     });
