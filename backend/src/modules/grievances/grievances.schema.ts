@@ -105,3 +105,52 @@ export const listCasesQuery = z.object({
 export type CreateCaseInput = z.infer<typeof createCaseSchema>;
 export type UpdateCaseInput = z.infer<typeof updateCaseSchema>;
 export type AddActivityInput = z.infer<typeof addActivitySchema>;
+
+/**
+ * Compliance items and anti-ragging affidavits (Phase 3c completion).
+ *
+ * `PUT /compliance/:id` was `const updateData: any = req.body; ... data: updateData`
+ * — mass assignment that evaded the ratchet in `serviceScoping.test.ts`
+ * entirely, because the guard matches `data: req.body` textually and this
+ * handler assigns `req.body` to a variable one line earlier. A fourth
+ * too-narrow pattern, in the same family as the three the ratchet's own
+ * comments already record. `.strict()` here closes it the same way a wired
+ * `validate()` closes every other handler in this sweep.
+ */
+export const complianceItemCreateSchema = z
+  .object({
+    title: text(2, 300),
+    type: text(1, 80),
+    description: text(1, 4000),
+    applicableTo: text(1, 300),
+    dueDate: z.coerce.date().optional(),
+    renewalPeriod: z.string().trim().max(80).nullable().optional(),
+    documents: z.array(z.unknown()).max(200).optional()
+  })
+  .strict();
+
+export const complianceItemUpdateSchema = z
+  .object({
+    title: text(2, 300).optional(),
+    type: z.string().trim().min(1).max(80).optional(),
+    description: z.string().trim().min(1).max(4000).optional(),
+    applicableTo: z.string().trim().min(1).max(300).optional(),
+    dueDate: z.coerce.date().nullable().optional(),
+    renewalPeriod: z.string().trim().max(80).nullable().optional(),
+    documents: z.array(z.unknown()).max(200).optional(),
+    completionTracking: z.array(z.unknown()).max(1000).optional(),
+    status: z.string().trim().max(40).optional()
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update.' });
+
+export const antiRaggingAffidavitCreateSchema = z
+  .object({
+    studentId: text(1, 200),
+    studentName: text(1, 200),
+    program: text(1, 200),
+    academicYear: text(1, 20),
+    parentAffidavit: z.coerce.boolean().optional(),
+    studentAffidavit: z.coerce.boolean().optional()
+  })
+  .strict();

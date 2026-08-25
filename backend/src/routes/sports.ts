@@ -14,7 +14,9 @@ import {
   updateTeamSchema,
   updateAttendanceSchema,
   updateFacilitySchema,
-  updateInventorySchema
+  updateInventorySchema,
+  sportsEventUpdateSchema,
+  fitnessRecordUpdateSchema
 } from '../modules/common/entityUpdate.schemas.js';
 import {
   createAthleteSchema,
@@ -445,7 +447,11 @@ router.post('/events', authenticate,
   }
 });
 
-router.put('/events/:id', authenticate, async (req: Request, res: Response) => {
+router.put(
+  '/events/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: sportsEventUpdateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const data = {
@@ -522,7 +528,11 @@ router.post('/health/fitness-test', authenticate,
   }
 });
 
-router.put('/health/:id', authenticate, async (req: Request, res: Response) => {
+router.put(
+  '/health/:id',
+  authenticate,
+  validate({ params: z.object({ id: entityId }), body: fitnessRecordUpdateSchema }),
+  async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const data = {

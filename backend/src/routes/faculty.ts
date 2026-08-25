@@ -6,6 +6,26 @@ import { authenticate } from '../middleware/auth.js';
 import { NotFoundError , sendError} from '../lib/errors.js';
 import { getTenantContext } from '../lib/tenant.js';
 import { recordFromRequest } from '../lib/audit.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+import { entityId } from '../schemas/common.js';
+import {
+  facultyProfileUpdateSchema,
+  leaveRequestCreateSchema,
+  courseDetailsUpdateSchema,
+  lessonPlanUpsertSchema,
+  attendanceMarkSchema,
+  assignmentCreateSchema,
+  assignmentUpdateSchema,
+  submissionGradeSchema,
+  marksUpdateSchema,
+  counselingNoteCreateSchema,
+  publicationCreateSchema,
+  researchProjectCreateSchema,
+  facultyGrievanceCreateSchema,
+  grievanceRespondSchema,
+  facultyClassMessageCreateSchema
+} from '../modules/faculty/faculty.schemas.js';
 
 const router = Router();
 const db: any = prisma;
@@ -262,7 +282,7 @@ router.get('/profile/leave-history', authenticate, async (req: Request, res: Res
   }
 });
 
-router.put('/profile', authenticate, async (req: Request, res: Response) => {
+router.put('/profile', authenticate, validate({ body: facultyProfileUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
@@ -277,7 +297,7 @@ router.put('/profile', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/profile/leave-request', authenticate, async (req: Request, res: Response) => {
+router.post('/profile/leave-request', authenticate, validate({ body: leaveRequestCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
@@ -389,7 +409,7 @@ router.get('/current-semester', authenticate, async (req: Request, res: Response
   }
 });
 
-router.put('/courses/:id/details', authenticate, async (req: Request, res: Response) => {
+router.put('/courses/:id/details', authenticate, validate({ params: z.object({ id: entityId }), body: courseDetailsUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const userRole = String((req as any).user?.role || '');
@@ -552,7 +572,7 @@ router.get('/courses/lesson-plans', authenticate, async (req: Request, res: Resp
   }
 });
 
-router.put('/courses/:courseId/lesson-plans/:weekNumber', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.put('/courses/:courseId/lesson-plans/:weekNumber', authenticate, validate({ params: z.object({ courseId: entityId, weekNumber: z.coerce.number().int().min(1).max(52) }), body: lessonPlanUpsertSchema }), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
@@ -728,7 +748,7 @@ router.get('/attendance/roster', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.post('/attendance/mark', authenticate, async (req: Request, res: Response) => {
+router.post('/attendance/mark', authenticate, validate({ body: attendanceMarkSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
@@ -824,7 +844,7 @@ router.get('/assignments', authenticate, async (req: Request, res: Response) => 
   }
 });
 
-router.post('/assignments', authenticate, async (req: Request, res: Response) => {
+router.post('/assignments', authenticate, validate({ body: assignmentCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
@@ -856,7 +876,7 @@ router.post('/assignments', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.put('/assignments/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/assignments/:id', authenticate, validate({ params: z.object({ id: entityId }), body: assignmentUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const { title, description, dueDate, maxMarks, status } = req.body;
@@ -937,7 +957,7 @@ router.get('/assignments/submissions', authenticate, async (req: Request, res: R
   }
 });
 
-router.put('/assignments/:id/submissions/:subId/grade', authenticate, async (req: Request, res: Response) => {
+router.put('/assignments/:id/submissions/:subId/grade', authenticate, validate({ params: z.object({ id: entityId, subId: entityId }), body: submissionGradeSchema }), async (req: Request, res: Response) => {
   try {
     const subId = String(req.params.subId);
     const { marks, feedback } = req.body;
@@ -978,7 +998,7 @@ router.get('/marks/:courseId', authenticate, async (req: Request, res: Response)
   }
 });
 
-router.put('/marks/:courseId', authenticate, async (req: Request, res: Response) => {
+router.put('/marks/:courseId', authenticate, validate({ params: z.object({ courseId: entityId }), body: marksUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const courseId = String(req.params.courseId);
     const { marks } = req.body;
@@ -1076,7 +1096,7 @@ router.get('/mentees', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/mentees/:id/notes', authenticate, async (req: Request, res: Response) => {
+router.post('/mentees/:id/notes', authenticate, validate({ params: z.object({ id: entityId }), body: counselingNoteCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
@@ -1123,7 +1143,7 @@ router.get('/research/publications', authenticate, async (req: Request, res: Res
   }
 });
 
-router.post('/research/publications', authenticate, async (req: Request, res: Response) => {
+router.post('/research/publications', authenticate, validate({ body: publicationCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
@@ -1298,7 +1318,7 @@ router.get('/feedback-summaries', authenticate, async (req: Request, res: Respon
   }
 });
 
-router.post('/research/projects', authenticate, async (req: Request, res: Response) => {
+router.post('/research/projects', authenticate, validate({ body: researchProjectCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
@@ -1407,7 +1427,7 @@ router.get('/grievances/:id', authenticate, async (req: Request, res: Response) 
   }
 });
 
-router.post('/grievances', authenticate, async (req: Request, res: Response) => {
+router.post('/grievances', authenticate, validate({ body: facultyGrievanceCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { category, subject, description, priority } = req.body;
@@ -1462,7 +1482,7 @@ router.post('/grievances', authenticate, async (req: Request, res: Response) => 
   }
 });
 
-router.post('/grievances/:id/respond', authenticate, async (req: Request, res: Response) => {
+router.post('/grievances/:id/respond', authenticate, validate({ params: z.object({ id: entityId }), body: grievanceRespondSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const { resolution } = req.body;
@@ -1507,7 +1527,7 @@ router.get('/messages', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/messages', authenticate, async (req: Request, res: Response) => {
+router.post('/messages', authenticate, validate({ body: facultyClassMessageCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);

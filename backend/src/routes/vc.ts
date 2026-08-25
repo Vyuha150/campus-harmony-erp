@@ -17,6 +17,12 @@ import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
 import {
   complianceReportUpdateSchema
 } from '../modules/common/legacyWrite.schemas.js';
+import {
+  vcApprovalDecisionSchema,
+  policyScenarioCreateSchema,
+  vcMeetingCreateSchema,
+  vcBroadcastCreateSchema
+} from '../modules/vc/vc.schemas.js';
 
 const router = Router();
 
@@ -142,7 +148,7 @@ router.get('/approvals', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/approvals/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/approvals/:id', authenticate, validate({ body: vcApprovalDecisionSchema }), async (req: Request, res: Response) => {
   try {
     const id = req.params.id;
     if (typeof id !== 'string') {
@@ -206,7 +212,7 @@ router.get('/policyscenarios', authenticate, async (_req: Request, res: Response
   }
 });
 
-router.post('/policyscenarios', authenticate, async (req: Request, res: Response) => {
+router.post('/policyscenarios', authenticate, validate({ body: policyScenarioCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = String((req as any).user.id);
     const { title, description, category, parameters, projectedOutcome, impact } = req.body;
@@ -251,7 +257,7 @@ router.delete(
   })
 );
 
-router.post('/policies/simulate', authenticate, async (req: Request, res: Response) => {
+router.post('/policies/simulate', authenticate, validate({ body: policyScenarioCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { title, description, category, parameters } = req.body;
@@ -283,7 +289,7 @@ router.get('/meetingagendas', authenticate, async (_req: Request, res: Response)
   }
 });
 
-router.post('/meetings', authenticate, async (req: Request, res: Response) => {
+router.post('/meetings', authenticate, validate({ body: vcMeetingCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { meetingType, title, date, time, venue, agendaItems, attendees } = req.body;
@@ -348,7 +354,7 @@ router.get('/broadcastmessages', authenticate, async (_req: Request, res: Respon
   }
 });
 
-router.post('/messages', authenticate, async (req: Request, res: Response) => {
+router.post('/messages', authenticate, validate({ body: vcBroadcastCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const user = await prisma.user.findUnique({ where: { id: userId } });

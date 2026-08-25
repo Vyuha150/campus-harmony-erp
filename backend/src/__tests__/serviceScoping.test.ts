@@ -408,3 +408,155 @@ describe('mutate() is scoped by construction', () => {
     expect('  return basePrisma.$transaction(async (tx) => {').not.toMatch(OPENS_ON_EXTENDED);
   });
 });
+
+/**
+ * Phase 3c completion: every write handler carries a body schema.
+ *
+ * 86 handlers across these 9 files wrote explicitly named fields with no
+ * `.strict()` schema at all — not mass assignment (the ratchet above already
+ * read zero on every one of them), but an unknown key silently ignored instead
+ * of refused, no length/range bounds, and a missing required field surfacing as
+ * a raw Prisma 500 instead of a clean 400.
+ *
+ * THE GUARD IS ROUTE-SHAPED, NOT DATA-FLOW-SHAPED, DELIBERATELY.
+ *
+ * The mass-assignment ratchet above has now been too narrow three times: first
+ * it matched only `update`, then only the non-spread form, then it missed the
+ * spread form entirely. This sweep found a FOURTH shape while reading every
+ * remaining handler by hand: `const data = { ...req.body }; prisma.x.update({
+ * data })` — the spread assigned to a variable one line earlier, which no
+ * regex anchored on `data:` can see, because the request body never appears
+ * textually next to the word `data`. Three live instances existed
+ * (`grievances.ts` `/compliance/:id`, `sports.ts` `/events/:id` and
+ * `/health/:id`) and are fixed, but the general shape — assign, then spread —
+ * has unbounded syntactic variety.
+ *
+ * Chasing every variant with a new regex is the same arms race that produced
+ * the first three failures. So this guard checks something a data-flow regex
+ * cannot be fooled by: whether `validate({ body: ... })` appears in the route's
+ * OWN middleware chain. `validate()` REPLACES `req.body` with the parsed,
+ * `.strict()`-checked result (see `middleware/validate.ts`) — so whatever the
+ * handler does with `req.body` afterward, spread through however many local
+ * variables, is already safe. This is what actually closed all four shapes,
+ * including the two nobody had found yet when the sweep began.
+ *
+ * SCOPE. 28 more unvalidated write handlers exist outside these 9 files
+ * (`admin.ts` 4, `auth.ts` 1, `finance.ts` 3, `registrar.ts` 5, `security.ts`
+ * 14, `uploads.ts` 1) — found by running this exact check across every route
+ * file, not estimated. They are real and are NOT fixed here: this task closed
+ * the specific 86-handler category Phase 3c named, not every unvalidated write
+ * in the codebase. A repo-wide version of this guard would fail on them today,
+ * so it is intentionally scoped to the files this sweep actually covers.
+ */
+describe('Phase 3c: every write route in the completed files is validated', () => {
+  const COMPLETED_FILES = [
+    'hod.ts',
+    'dean.ts',
+    'faculty.ts',
+    'placements.ts',
+    'iqac.ts',
+    'vc.ts',
+    'sports.ts',
+    'grievances.ts',
+    'alumni.ts'
+  ];
+
+  /**
+   * Every `router.post`/`put`/`patch` in `src` whose handler body reads
+   * `req.body`, together with whether `validate({ body: ... })` appears
+   * BEFORE the handler function opens — i.e. in the route's own middleware
+   * chain, not merely somewhere in the file.
+   */
+  function unvalidatedBodyRoutes(src: string): string[] {
+    const found: string[] = [];
+    const sigs = [...src.matchAll(/router\.(get|post|put|patch|delete)\(/g)].map((m) => m.index!);
+
+    for (let i = 0; i < sigs.length; i++) {
+      const start = sigs[i]!;
+      const end = i + 1 < sigs.length ? sigs[i + 1]! : src.length;
+      const sig = /router\.(get|post|put|patch|delete)\(\s*['"]([^'"]+)['"]/.exec(
+        src.slice(start, start + 200)
+      );
+      if (!sig) continue;
+      const method = sig[1]!.toUpperCase();
+      if (method === 'GET' || method === 'DELETE') continue;
+
+      const handlerIdx = src.indexOf('async (', start);
+      if (handlerIdx === -1 || handlerIdx >= end) continue;
+
+      const middleware = src.slice(start, handlerIdx);
+      if (/validate\s*\(\s*\{[\s\S]*?\bbody\s*:/.test(middleware)) continue;
+
+      const body = src.slice(handlerIdx, end);
+      if (!body.includes('req.body')) continue;
+
+      found.push(`${method} ${sig[2]}`);
+    }
+    return found;
+  }
+
+  it.each(COMPLETED_FILES.map((f) => [f] as const))('%s has no unvalidated write route', (file) => {
+    const src = stripComments(readFileSync(join(routesDir(), file), 'utf8'));
+    expect(
+      unvalidatedBodyRoutes(src),
+      `${file} has a write route reading req.body with no validate({ body }) in its ` +
+        'own middleware chain. Give it a .strict() schema — see the sibling ' +
+        '*.schemas.ts file for this module\'s existing conventions.'
+    ).toEqual([]);
+  });
+
+  it('NEGATIVE CONTROL: the scanner finds an unvalidated route and clears a validated one', () => {
+    const bare = `
+router.post('/probe', authenticate, async (req: Request, res: Response) => {
+  const x = req.body.name;
+});
+router.get('/probe', authenticate, async (req: Request, res: Response) => {
+  const x = req.body.name;
+});`;
+    expect(unvalidatedBodyRoutes(bare)).toEqual(['POST /probe']);
+
+    const guarded = `
+router.post('/probe', authenticate, validate({ body: probeSchema }), async (req: Request, res: Response) => {
+  const x = req.body.name;
+});`;
+    expect(unvalidatedBodyRoutes(guarded)).toEqual([]);
+  });
+
+  it("NEGATIVE CONTROL: a validate() call belonging to a LATER route does not count", () => {
+    // The guard must read only the middleware chain BEFORE this handler's own
+    // `async (`, not any validate() call anywhere in the file — otherwise one
+    // validated route would make every unvalidated route after it look safe.
+    const twoRoutes = `
+router.post('/first', authenticate, async (req: Request, res: Response) => {
+  const x = req.body.name;
+});
+router.post('/second', authenticate, validate({ body: secondSchema }), async (req: Request, res: Response) => {
+  const y = req.body.other;
+});`;
+    expect(unvalidatedBodyRoutes(twoRoutes)).toEqual(['POST /first']);
+  });
+
+  it('the 28-handler outside-scope count is not stale', () => {
+    // If this drifts from the header comment, the comment is lying about the
+    // boundary of what this task closed.
+    const routesDirPath = routesDir();
+    const outside: Record<string, number> = {
+      'admin.ts': 4,
+      'auth.ts': 1,
+      'finance.ts': 3,
+      'registrar.ts': 5,
+      'security.ts': 14,
+      'uploads.ts': 1
+    };
+    for (const [file, expected] of Object.entries(outside)) {
+      const src = stripComments(readFileSync(join(routesDirPath, file), 'utf8'));
+      const actual = unvalidatedBodyRoutes(src).length;
+      expect(
+        actual,
+        `${file}: header comment says ${expected} unvalidated route(s) outside this ` +
+          `sweep's scope, scanner now finds ${actual}. Update the comment (or fix the ` +
+          `file and remove it from this list).`
+      ).toBe(expected);
+    }
+  });
+});

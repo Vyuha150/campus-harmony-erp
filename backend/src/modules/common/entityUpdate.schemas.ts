@@ -330,3 +330,48 @@ export const updateBroadcastSchema = nonEmpty(
     // changed after the fact is a forgery waiting to happen.
     .strict()
 );
+
+// ─── sports.ts (Phase 3c completion) ──────────────────────────────────────────
+//
+// PUT /events/:id and PUT /health/:id were `const data = { ...req.body, ... };
+// prisma.X.update({ where: { id }, data })` — mass assignment through a local
+// variable rather than an inline spread. The ratchet in `serviceScoping.test.ts`
+// matches `data:` followed directly by `req.body` or `{ ...req.body }`; a spread
+// assigned to a variable one line earlier is syntactically invisible to it. That
+// makes this the FOURTH shape of the same defect this project has found (see the
+// comments on `KNOWN_MASS_ASSIGNMENT` and the widened pattern above it) —
+// discovered here, in grievances.ts's `/compliance/:id`, and nowhere else only
+// because nobody had read every remaining handler until this sweep.
+
+export const sportsEventUpdateSchema = nonEmpty(
+  z
+    .object({
+      name: text(1, 4000).optional(),
+      type: text(1, 4000).optional(),
+      sports: jsonValue.nullable().optional(),
+      startDate: isoDate.optional(),
+      endDate: isoDate.optional(),
+      venue: text(1, 4000).optional(),
+      organizer: text(1, 4000).optional(),
+      participants: jsonValue.nullable().optional(),
+      results: jsonValue.nullable().optional(),
+      status: text(1, 40).optional()
+    })
+    .strict()
+);
+
+export const fitnessRecordUpdateSchema = nonEmpty(
+  z
+    .object({
+      testDate: isoDate.optional(),
+      testType: text(1, 4000).optional(),
+      results: jsonValue.nullable().optional(),
+      overallGrade: z.string().trim().max(4000).nullable().optional(),
+      recommendations: z.string().trim().max(4000).nullable().optional(),
+      restrictions: z.string().trim().max(4000).nullable().optional(),
+      nextTestDate: isoDate.nullable().optional()
+    })
+    // `studentId` and `conductedBy` are identity and provenance — who was
+    // tested and who tested them are not editable after the fact.
+    .strict()
+);

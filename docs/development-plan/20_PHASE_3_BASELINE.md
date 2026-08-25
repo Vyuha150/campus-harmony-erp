@@ -301,3 +301,91 @@ broken one will eventually be silenced rather than fixed.
 and would have executed every `findMany` before the `institutionId` filter was
 injected. Both the cap and the structural audit now live in the wrapper that
 every branch converges on — which is *after* scoping, not before.
+
+---
+
+## Phase 3c completion: the 84 unvalidated writes, closed (2026-08-25)
+
+86 handlers across the 9 files closed — two more than the 84 estimated at the
+last checkpoint, both found only by re-scanning after the sweep (see below).
+Every one now carries a `.strict()` zod schema in its route's own middleware
+chain, matching what the handler already enforced at runtime rather than
+inventing new requirements: a field the handler treated as optional with a
+`|| default` stayed optional in the schema; a `status` field the handler
+already restricted to a closed set via a manual `if (!ALLOWED.includes(...))`
+check became a zod enum of that same set, taken from the actual check or the
+frontend's own TypeScript types — never invented.
+
+| File | Handlers |
+|---|---|
+| `hod.ts` | 28 |
+| `dean.ts` | 17 |
+| `faculty.ts` | 15 |
+| `placements.ts` | 11 |
+| `iqac.ts` | 5 |
+| `vc.ts` | 5 |
+| `grievances.ts` | 3 |
+| `sports.ts` | 2 |
+| `alumni.ts` | 0 (already validated) |
+| **Total** | **86** |
+
+### Found while reading every remaining handler by hand: a fourth mass-assignment shape
+
+The mass-assignment ratchet has now been too narrow three times (see the
+comments on `KNOWN_MASS_ASSIGNMENT` in `serviceScoping.test.ts`): first it
+matched only `update`, then only the non-spread form, then it missed the spread
+form entirely. This sweep found a **fourth**: `const data = { ...req.body };
+prisma.x.update({ data })` — the spread assigned to a local variable one line
+before the write, which no regex anchored on `data:` can see, because the
+request body never appears textually next to that word. Three live instances
+existed and are fixed: `grievances.ts` `/compliance/:id`, `sports.ts`
+`/events/:id` and `/health/:id`.
+
+Rather than patch the regex a fourth time — the same arms race that produced
+the first three failures — the new guard checks something a data-flow pattern
+cannot be fooled by: whether `validate({ body: ... })` appears in the route's
+own middleware chain. `validate()` *replaces* `req.body` with the parsed,
+`.strict()`-checked result, so whatever the handler does with it afterward,
+however many local variables it passes through, is already safe. This is what
+actually closed all four shapes, including the two nobody had found before this
+sweep began.
+
+### One handler missed on the first pass
+
+The sweep's own inventory listed `POST /courseresults/:courseCode/remedial` in
+`hod.ts`, but it was absent from both the schema file and the route-wiring
+script that followed — a plan-to-execution slip, not a detection gap. Caught
+only because the completion was verified by re-running the same scanner that
+found the original 86, rather than trusting the count from memory. Fixed; the
+re-scan then read zero.
+
+### Guard: `serviceScoping.test.ts`, "Phase 3c: every write route in the completed files is validated"
+
+Route-shaped rather than data-flow-shaped, for the reason above. Scoped to
+exactly the 9 files this sweep covers — not repository-wide, because a
+repo-wide version fails today on files outside this task's scope (below).
+Proven to fail: planting one unvalidated `router.post` in `sports.ts` failed
+exactly that file's check with `1 unvalidated write handler(s)`; removing it
+returned the suite to green.
+
+### Scope boundary: 28 handlers remain outside these 9 files
+
+Found by running the exact same scanner across every route file, not
+estimated: `admin.ts` 4, `auth.ts` 1, `finance.ts` 3, `registrar.ts` 5,
+`security.ts` 14, `uploads.ts` 1. These are **not fixed** — this task closed
+the specific category Phase 3c named for these 9 modules, not every
+unvalidated write in the codebase. `security.ts` at 14 is the largest
+concentration and the natural next target: it is the module vigilance cases and
+incident reports already live in, per the tenant-scoping work in Phase 3b.
+
+### Verified live: `verify-3c-completion.sh`, 11/11
+
+One check per file exercising a different property — an unknown key refused, a
+missing required field turned into a clean 400 instead of a raw 500, a status
+enum refused, a legitimate write still persisting end to end, and both
+disguised-mass-assignment routes confirmed closed against a live server.
+
+### Status
+
+Typecheck **0** · Tests **518** (was 506; +12 from the new guard and its
+negative controls) · Live checks **65/65** across 5 scripts.

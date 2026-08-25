@@ -2017,3 +2017,54 @@ Live checks **103/103** across 8 scripts
 3c: `hod.ts` (70), `faculty.ts` (44), `dean.ts` (40), `vc.ts` (33),
 `placements.ts` (33), `sports.ts` (30), `alumni.ts` (20), `iqac.ts` (17) —
 about 287 handlers, plus `grievances.ts` 8 of 14 still legacy.
+
+---
+
+## Checkpoint 30 — Phase 3c complete: the 86-handler validation sweep
+
+The note at the end of checkpoint 29 ("3c: hod.ts (70), faculty.ts (44)...")
+counted every handler in each file, not the unvalidated-write subset — stale
+the moment it was written, since most of those handlers were already reads or
+already validated. The real count, from `20_PHASE_3_BASELINE.md`'s structural
+sweep, was 84 unvalidated writes; this checkpoint closes them.
+
+### What closed
+86 handlers across `hod.ts` (28), `dean.ts` (17), `faculty.ts` (15),
+`placements.ts` (11), `iqac.ts` (5), `vc.ts` (5), `grievances.ts` (3),
+`sports.ts` (2) — two more than the 84 estimated, both found only by
+re-scanning after the sweep rather than trusting the plan. Each now carries a
+`.strict()` schema matching what the handler already enforced at runtime.
+
+### The find that mattered most
+A **fourth** shape of the mass-assignment defect this project keeps
+re-discovering: `const data = { ...req.body }; prisma.x.update({ data })` — a
+spread assigned to a variable one line before the write, invisible to any
+regex anchored on the literal string `data:`. Three live instances existed
+(`grievances.ts`, `sports.ts` ×2) and are fixed. Rather than patch the regex a
+fourth time, the new guard checks whether `validate({ body })` appears in the
+route's own middleware chain — a property no data-flow indirection can hide
+from, because `validate()` replaces `req.body` outright.
+
+### A slip, caught by not trusting the plan
+`POST /courseresults/:courseCode/remedial` was in the sweep's own inventory but
+absent from both the schema file and the wiring script — found only because
+completion was verified by re-running the exact scanner that found the
+original 86, not by counting what had been written.
+
+### Scope boundary, not fixed
+28 more unvalidated writes exist outside these 9 files — `security.ts` 14,
+`registrar.ts` 5, `finance.ts` 3, `admin.ts` 4, `auth.ts` 1, `uploads.ts` 1 —
+found by running the same scanner repo-wide. `security.ts` is the natural next
+target: it already carries vigilance cases and incident reports from the
+Phase 3b tenant-scoping work.
+
+### Status
+Typecheck **0** · Tests **518** (+12) · Live checks **65/65** across 5 scripts,
+including a new `verify-3c-completion.sh` (11/11).
+
+### NEXT
+The 28 handlers outside this sweep's scope, `security.ts` first. Beyond that,
+the frontend fabrication sweep remains open for every dashboard except
+`student` and the few oversight screens already touched — see the prior
+session's answer on remaining frontend/backend/database work for the full
+phase-wise breakdown.

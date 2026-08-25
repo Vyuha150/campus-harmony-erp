@@ -12,6 +12,24 @@ import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { entityId } from '../schemas/common.js';
 import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
+import {
+  deanWorkflowDecisionSchema,
+  resultApprovalSchema,
+  disciplinaryDecisionSchema,
+  classManagementCreateSchema,
+  classManagementUpdateSchema,
+  eventCreateSchema,
+  eventUpdateSchema,
+  meetingCreateSchema,
+  meetingUpdateSchema,
+  mentoringAssignmentCreateSchema,
+  deanCourseCreateSchema,
+  deanCourseUpdateSchema,
+  deanFacilityCreateSchema,
+  deanFacilityUpdateSchema,
+  academicYearCreateSchema,
+  academicYearUpdateSchema
+} from '../modules/dean/dean.schemas.js';
 
 const router = Router();
 
@@ -124,7 +142,7 @@ router.get('/curriculum-proposals', authenticate, async (req: Request, res: Resp
  * the body and no validation at all — any string, including one that skipped the
  * process entirely.
  */
-router.put('/curriculum-proposals/:id', authenticate, asyncHandler(async (req: Request, res: Response) => {
+router.put('/curriculum-proposals/:id', authenticate, validate({ params: z.object({ id: entityId }), body: deanWorkflowDecisionSchema }), asyncHandler(async (req: Request, res: Response) => {
   const ctx = getTenantContext(req);
   const id = String(req.params.id);
   const decision = String(req.body?.status || '').toLowerCase();
@@ -201,7 +219,7 @@ router.get('/student-affairs', authenticate, async (req: Request, res: Response)
   }
 });
 
-router.put('/disciplinary/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/disciplinary/:id', authenticate, validate({ params: z.object({ id: entityId }), body: disciplinaryDecisionSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const { status, severity } = req.body;
@@ -277,7 +295,7 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
  * The HTTP contract is unchanged apart from the added failure case — publishing
  * with nothing submitted is now a refusal rather than a fabricated record.
  */
-router.put('/results/:id/approve', authenticate, async (req: Request, res: Response) => {
+router.put('/results/:id/approve', authenticate, validate({ body: resultApprovalSchema }), async (req: Request, res: Response) => {
   try {
     const ctx = getTenantContext(req);
     const identifier = decodeURIComponent(String(req.params.id));
@@ -468,7 +486,7 @@ router.get('/class-management', authenticate, async (req: Request, res: Response
   }
 });
 
-router.post('/class-management', authenticate, authorizeRoles('dean', 'hod'), async (req: Request, res: Response) => {
+router.post('/class-management', authenticate, authorizeRoles('dean', 'hod'), validate({ body: classManagementCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getDeanDepartment(userId);
@@ -590,7 +608,7 @@ router.post('/class-management', authenticate, authorizeRoles('dean', 'hod'), as
   }
 });
 
-router.put('/class-management/:id', authenticate, authorizeRoles('dean', 'hod'), async (req: Request, res: Response) => {
+router.put('/class-management/:id', authenticate, authorizeRoles('dean', 'hod'), validate({ params: z.object({ id: entityId }), body: classManagementUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getDeanDepartment(userId);
@@ -742,7 +760,7 @@ router.delete(
   })
 );
 
-router.post('/events', authenticate, async (req: Request, res: Response) => {
+router.post('/events', authenticate, validate({ body: eventCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { title, type, date, departments, coordinator, budget } = req.body;
     const event = await prisma.interDeptEvent.create({
@@ -754,7 +772,7 @@ router.post('/events', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/events/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/events/:id', authenticate, validate({ params: z.object({ id: entityId }), body: eventUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const updateData: any = {};
@@ -785,7 +803,7 @@ router.get('/meetings', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/meetings', authenticate, async (req: Request, res: Response) => {
+router.post('/meetings', authenticate, validate({ body: meetingCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { title, meetingType, date, time, venue, status, agendaItems, attendees, minutes } = req.body;
@@ -817,7 +835,7 @@ router.post('/meetings', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/meetings/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/meetings/:id', authenticate, validate({ params: z.object({ id: entityId }), body: meetingUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const { title, meetingType, date, time, venue, status, agendaItems, attendees, minutes } = req.body;
@@ -896,7 +914,7 @@ router.get('/mentoring/options', authenticate, async (_req: Request, res: Respon
   }
 });
 
-router.post('/mentoring/assignments', authenticate, async (req: Request, res: Response) => {
+router.post('/mentoring/assignments', authenticate, validate({ body: mentoringAssignmentCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { studentId, facultyId } = req.body;
 
@@ -1052,7 +1070,7 @@ router.get('/course-management', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.post('/course-management', authenticate, authorizeRoles('dean', 'hod'), async (req: Request, res: Response) => {
+router.post('/course-management', authenticate, authorizeRoles('dean', 'hod'), validate({ body: deanCourseCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getDeanDepartment(userId);
@@ -1085,7 +1103,7 @@ router.post('/course-management', authenticate, authorizeRoles('dean', 'hod'), a
   }
 });
 
-router.put('/course-management/:id', authenticate, authorizeRoles('dean', 'hod'), async (req: Request, res: Response) => {
+router.put('/course-management/:id', authenticate, authorizeRoles('dean', 'hod'), validate({ params: z.object({ id: entityId }), body: deanCourseUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getDeanDepartment(userId);
@@ -1153,7 +1171,7 @@ router.get('/facility-management', authenticate, async (_req: Request, res: Resp
   }
 });
 
-router.post('/facility-management', authenticate, authorizeRoles('dean', 'hod'), async (req: Request, res: Response) => {
+router.post('/facility-management', authenticate, authorizeRoles('dean', 'hod'), validate({ body: deanFacilityCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { name, type, capacity, status } = req.body;
     if (!name || !type || !capacity) {
@@ -1175,7 +1193,7 @@ router.post('/facility-management', authenticate, authorizeRoles('dean', 'hod'),
   }
 });
 
-router.put('/facility-management/:id', authenticate, authorizeRoles('dean', 'hod'), async (req: Request, res: Response) => {
+router.put('/facility-management/:id', authenticate, authorizeRoles('dean', 'hod'), validate({ params: z.object({ id: entityId }), body: deanFacilityUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const payload = req.body ?? {};
@@ -1230,7 +1248,7 @@ router.get('/semester-management/academic-years', authenticate, async (_req: Req
   }
 });
 
-router.post('/semester-management/academic-years', authenticate, authorizeRoles('dean'), async (req: Request, res: Response) => {
+router.post('/semester-management/academic-years', authenticate, authorizeRoles('dean'), validate({ body: academicYearCreateSchema }), async (req: Request, res: Response) => {
   try {
     const yearValue = String(req.body?.year || '').trim();
     if (!yearValue || !req.body?.startDate || !req.body?.endDate) {
@@ -1270,7 +1288,7 @@ router.post('/semester-management/academic-years', authenticate, authorizeRoles(
   }
 });
 
-router.put('/semester-management/academic-years/:id', authenticate, authorizeRoles('dean'), async (req: Request, res: Response) => {
+router.put('/semester-management/academic-years/:id', authenticate, authorizeRoles('dean'), validate({ params: z.object({ id: entityId }), body: academicYearUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const payload = req.body ?? {};
@@ -1330,7 +1348,7 @@ router.get('/inventory/purchase-requests', authenticate, async (req: Request, re
  * approver, the moment and any note survive; the `status` column becomes a
  * projection of that.
  */
-router.put('/inventory/purchase-requests/:id/status', authenticate, authorizeRoles('dean'), asyncHandler(async (req: Request, res: Response) => {
+router.put('/inventory/purchase-requests/:id/status', authenticate, authorizeRoles('dean'), validate({ params: z.object({ id: entityId }), body: deanWorkflowDecisionSchema }), asyncHandler(async (req: Request, res: Response) => {
   const ctx = getTenantContext(req);
   const id = String(req.params.id);
   const status = String(req.body?.status || '').toLowerCase();

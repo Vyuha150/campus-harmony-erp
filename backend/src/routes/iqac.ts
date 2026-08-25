@@ -18,6 +18,13 @@ import {
   qualityDocumentCreateSchema,
   qualityDocumentUpdateSchema
 } from '../modules/common/legacyWrite.schemas.js';
+import {
+  feedbackFormCreateSchema,
+  aqarGenerateSchema,
+  aqarUpdateSchema,
+  iqacMeetingCreateSchema,
+  iqacMeetingUpdateSchema
+} from '../modules/iqac/iqac.schemas.js';
 
 const router = Router();
 
@@ -236,7 +243,7 @@ router.get('/feedback', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/feedback/create-form', authenticate, async (req: Request, res: Response) => {
+router.post('/feedback/create-form', authenticate, validate({ body: feedbackFormCreateSchema }), async (req: Request, res: Response) => {
   try {
     const defaultCourse = await prisma.course.findFirst({ select: { id: true } });
     if (!defaultCourse) {
@@ -272,7 +279,7 @@ router.get('/reports', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/reports/generate', authenticate, async (req: Request, res: Response) => {
+router.post('/reports/generate', authenticate, validate({ body: aqarGenerateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { academicYear } = req.body;
@@ -294,7 +301,7 @@ router.post('/reports/generate', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.put('/reports/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/reports/:id', authenticate, validate({ params: z.object({ id: entityId }), body: aqarUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const parsedSubmissionDate = req.body?.submissionDate ? toDateOrUndefined(req.body.submissionDate) : null;
@@ -327,7 +334,7 @@ router.get('/meetings', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/meetings', authenticate, async (req: Request, res: Response) => {
+router.post('/meetings', authenticate, validate({ body: iqacMeetingCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const date = toDateOrUndefined(req.body?.date);
@@ -358,7 +365,7 @@ router.post('/meetings', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/meetings/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/meetings/:id', authenticate, validate({ params: z.object({ id: entityId }), body: iqacMeetingUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const parsedDate = req.body?.date ? toDateOrUndefined(req.body.date) : null;

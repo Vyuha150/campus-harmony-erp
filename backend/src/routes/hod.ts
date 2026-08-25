@@ -16,6 +16,34 @@ import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
 import {
   accreditationDataUpdateSchema
 } from '../modules/common/legacyWrite.schemas.js';
+import {
+  hodApprovalDecisionSchema,
+  workloadAssignSchema,
+  purchaseRequestCreateSchema,
+  hodBroadcastCreateSchema,
+  facultyRolesUpdateSchema,
+  facultyLeaveDecisionSchema,
+  promotionRecommendationSchema,
+  remedialNoteSchema,
+  advisorAssignSchema,
+  counselingNoteSchema,
+  workloadCourseCreateSchema,
+  workloadCourseUpdateSchema,
+  accreditationDataCreateSchema,
+  labInventoryCreateSchema,
+  labInventoryUpdateSchema,
+  hodCourseCreateSchema,
+  hodCourseUpdateSchema,
+  curriculumProposalCreateSchema,
+  facilityCreateSchema,
+  facilityUpdateSchema,
+  hodCommunicationCreateSchema,
+  hodGrievanceDecisionSchema,
+  studentsExportSchema,
+  meritListSchema,
+  studentEmailSchema,
+  accreditationDocumentUploadSchema
+} from '../modules/hod/hod.schemas.js';
 
 const router = Router();
 const db: any = prisma;
@@ -127,7 +155,7 @@ router.get('/approvals', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/approvals/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/approvals/:id', authenticate, validate({ body: hodApprovalDecisionSchema }), async (req: Request, res: Response) => {
   try {
     const ctx = getTenantContext(req);
     const id = String(req.params.id);
@@ -233,7 +261,7 @@ router.get('/workload', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/workload/assign', authenticate, async (req: Request, res: Response) => {
+router.put('/workload/assign', authenticate, validate({ body: workloadAssignSchema }), async (req: Request, res: Response) => {
   try {
     const classId = req.body?.classId ? String(req.body.classId) : null;
     const courseId = req.body?.courseId ? String(req.body.courseId) : null;
@@ -423,7 +451,7 @@ router.get('/inventory', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/inventory/purchase-request', authenticate, async (req: Request, res: Response) => {
+router.post('/inventory/purchase-request', authenticate, validate({ body: purchaseRequestCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
@@ -448,7 +476,7 @@ router.get('/messages', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/messages', authenticate, async (req: Request, res: Response) => {
+router.post('/messages', authenticate, validate({ body: hodBroadcastCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -500,7 +528,7 @@ router.get('/departmentfaculty', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.put('/faculty/:id/roles', authenticate, async (req: Request, res: Response) => {
+router.put('/faculty/:id/roles', authenticate, validate({ params: z.object({ id: entityId }), body: facultyRolesUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const roles = Array.isArray(req.body?.roles) ? req.body.roles : [];
@@ -521,7 +549,7 @@ router.put('/faculty/:id/roles', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.put('/faculty/:id/leave', authenticate, async (req: Request, res: Response) => {
+router.put('/faculty/:id/leave', authenticate, validate({ params: z.object({ id: entityId }), body: facultyLeaveDecisionSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const action = String(req.body?.action || 'approve');
@@ -554,7 +582,7 @@ router.put('/faculty/:id/leave', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.post('/faculty/:id/promotion-recommendation', authenticate, async (req: Request, res: Response) => {
+router.post('/faculty/:id/promotion-recommendation', authenticate, validate({ params: z.object({ id: entityId }), body: promotionRecommendationSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const reason = String(req.body?.reason || 'Promotion recommendation');
@@ -610,7 +638,7 @@ router.get('/departmentstudents', authenticate, async (req: Request, res: Respon
   }
 });
 
-router.put('/students/:id/advisor', authenticate, async (req: Request, res: Response) => {
+router.put('/students/:id/advisor', authenticate, validate({ params: z.object({ id: entityId }), body: advisorAssignSchema }), async (req: Request, res: Response) => {
   try {
     const studentId = String(req.params.id);
     const advisor = String(req.body?.advisor || '');
@@ -620,7 +648,7 @@ router.put('/students/:id/advisor', authenticate, async (req: Request, res: Resp
   }
 });
 
-router.post('/students/:id/counseling-note', authenticate, async (req: Request, res: Response) => {
+router.post('/students/:id/counseling-note', authenticate, validate({ params: z.object({ id: entityId }), body: counselingNoteSchema }), async (req: Request, res: Response) => {
   try {
     const studentId = String(req.params.id);
     const note = String(req.body?.note || '');
@@ -662,7 +690,7 @@ router.get('/hodapprovals', authenticate, async (_req: Request, res: Response) =
   }
 });
 
-router.put('/hodapprovals/:id/status', authenticate, async (req: Request, res: Response) => {
+router.put('/hodapprovals/:id/status', authenticate, validate({ params: z.object({ id: entityId }), body: hodApprovalDecisionSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const status = String(req.body?.status || 'pending');
@@ -717,7 +745,7 @@ router.get('/departmentcalendar', authenticate, async (_req: Request, res: Respo
   }
 });
 
-router.post('/workload/course', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
+router.post('/workload/course', authenticate, authorizeRoles('hod', 'dean'), validate({ body: workloadCourseCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
@@ -834,7 +862,7 @@ router.post('/workload/course', authenticate, authorizeRoles('hod', 'dean'), asy
   }
 });
 
-router.put('/workload/course/:id', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
+router.put('/workload/course/:id', authenticate, authorizeRoles('hod', 'dean'), validate({ params: z.object({ id: entityId }), body: workloadCourseUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
@@ -1053,7 +1081,7 @@ router.post('/courseresults/:courseCode/verify', authenticate, async (req: Reque
   }
 });
 
-router.post('/courseresults/:courseCode/remedial', authenticate, async (req: Request, res: Response) => {
+router.post('/courseresults/:courseCode/remedial', authenticate, validate({ body: remedialNoteSchema }), async (req: Request, res: Response) => {
   try {
     const courseCode = String(req.params.courseCode);
     const note = String(req.body?.note || 'Remedial class scheduled');
@@ -1117,7 +1145,7 @@ router.get('/accreditationdata', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.post('/accreditationdata', authenticate, async (req: Request, res: Response) => {
+router.post('/accreditationdata', authenticate, validate({ body: accreditationDataCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
@@ -1179,7 +1207,7 @@ router.get('/labinventory', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.post('/labinventory', authenticate, async (req: Request, res: Response) => {
+router.post('/labinventory', authenticate, validate({ body: labInventoryCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
@@ -1224,7 +1252,7 @@ router.post('/labinventory', authenticate, async (req: Request, res: Response) =
   }
 });
 
-router.put('/labinventory/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/labinventory/:id', authenticate, validate({ params: z.object({ id: entityId }), body: labInventoryUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
@@ -1313,7 +1341,7 @@ router.get('/purchaserequests', authenticate, async (req: Request, res: Response
  * and it now runs on the engine, so "who approved this spend" is answerable from
  * the transition log rather than inferred from whoever wrote `status` last.
  */
-router.post('/purchaserequests', authenticate, async (req: Request, res: Response) => {
+router.post('/purchaserequests', authenticate, validate({ body: purchaseRequestCreateSchema }), async (req: Request, res: Response) => {
   try {
     const ctx = getTenantContext(req);
     const userId = (req as any).user.id;
@@ -1417,7 +1445,7 @@ router.get('/course-management', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.post('/course-management', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
+router.post('/course-management', authenticate, authorizeRoles('hod', 'dean'), validate({ body: hodCourseCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
@@ -1450,7 +1478,7 @@ router.post('/course-management', authenticate, authorizeRoles('hod', 'dean'), a
   }
 });
 
-router.put('/course-management/:id', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
+router.put('/course-management/:id', authenticate, authorizeRoles('hod', 'dean'), validate({ params: z.object({ id: entityId }), body: hodCourseUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
@@ -1553,7 +1581,7 @@ router.get('/curriculum-proposals', authenticate, async (req: Request, res: Resp
  * body decided anything. It is created `false`; an institution that wants a real
  * BoS stage defines one through POST /workflow/definitions, without code.
  */
-router.post('/curriculum-proposals', authenticate, authorizeRoles('hod'), async (req: Request, res: Response) => {
+router.post('/curriculum-proposals', authenticate, authorizeRoles('hod'), validate({ body: curriculumProposalCreateSchema }), async (req: Request, res: Response) => {
   try {
     const ctx = getTenantContext(req);
     const userId = (req as any).user.id;
@@ -1611,7 +1639,7 @@ router.get('/facility-management', authenticate, async (_req: Request, res: Resp
   }
 });
 
-router.post('/facility-management', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
+router.post('/facility-management', authenticate, authorizeRoles('hod', 'dean'), validate({ body: facilityCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { name, type, capacity, status } = req.body;
     if (!name || !type || !capacity) {
@@ -1633,7 +1661,7 @@ router.post('/facility-management', authenticate, authorizeRoles('hod', 'dean'),
   }
 });
 
-router.put('/facility-management/:id', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
+router.put('/facility-management/:id', authenticate, authorizeRoles('hod', 'dean'), validate({ params: z.object({ id: entityId }), body: facilityUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const payload = req.body ?? {};
@@ -1712,7 +1740,7 @@ router.get('/communication/messages', authenticate, async (_req: Request, res: R
   }
 });
 
-router.post('/communication/messages', authenticate, async (req: Request, res: Response) => {
+router.post('/communication/messages', authenticate, validate({ body: hodCommunicationCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -1881,7 +1909,7 @@ router.get('/grievances/:id', authenticate, async (req: Request, res: Response) 
   }
 });
 
-router.put('/grievances/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/grievances/:id', authenticate, validate({ params: z.object({ id: entityId }), body: hodGrievanceDecisionSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const status = String(req.body?.status || 'under_review');
@@ -1929,7 +1957,7 @@ router.put('/grievances/:id', authenticate, async (req: Request, res: Response) 
   }
 });
 
-router.post('/students/export', authenticate, async (req: Request, res: Response) => {
+router.post('/students/export', authenticate, validate({ body: studentsExportSchema }), async (req: Request, res: Response) => {
   try {
     const format = String(req.body?.format || 'csv');
     res.json({ success: true, data: { format, exportedAt: new Date().toISOString() } });
@@ -1938,7 +1966,7 @@ router.post('/students/export', authenticate, async (req: Request, res: Response
   }
 });
 
-router.post('/students/merit-list', authenticate, async (req: Request, res: Response) => {
+router.post('/students/merit-list', authenticate, validate({ body: meritListSchema }), async (req: Request, res: Response) => {
   try {
     const limit = Number(req.body?.limit || 5);
     const userId = (req as any).user.id;
@@ -1966,7 +1994,7 @@ router.post('/students/merit-list', authenticate, async (req: Request, res: Resp
   }
 });
 
-router.post('/students/:id/email', authenticate, async (req: Request, res: Response) => {
+router.post('/students/:id/email', authenticate, validate({ params: z.object({ id: entityId }), body: studentEmailSchema }), async (req: Request, res: Response) => {
   try {
     const studentId = String(req.params.id);
     const subject = String(req.body?.subject || 'Department Communication');
@@ -2023,7 +2051,7 @@ router.post('/accreditation/export-ssr', authenticate, async (_req: Request, res
   }
 });
 
-router.post('/accreditation/upload-document', authenticate, async (req: Request, res: Response) => {
+router.post('/accreditation/upload-document', authenticate, validate({ body: accreditationDocumentUploadSchema }), async (req: Request, res: Response) => {
   try {
     const name = String(req.body?.name || 'document');
     res.json({ success: true, data: { name, uploadedAt: new Date().toISOString() } });

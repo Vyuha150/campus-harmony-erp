@@ -17,7 +17,10 @@ import {
   createCaseSchema,
   updateCaseSchema,
   addActivitySchema,
-  listCasesQuery
+  listCasesQuery,
+  complianceItemCreateSchema,
+  complianceItemUpdateSchema,
+  antiRaggingAffidavitCreateSchema
 } from '../modules/grievances/grievances.schema.js';
 
 const router = Router();
@@ -181,7 +184,7 @@ router.get('/compliance/:id', authenticate, async (req: Request, res: Response) 
 });
 
 // Create compliance item
-router.post('/compliance', authenticate, async (req: Request, res: Response) => {
+router.post('/compliance', authenticate, validate({ body: complianceItemCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { title, type, description, applicableTo, dueDate, renewalPeriod, documents } = req.body;
 
@@ -212,7 +215,7 @@ router.post('/compliance', authenticate, async (req: Request, res: Response) => 
 });
 
 // Update compliance item
-router.put('/compliance/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/compliance/:id', authenticate, validate({ params: z.object({ id: entityId }), body: complianceItemUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id || '');
     if (!id) {
@@ -249,7 +252,7 @@ router.get('/affidavits', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/affidavits', authenticate, async (req: Request, res: Response) => {
+router.post('/affidavits', authenticate, validate({ body: antiRaggingAffidavitCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { studentId, studentName, program, academicYear, parentAffidavit, studentAffidavit } = req.body;
 

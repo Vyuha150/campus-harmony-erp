@@ -10,6 +10,19 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { entityId } from '../schemas/common.js';
 import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
 import { getTenantContext } from '../lib/tenant.js';
+import {
+  placementStudentCreateSchema,
+  companyCreateSchema,
+  companyUpdateSchema,
+  driveCreateSchema,
+  driveUpdateSchema,
+  applicationStatusUpdateSchema,
+  trainingCreateSchema,
+  trainingUpdateSchema,
+  placementReportGenerateSchema,
+  placementMessageCreateSchema,
+  communicationTemplateCreateSchema
+} from '../modules/placements/placements.schemas.js';
 
 const router = Router();
 const customCommunicationTemplates: Array<{ id: string; name: string; category: string; desc: string }> = [];
@@ -153,7 +166,7 @@ router.get('/students', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/students', authenticate, async (req: Request, res: Response) => {
+router.post('/students', authenticate, validate({ body: placementStudentCreateSchema }), async (req: Request, res: Response) => {
   try {
     const payload = req.body ?? {};
     const name = String(payload.name || '').trim();
@@ -350,7 +363,7 @@ router.get('/companies', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/companies', authenticate, async (req: Request, res: Response) => {
+router.post('/companies', authenticate, validate({ body: companyCreateSchema }), async (req: Request, res: Response) => {
   try {
     const payload = req.body ?? {};
     const company = await prisma.company.create({
@@ -368,7 +381,7 @@ router.post('/companies', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/companies/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/companies/:id', authenticate, validate({ params: z.object({ id: entityId }), body: companyUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const payload = req.body ?? {};
@@ -450,7 +463,7 @@ router.get('/drives', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/drives', authenticate, async (req: Request, res: Response) => {
+router.post('/drives', authenticate, validate({ body: driveCreateSchema }), async (req: Request, res: Response) => {
   try {
     const payload = req.body ?? {};
     const drive = await prisma.placementDrive.create({
@@ -475,7 +488,7 @@ router.post('/drives', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/drives/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/drives/:id', authenticate, validate({ params: z.object({ id: entityId }), body: driveUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const payload = req.body ?? {};
@@ -545,7 +558,7 @@ router.get('/drives/:id/applications', authenticate, async (req: Request, res: R
   }
 });
 
-router.put('/drives/:driveId/applications/:applicationId', authenticate, async (req: Request, res: Response) => {
+router.put('/drives/:driveId/applications/:applicationId', authenticate, validate({ params: z.object({ driveId: entityId, applicationId: entityId }), body: applicationStatusUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const driveId = String(req.params.driveId);
     const applicationId = String(req.params.applicationId);
@@ -588,7 +601,7 @@ router.get('/training', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/training', authenticate, async (req: Request, res: Response) => {
+router.post('/training', authenticate, validate({ body: trainingCreateSchema }), async (req: Request, res: Response) => {
   try {
     const payload = req.body ?? {};
     const session = await prisma.trainingSession.create({
@@ -612,7 +625,7 @@ router.post('/training', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/training/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/training/:id', authenticate, validate({ params: z.object({ id: entityId }), body: trainingUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const payload = req.body ?? {};
@@ -815,7 +828,7 @@ router.get('/reports/salary-bands', authenticate, async (_req: Request, res: Res
   }
 });
 
-router.post('/reports/generate', authenticate, async (req: Request, res: Response) => {
+router.post('/reports/generate', authenticate, validate({ body: placementReportGenerateSchema }), async (req: Request, res: Response) => {
   try {
     const { type } = req.body;
     const data: any = { reportType: type, generatedAt: new Date() };
@@ -841,7 +854,7 @@ router.get('/messages', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/messages', authenticate, async (req: Request, res: Response) => {
+router.post('/messages', authenticate, validate({ body: placementMessageCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const payload = req.body ?? {};
@@ -897,7 +910,7 @@ router.get('/communication/templates', authenticate, async (_req: Request, res: 
   }
 });
 
-router.post('/communication/templates', authenticate, async (req: Request, res: Response) => {
+router.post('/communication/templates', authenticate, validate({ body: communicationTemplateCreateSchema }), async (req: Request, res: Response) => {
   try {
     const payload = req.body ?? {};
     const template = {
