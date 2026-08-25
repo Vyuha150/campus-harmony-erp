@@ -778,8 +778,11 @@ router.delete(
 router.post('/events', authenticate, validate({ body: eventCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { title, type, date, departments, coordinator, budget } = req.body;
+    // institutionId is required on the model since 0038 but injected by the
+    // tenant extension at runtime, not supplied here — `as any` because tsc
+    // checks a named object literal's keys even though every value is `any`.
     const event = await prisma.interDeptEvent.create({
-      data: { title, type, date: new Date(date), departments, coordinator, budget: budget || 0 }
+      data: { title, type, date: new Date(date), departments, coordinator, budget: budget || 0 } as any
     });
     res.json({ success: true, data: event });
   } catch (error: any) {
@@ -1194,13 +1197,15 @@ router.post('/facility-management', authenticate, authorizeRoles('dean', 'hod'),
       return;
     }
 
+    // institutionId is required on the model since 0038 but injected by the
+    // tenant extension at runtime — see the InterDeptEvent create above.
     const created = await prisma.facility.create({
       data: {
         name: String(name),
         type: String(type),
         capacity: Number(capacity),
         status: status ? String(status) : 'available'
-      }
+      } as any
     });
     res.json({ success: true, data: created });
   } catch (error: any) {

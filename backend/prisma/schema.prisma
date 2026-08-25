@@ -122,6 +122,15 @@ model Institution {
   institutionKPIs         InstitutionKPI[]
   complianceReports       ComplianceReport[]
   policyScenarios         PolicyScenario[]
+  companies               Company[]
+  facilities              Facility[]
+  teams                   Team[]
+  hostels                 Hostel[]
+  interDeptEvents         InterDeptEvent[]
+  degreeRecords           DegreeRecord[]
+  trainingSessions        TrainingSession[]
+  placementMessages       PlacementMessage[]
+  sportsEvents            SportsEvent[]
   journalEntries          JournalEntry[]
   antiRaggingAffidavits   AntiRaggingAffidavit[]
   qualityMetrics          QualityMetric[]
@@ -978,12 +987,18 @@ model ResearchProject {
 // Placements
 model Company {
   id              String           @id @default(uuid())
+  /// TENANT KEY, added in 0038. No relation to derive an owner from.
+  institutionId String
   name            String           @unique
   industry        String
   email           String
   website         String?
   totalHires      Int              @default(0)
   placementDrives PlacementDrive[]
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 model PlacementDrive {
@@ -1145,18 +1160,30 @@ model Donation {
 // Sports
 model Facility {
   id       String @id @default(uuid())
+  /// TENANT KEY, added in 0038. No relation to derive an owner from.
+  institutionId String
   name     String
   type     String
   capacity Int
   status   String @default("available")
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 model Team {
   id          String @id @default(uuid())
+  /// TENANT KEY, added in 0038. No relation to derive an owner from.
+  institutionId String
   sport       String
   gender      String
   matchesWon  Int    @default(0)
   matchesLost Int    @default(0)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Security
@@ -1344,11 +1371,17 @@ model LibraryPolicy {
 // Hostel
 model Hostel {
   id          String             @id @default(uuid())
+  /// TENANT KEY, added in 0038. No relation to derive an owner from.
+  institutionId String
   name        String
   block       String
   wardenName  String
   wardenPhone String
   allocations HostelAllocation[]
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 model HostelAllocation {
@@ -1667,6 +1700,8 @@ model DisciplinaryCase {
 // Dean — Inter-Departmental Events
 model InterDeptEvent {
   id           String   @id @default(uuid())
+  /// TENANT KEY, added in 0038. No relation to derive an owner from.
+  institutionId String
   title        String
   type         String
   date         DateTime @db.Timestamptz(3)
@@ -1675,6 +1710,10 @@ model InterDeptEvent {
   budget       Float    @default(0)
   participants Int      @default(0)
   status       String   @default("planned")
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // VC — Meetings & Agenda
@@ -1788,6 +1827,8 @@ model TransferRequest {
 // Registrar — Degree Records
 model DegreeRecord {
   id                String    @id @default(uuid())
+  /// TENANT KEY, added in 0038. No relation to derive an owner from.
+  institutionId String
   studentName       String
   rollNo            String
   program           String
@@ -1798,6 +1839,10 @@ model DegreeRecord {
   convocationDate   DateTime? @db.Timestamptz(3)
   collectedAt       DateTime? @db.Timestamptz(3)
   verificationCount Int       @default(0)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Registrar — Admin Documents
@@ -2096,6 +2141,8 @@ model BudgetAllocation {
 // Placement — Training Sessions
 model TrainingSession {
   id              String   @id @default(uuid())
+  /// TENANT KEY, added in 0038. No relation to derive an owner from.
+  institutionId String
   title           String
   type            String
   instructor      String
@@ -2107,6 +2154,10 @@ model TrainingSession {
   status          String   @default("scheduled")
   description     String?
   materials       Json?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Placement — Job Offers
@@ -2129,12 +2180,18 @@ model JobOffer {
 // Placement — Communication
 model PlacementMessage {
   id          String   @id @default(uuid())
+  /// TENANT KEY, added in 0038. No relation to derive an owner from.
+  institutionId String
   title       String
   content     String
   type        String   @default("announcement")
   sentBy      String
   sentAt      DateTime @default(now()) @db.Timestamptz(3)
   targetGroup String?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Sports — Athletes
@@ -2239,6 +2296,8 @@ model SportsInventoryItem {
 // Sports — Events
 model SportsEvent {
   id           String   @id @default(uuid())
+  /// TENANT KEY, added in 0038. No relation to derive an owner from.
+  institutionId String
   name         String
   type         String
   sports       Json?
@@ -2249,6 +2308,10 @@ model SportsEvent {
   participants Json?
   results      Json?
   status       String   @default("planning")
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Sports — Fitness Records

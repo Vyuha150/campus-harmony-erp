@@ -662,6 +662,7 @@ async function main() {
   });
 
   await upsertById(prisma.hostel, 'seed-hostel-1', {
+    institutionId: SEED_INSTITUTION_ID,
     name: 'Saraswati Hostel',
     block: 'A',
     wardenName: 'Mr. Thomas',
@@ -716,6 +717,7 @@ async function main() {
   // request with "Please select a valid lab from Facility Management" — the
   // purchase-approval flow was unreachable on a freshly seeded database.
   await upsertById(prisma.facility, 'seed-facility-lab-1', {
+    institutionId: SEED_INSTITUTION_ID,
     name: 'Signals and Systems Lab',
     type: 'Laboratory',
     capacity: 40,
@@ -891,6 +893,7 @@ async function main() {
   });
 
   await upsertById(prisma.interDeptEvent, 'seed-interdept-event-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Innovation Week 2026',
     type: 'technical_fest',
     date: daysFromNow(20),
@@ -1136,6 +1139,7 @@ async function main() {
     },
     create: {
       id: 'seed-company-1',
+      institutionId: SEED_INSTITUTION_ID,
       name: 'FutureTech Solutions',
       industry: 'Software',
       email: 'hr@futuretech.example',
@@ -1176,6 +1180,7 @@ async function main() {
   });
 
   await upsertById(prisma.trainingSession, 'seed-training-session-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Aptitude and DSA Bootcamp',
     type: 'placement_training',
     instructor: 'External Mentor Team',
@@ -1202,6 +1207,7 @@ async function main() {
   });
 
   await upsertById(prisma.placementMessage, 'seed-placement-message-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Drive registration open',
     content: 'FutureTech Solutions drive registration is now open.',
     type: 'announcement',
@@ -1682,6 +1688,7 @@ async function main() {
     },
     create: {
       id: 'seed-degree-record-1',
+      institutionId: SEED_INSTITUTION_ID,
       studentName: 'Ananya Student',
       rollNo: 'CH2024CS001',
       program: 'B.Tech CSE',
@@ -1853,6 +1860,7 @@ async function main() {
   });
 
   await upsertById(prisma.sportsEvent, 'seed-sports-event-1', {
+    institutionId: SEED_INSTITUTION_ID,
     name: 'Inter-Department Basketball Tournament',
     type: 'tournament',
     sports: ['basketball'],

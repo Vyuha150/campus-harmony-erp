@@ -366,6 +366,8 @@ router.get('/companies', authenticate, async (req: Request, res: Response) => {
 router.post('/companies', authenticate, validate({ body: companyCreateSchema }), async (req: Request, res: Response) => {
   try {
     const payload = req.body ?? {};
+    // institutionId is required on the model since 0038 but injected by the
+    // tenant extension at runtime, not supplied here.
     const company = await prisma.company.create({
       data: {
         name: String(payload.name || '').trim(),
@@ -373,7 +375,7 @@ router.post('/companies', authenticate, validate({ body: companyCreateSchema }),
         email: String(payload.email || 'na@example.com').trim(),
         website: payload.website ? String(payload.website).trim() : null,
         totalHires: Number(payload.totalHires || 0)
-      }
+      } as any
     });
     res.json({ success: true, data: company });
   } catch (error: any) {
@@ -604,6 +606,8 @@ router.get('/training', authenticate, async (req: Request, res: Response) => {
 router.post('/training', authenticate, validate({ body: trainingCreateSchema }), async (req: Request, res: Response) => {
   try {
     const payload = req.body ?? {};
+    // institutionId is required on the model since 0038 but injected by the
+    // tenant extension at runtime, not supplied here.
     const session = await prisma.trainingSession.create({
       data: {
         title: String(payload.title ?? 'Training Session'),
@@ -617,7 +621,7 @@ router.post('/training', authenticate, validate({ body: trainingCreateSchema }),
         status: String(payload.status ?? 'scheduled'),
         description: payload.description ? String(payload.description) : null,
         materials: Array.isArray(payload.materials) ? payload.materials : []
-      }
+      } as any
     });
     res.json({ success: true, data: session });
   } catch (error: any) {
@@ -858,6 +862,8 @@ router.post('/messages', authenticate, validate({ body: placementMessageCreateSc
   try {
     const userId = (req as any).user.id;
     const payload = req.body ?? {};
+    // institutionId is required on the model since 0038 but injected by the
+    // tenant extension at runtime, not supplied here.
     const msg = await prisma.placementMessage.create({
       data: {
         title: String(payload.title ?? payload.subject ?? 'Placement Update'),
@@ -865,7 +871,7 @@ router.post('/messages', authenticate, validate({ body: placementMessageCreateSc
         type: String(payload.type ?? payload.channel ?? 'announcement'),
         sentBy: userId,
         targetGroup: payload.targetGroup ? String(payload.targetGroup) : payload.targetAudience ? String(payload.targetAudience) : null
-      }
+      } as any
     });
     res.json({ success: true, data: msg });
   } catch (error: any) {

@@ -176,7 +176,22 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   // across the whole deployment.
   'InstitutionKPI',
   'ComplianceReport',
-  'PolicyScenario'
+  'PolicyScenario',
+  // 0038 — nine more models with no relation to derive an owner from at all:
+  // Company, Facility, Team, Hostel, InterDeptEvent, DegreeRecord,
+  // TrainingSession, PlacementMessage, SportsEvent. Company, Facility,
+  // TrainingSession and PlacementMessage were live and unscoped in
+  // placements.ts/dean.ts/hod.ts/sports.ts; the rest have no route querying
+  // them yet but carried the same defect in the schema.
+  'Company',
+  'Facility',
+  'Team',
+  'Hostel',
+  'InterDeptEvent',
+  'DegreeRecord',
+  'TrainingSession',
+  'PlacementMessage',
+  'SportsEvent'
 ]);
 
 

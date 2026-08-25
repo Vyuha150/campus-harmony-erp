@@ -1863,13 +1863,15 @@ router.post('/facility-management', authenticate, authorizeRoles('hod', 'dean'),
       return;
     }
 
+    // institutionId is required on the model since 0038 but injected by the
+    // tenant extension at runtime, not supplied here.
     const created = await prisma.facility.create({
       data: {
         name: String(name),
         type: String(type),
         capacity: Number(capacity),
         status: status ? String(status) : 'available'
-      }
+      } as any
     });
     res.json({ success: true, data: created });
   } catch (error: any) {
