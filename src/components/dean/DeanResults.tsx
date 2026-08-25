@@ -121,7 +121,7 @@ export default function DeanResults() {
                         <span className="text-xs font-medium">{r.passPercentage}%</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-center font-medium">{r.avgGPA}</TableCell>
+                    <TableCell className="text-center font-medium">{r.avgGPA ?? 'N/A'}</TableCell>
                     <TableCell>
                       <Badge variant={r.status === 'published' ? 'default' : r.status === 'approved' ? 'secondary' : 'outline'} className="capitalize text-[10px]">
                         {r.status.replace('_', ' ')}

@@ -139,9 +139,15 @@ export default function VCFinance() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-1">
                           <p className="text-sm font-medium">{r.source}</p>
-                          <span className="text-xs text-emerald-600 flex items-center gap-0.5">
-                            <TrendingUp className="h-3 w-3" /> {r.trend}
-                          </span>
+                          {/* `trend` is null: no prior period is loaded to compare
+                              against (see routes/vc.ts). An unconditional green
+                              "trending up" icon next to blank text implied a real,
+                              positive trend that was never computed. */}
+                          {r.trend && (
+                            <span className="text-xs text-emerald-600 flex items-center gap-0.5">
+                              <TrendingUp className="h-3 w-3" /> {r.trend}
+                            </span>
+                          )}
                         </div>
                         <Progress value={r.percentage} className="h-2" />
                       </div>
