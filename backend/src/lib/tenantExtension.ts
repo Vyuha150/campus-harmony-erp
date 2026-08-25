@@ -161,7 +161,14 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   // Workflow engine (0024). WorkflowStep and WorkflowTransition are NOT listed:
   // they carry no institutionId and are scoped through their parent.
   'WorkflowDefinition',
-  'WorkflowInstance'
+  'WorkflowInstance',
+  // 0036 — the three alumni models 0028 missed. Not reachable through a raw
+  // `update({ where: { id }, data: req.body })` handler (0028's criterion), so
+  // they slipped past that sweep even though every GET against them had the
+  // same defect: no institutionId filter at all.
+  'MentorshipProgram',
+  'AlumniCommunicationRecord',
+  'ProgressionSurvey'
 ]);
 
 

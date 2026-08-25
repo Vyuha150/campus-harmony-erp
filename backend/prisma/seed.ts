@@ -1236,6 +1236,7 @@ async function main() {
   });
 
   await upsertById(prisma.mentorshipProgram, 'seed-mentorship-program-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Career Compass',
     description: 'Industry mentorship for graduating students.',
     type: 'career',
@@ -1250,6 +1251,7 @@ async function main() {
   });
 
   await upsertById(prisma.alumniCommunicationRecord, 'seed-alumni-communication-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Quarterly Alumni Newsletter',
     content: 'Highlights of placements, research and campus growth.',
     type: 'newsletter',
@@ -1281,6 +1283,7 @@ async function main() {
   });
 
   await upsertById(prisma.progressionSurvey, 'seed-progression-survey-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Graduate Progression Survey 2026',
     graduationYear: 2025,
     program: 'B.Tech CSE',

@@ -116,6 +116,9 @@ model Institution {
   examProgress            ExamProgress[]
   alumniEvents            AlumniEvent[]
   alumniJobPostings       AlumniJobPosting[]
+  mentorshipPrograms      MentorshipProgram[]
+  alumniCommunicationRecords AlumniCommunicationRecord[]
+  progressionSurveys      ProgressionSurvey[]
   journalEntries          JournalEntry[]
   antiRaggingAffidavits   AntiRaggingAffidavit[]
   qualityMetrics          QualityMetric[]
@@ -2298,6 +2301,12 @@ model AlumniEvent {
 // Alumni — Mentorship Programs
 model MentorshipProgram {
   id          String    @id @default(uuid())
+  /// TENANT KEY, added in 0036. Missed by 0028 because nothing in alumni.ts
+  /// writes this model through a raw `update({ where: { id }, data: req.body
+  /// })` handler — but every GET here had no institutionId filter either, so
+  /// every institution's mentorship programs were visible to every alumni
+  /// officer regardless of which university they belonged to.
+  institutionId String
   title       String
   description String
   type        String
@@ -2309,11 +2318,18 @@ model MentorshipProgram {
   mentors     Json?
   mentees     Json?
   matches     Json?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Alumni — Communications
 model AlumniCommunicationRecord {
   id             String    @id @default(uuid())
+  /// TENANT KEY, added in 0036. Same gap as MentorshipProgram: read-only leak,
+  /// not a mass-assignment one, so 0028's sweep never touched it.
+  institutionId  String
   title          String
   content        String
   type           String    @default("newsletter")
@@ -2324,6 +2340,10 @@ model AlumniCommunicationRecord {
   recipientCount Int?
   openRate       Float?
   clickRate      Float?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Alumni — Job Postings
@@ -2356,6 +2376,9 @@ model AlumniJobPosting {
 // Alumni — Progression Surveys
 model ProgressionSurvey {
   id             String   @id @default(uuid())
+  /// TENANT KEY, added in 0036. Same gap as MentorshipProgram: read-only leak,
+  /// not a mass-assignment one, so 0028's sweep never touched it.
+  institutionId  String
   title          String
   graduationYear Int
   program        String?
@@ -2365,6 +2388,10 @@ model ProgressionSurvey {
   status         String   @default("draft")
   startDate      DateTime @db.Timestamptz(3)
   endDate        DateTime @db.Timestamptz(3)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // IQAC — Action Items

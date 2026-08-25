@@ -30,13 +30,21 @@ const currentYear = new Date().getFullYear();
 // ─── Dashboard ───
 router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const alumniCount = await prisma.alumniProfile.count({
       where: {
         graduationYear: { lte: currentYear },
-        user: { role: { not: 'alumni_officer' } }
+        user: { role: { not: 'alumni_officer' }, institutionId: context.institutionId }
       }
     });
-    const donations = await prisma.donation.aggregate({ _sum: { amount: true } });
+    // `Donation` and `AlumniProfile` carry no institutionId column of their
+    // own (see prisma/schema.prisma) — the extension cannot scope them, so
+    // every query here must reach institutionId manually through the
+    // alumni -> user relation, or it returns every institution's rows.
+    const donations = await prisma.donation.aggregate({
+      _sum: { amount: true },
+      where: { alumni: { user: { institutionId: context.institutionId } } }
+    });
     const mentoring = await prisma.mentorshipProgram.count({ where: { status: 'active' } });
     const jobPostings = await prisma.alumniJobPosting.count({ where: { status: 'active' } });
 
@@ -59,6 +67,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
 // ─── Directory ───
 router.get('/directory', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const query = req.query as Record<string, string | undefined>;
     const search = query.search;
     const graduationYear = query.graduationYear;
@@ -66,7 +75,7 @@ router.get('/directory', authenticate, async (req: Request, res: Response) => {
     const location = query.location;
     const where: any = {
       graduationYear: { lte: currentYear },
-      user: { role: { not: 'alumni_officer' } }
+      user: { role: { not: 'alumni_officer' }, institutionId: context.institutionId }
     };
     if (graduationYear) where.graduationYear = parseInt(graduationYear);
     if (program) where.program = program;
@@ -94,8 +103,15 @@ router.get('/directory', authenticate, async (req: Request, res: Response) => {
 
 router.get('/directory/:id', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const id = String(req.params.id);
-    const alumni = await prisma.alumniProfile.findUnique({ where: { id }, include: { user: true } });
+    // `findUnique` cannot carry the institution check in its `where` alongside
+    // `id`, so a scoped `findFirst` is the only way an id from another
+    // institution doesn't resolve here.
+    const alumni = await prisma.alumniProfile.findFirst({
+      where: { id, user: { institutionId: context.institutionId } },
+      include: { user: true }
+    });
     if (!alumni || alumni.user.role === 'alumni_officer' || alumni.graduationYear > currentYear) {
       res.status(404).json({ success: false, message: 'Alumni not found' });
       return;
@@ -271,7 +287,9 @@ router.get('/mentorship/matches', authenticate, async (req: Request, res: Respon
 // ─── Donations ───
 router.get('/donations', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const donations = await prisma.donation.findMany({
+      where: { alumni: { user: { institutionId: context.institutionId } } },
       include: { alumni: { include: { user: true } } },
       orderBy: { date: 'desc' }
     });
@@ -293,9 +311,21 @@ router.post(
   validate({ body: createDonationSchema }),
   asyncHandler(async (req: Request, res: Response) => {
     // Was `data: req.body`. `tsc` could not see that — req.body is `any` —
-    // so it compiled cleanly while accepting every column. The tenant key is
-    // injected by the Prisma extension and is NOT read from the body.
+    // so it compiled cleanly while accepting every column. `Donation` has no
+    // institutionId column for the Prisma extension to inject in the first
+    // place, so the ONLY thing stopping an alumni officer from recording a
+    // donation against another institution's alumnus is checking that
+    // alumniProfileId resolves inside their own institution before writing.
     const body = req.body as z.infer<typeof createDonationSchema>;
+    const context = getTenantContext(req);
+    const alumniProfile = await prisma.alumniProfile.findFirst({
+      where: { id: body.alumniProfileId, user: { institutionId: context.institutionId } },
+      select: { id: true }
+    });
+    if (!alumniProfile) {
+      res.status(404).json({ success: false, message: 'Alumni profile not found' });
+      return;
+    }
     const record = await prisma.donation.create({
       data: {
         ...body,
@@ -331,10 +361,11 @@ router.post('/progression/surveys', authenticate,
 
 router.get('/progression/metrics', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const alumni = await prisma.alumniProfile.findMany({
       where: {
         graduationYear: { lte: currentYear },
-        user: { role: { not: 'alumni_officer' } }
+        user: { role: { not: 'alumni_officer' }, institutionId: context.institutionId }
       }
     });
     const companyCounts: any = {};
