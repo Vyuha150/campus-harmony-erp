@@ -1218,14 +1218,34 @@ router.get('/research/patents', authenticate, async (req: Request, res: Response
 });
 
 // ─── Dashboard helpers ───
+/**
+ * Was two hardcoded rows — "Internal marks submission window open... before
+ * Friday" and "Department review meeting Friday 3:00 PM" — returned to every
+ * faculty member on every visit, with no deadline or meeting behind either.
+ * A faculty member reading this could believe a real submission window was
+ * closing "this Friday" indefinitely, or miss an actual deadline because this
+ * fake one looked identical to a real one.
+ *
+ * Now the real `BroadcastMessage` rows aimed at faculty. `priority` was never
+ * a column on that model; `pinned` is, so a pinned broadcast is shown as high
+ * priority rather than inventing an urgency the sender never set.
+ */
 router.get('/dashboard/announcements', authenticate, async (_req: Request, res: Response) => {
   try {
+    const messages = await db.broadcastMessage.findMany({
+      where: { recipients: { in: ['all', 'faculty', 'faculties', 'all_faculty'] } },
+      orderBy: { sentAt: 'desc' },
+      take: 10
+    });
+
     res.json({
       success: true,
-      data: [
-        { id: 'a1', title: 'Internal marks submission window open', detail: 'Submit internal marks before Friday.', priority: 'high' },
-        { id: 'a2', title: 'Department review meeting', detail: 'Friday 3:00 PM in conference hall.', priority: 'medium' },
-      ]
+      data: messages.map((m: any) => ({
+        id: m.id,
+        title: m.subject,
+        detail: m.content,
+        priority: m.pinned ? 'high' : 'medium'
+      }))
     });
   } catch (error: any) {
     sendError(res, error);
@@ -1267,14 +1287,50 @@ router.get('/dashboard/tasks', authenticate, async (req: Request, res: Response)
   }
 });
 
-router.get('/dashboard/alerts', authenticate, async (_req: Request, res: Response) => {
+/**
+ * Was a single hardcoded row — "Attendance dip detected... below 75%
+ * average attendance" — returned unconditionally to every faculty member,
+ * regardless of what any of their courses' real attendance looked like. It
+ * read as a real, computed alert ("AI Performance Alerts" is the section
+ * title on screen); nothing had ever computed it.
+ *
+ * Now a real per-course tally from `AttendanceSession`/`Attendance`. A course
+ * with no marked sessions is not flagged — no data is not a dip.
+ */
+router.get('/dashboard/alerts', authenticate, async (req: Request, res: Response) => {
   try {
-    res.json({
-      success: true,
-      data: [
-        { id: 'al1', title: 'Attendance dip detected', description: 'One or more courses are below 75% average attendance.' }
-      ]
+    const userId = (req as any).user.id;
+    const profile = await getFacultyProfile(userId);
+
+    const sessions = await prisma.attendanceSession.findMany({
+      where: { facultyId: profile.id },
+      include: { course: { select: { code: true, name: true } }, records: { select: { status: true } } }
     });
+
+    const byCourse = new Map<string, { code: string; name: string; present: number; total: number }>();
+    for (const session of sessions) {
+      const bucket = byCourse.get(session.courseId) ?? {
+        code: session.course.code,
+        name: session.course.name,
+        present: 0,
+        total: 0
+      };
+      bucket.total += session.records.length;
+      bucket.present += session.records.filter((r: any) => r.status === 'present').length;
+      byCourse.set(session.courseId, bucket);
+    }
+
+    const alerts = [...byCourse.values()]
+      .filter((c) => c.total > 0)
+      .map((c) => ({ ...c, percentage: Math.round((c.present / c.total) * 100) }))
+      .filter((c) => c.percentage < 75)
+      .map((c) => ({
+        id: `attendance-${c.code}`,
+        title: `${c.code} attendance below 75%`,
+        description: `${c.name} is at ${c.percentage}% average attendance across marked sessions.`
+      }));
+
+    res.json({ success: true, data: alerts });
   } catch (error: any) {
     sendError(res, error);
   }

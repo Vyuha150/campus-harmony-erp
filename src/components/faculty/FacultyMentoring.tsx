@@ -90,7 +90,11 @@ export default function FacultyMentoring() {
           <div className="grid gap-4 sm:grid-cols-4">
             {[
               { label: 'CGPA', value: mentee.cgpa, color: mentee.cgpa < 6 ? 'text-destructive' : 'text-foreground' },
-              { label: 'Attendance', value: `${mentee.attendance}%`, color: mentee.attendance < 75 ? 'text-destructive' : 'text-foreground' },
+              // `attendance` is `null` when the mentee has no marked sessions —
+              // `mentee.attendance < 75` is `true` for `null` (it coerces to
+              // `0`), so an unmarked mentee would be shown in destructive red
+              // as if failing an attendance threshold they have no data for.
+              { label: 'Attendance', value: mentee.attendance === null ? 'No records' : `${mentee.attendance}%`, color: mentee.attendance !== null && mentee.attendance < 75 ? 'text-destructive' : 'text-foreground' },
               { label: 'Section', value: mentee.section, color: 'text-foreground' },
               { label: 'Semester', value: mentee.semester, color: 'text-foreground' },
             ].map(s => (
@@ -204,10 +208,14 @@ export default function FacultyMentoring() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Attendance</p>
-                    <p className={`text-lg font-bold ${student.attendance < 75 ? 'text-destructive' : 'text-foreground'}`}>{student.attendance}%</p>
+                    {student.attendance !== null ? (
+                      <p className={`text-lg font-bold ${student.attendance < 75 ? 'text-destructive' : 'text-foreground'}`}>{student.attendance}%</p>
+                    ) : (
+                      <p className="text-lg font-bold text-muted-foreground">No records</p>
+                    )}
                   </div>
                 </div>
-                <Progress value={student.attendance} className="mt-2 h-1.5" />
+                <Progress value={student.attendance ?? 0} className="mt-2 h-1.5" />
                 <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
                   <span>{student.counselingNotes.length} notes</span>
                   <span>Last: {student.lastMeetingDate || 'Never'}</span>

@@ -245,10 +245,10 @@ export default function FacultyDashboard() {
                   </div>
                   <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
                     <span>CGPA: {s.cgpa}</span>
-                    <span>Attendance: {s.attendance}%</span>
+                    <span>Attendance: {s.attendance === null ? 'No records' : `${s.attendance}%`}</span>
                   </div>
                   <div className="mt-2">
-                    <Progress value={s.attendance} className="h-1.5" />
+                    <Progress value={s.attendance ?? 0} className="h-1.5" />
                   </div>
                 </div>
               ))}
