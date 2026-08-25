@@ -29,8 +29,18 @@ export default function HODResultsAnalysis() {
   const [selectedCourse, setSelectedCourse] = useState<CourseResult | null>(null);
   const [remedialNote, setRemedialNote] = useState('');
 
-  const overallPass = Math.round(courseResults.reduce((s, c) => s + c.passPercentage, 0) / courseResults.length * 10) / 10;
-  const overallAvg = Math.round(courseResults.reduce((s, c) => s + c.avgScore, 0) / courseResults.length * 10) / 10;
+  const overallPass = courseResults.length > 0
+    ? Math.round(courseResults.reduce((s, c) => s + c.passPercentage, 0) / courseResults.length * 10) / 10
+    : 0;
+  // Only courses with a real average (some numeric marks recorded) count
+  // toward the department-wide figure. `avgScore` is `null` for a course
+  // graded entirely in letters, or not yet graded at all — summing it
+  // directly would coerce `null` to `0` and silently pull the department
+  // average down for courses that simply have no numeric marks yet.
+  const coursesWithAvg = courseResults.filter((c): c is typeof c & { avgScore: number } => c.avgScore !== null);
+  const overallAvg = coursesWithAvg.length > 0
+    ? Math.round(coursesWithAvg.reduce((s, c) => s + c.avgScore, 0) / coursesWithAvg.length * 10) / 10
+    : null;
   const totalFailed = courseResults.reduce((s, c) => s + c.failed, 0);
 
   const handleVerify = async (code: string) => {
@@ -90,7 +100,7 @@ export default function HODResultsAnalysis() {
         <div className="grid gap-4 sm:grid-cols-4">
           {[
             { label: 'Overall Pass %', value: `${overallPass}%`, icon: TrendingUp, color: 'text-green-600 bg-green-100' },
-            { label: 'Average Score', value: overallAvg, icon: BarChart3, color: 'text-blue-600 bg-blue-100' },
+            { label: 'Average Score', value: overallAvg === null ? 'N/A' : overallAvg, icon: BarChart3, color: 'text-blue-600 bg-blue-100' },
             { label: 'Total Failures', value: totalFailed, icon: TrendingDown, color: 'text-destructive bg-destructive/10' },
             { label: 'Verified', value: `${verifiedCourses.length}/${courseResults.length}`, icon: CheckCircle, color: 'text-primary bg-primary/10' },
           ].map(s => (
@@ -147,8 +157,8 @@ export default function HODResultsAnalysis() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">{c.avgScore}</TableCell>
-                    <TableCell className="text-center font-bold text-green-600">{c.highestScore}</TableCell>
+                    <TableCell className="text-center">{c.avgScore ?? 'N/A'}</TableCell>
+                    <TableCell className="text-center font-bold text-green-600">{c.highestScore ?? 'N/A'}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         {verifiedCourses.includes(c.courseCode) ? (
@@ -252,8 +262,8 @@ export default function HODResultsAnalysis() {
                 <div><span className="text-muted-foreground">Course:</span> {selectedCourse.courseName}</div>
                 <div><span className="text-muted-foreground">Faculty:</span> {selectedCourse.faculty}</div>
                 <div><span className="text-muted-foreground">Pass %:</span> <span className="font-bold">{selectedCourse.passPercentage}%</span></div>
-                <div><span className="text-muted-foreground">Avg Score:</span> {selectedCourse.avgScore}</div>
-                <div><span className="text-muted-foreground">Highest:</span> {selectedCourse.highestScore}</div>
+                <div><span className="text-muted-foreground">Avg Score:</span> {selectedCourse.avgScore ?? 'N/A'}</div>
+                <div><span className="text-muted-foreground">Highest:</span> {selectedCourse.highestScore ?? 'N/A'}</div>
                 <div><span className="text-muted-foreground">Total:</span> {selectedCourse.totalStudents}</div>
               </div>
               <div className="space-y-1.5">

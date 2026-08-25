@@ -625,6 +625,11 @@ router.get('/departmentfaculty', authenticate, async (req: Request, res: Respons
       success: true,
       data: faculty.map((item: any) => ({
         id: item.id,
+        // The id MenteeAssignment.facultyId actually references. Added
+        // alongside `id` (the User id, kept for existing consumers) so the
+        // advisor-assignment flow can submit a real foreign key instead of a
+        // display name — see PUT /students/:id/advisor.
+        facultyProfileId: item.facultyProfile?.id || null,
         name: item.name,
         employeeId: item.facultyProfile?.employeeId || '',
         designation: item.designation || 'Assistant Professor',
@@ -787,11 +792,60 @@ router.get('/departmentstudents', authenticate, async (req: Request, res: Respon
   }
 });
 
+/**
+ * Assign an advisor (Phase 4).
+ *
+ * Was `res.json({ success: true, data: { studentId, advisor } })` with no
+ * write at all — the request body was echoed back and discarded. Changing a
+ * student's advisor through this screen appeared to work and reverted the
+ * moment the page reloaded, because GET /departmentstudents reads the real
+ * `MenteeAssignment` and nothing had ever written one.
+ *
+ * Both the student and the target faculty member are verified to belong to
+ * the caller's own department before anything is written — a HOD assigning a
+ * student to a faculty member outside their department, or a student who
+ * isn't theirs, is not a request this endpoint should be able to fulfil
+ * silently.
+ */
 router.put('/students/:id/advisor', authenticate, validate({ params: z.object({ id: entityId }), body: advisorAssignSchema }), async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const department = await getHODDepartment(userId);
+    if (!department) throw new Error('Department unassigned');
+
     const studentId = String(req.params.id);
-    const advisor = String(req.body?.advisor || '');
-    res.json({ success: true, data: { studentId, advisor } });
+    const facultyProfileId = String(req.body.facultyProfileId);
+
+    const student = await prisma.studentProfile.findFirst({
+      where: { id: studentId, user: { departmentId: department.id } }
+    });
+    if (!student) {
+      res.status(404).json({ success: false, message: 'Student not found in your department' });
+      return;
+    }
+
+    const faculty = await prisma.facultyProfile.findFirst({
+      where: { id: facultyProfileId, user: { departmentId: department.id } },
+      include: { user: { select: { name: true } } }
+    });
+    if (!faculty) {
+      res.status(400).json({ success: false, message: 'Selected faculty member is not in your department' });
+      return;
+    }
+
+    const existing = await prisma.menteeAssignment.findFirst({ where: { studentId } });
+    if (existing) {
+      await prisma.menteeAssignment.update({
+        where: { id: existing.id },
+        data: { facultyId: facultyProfileId }
+      });
+    } else {
+      await prisma.menteeAssignment.create({
+        data: { studentId, facultyId: facultyProfileId }
+      });
+    }
+
+    res.json({ success: true, data: { studentId, advisor: faculty.user?.name ?? null } });
   } catch (error: any) {
     sendError(res, error);
   }

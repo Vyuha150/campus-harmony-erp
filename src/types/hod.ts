@@ -28,7 +28,8 @@ export interface DepartmentStudent {
   semester: number;
   section: string;
   cgpa: number;
-  attendance: number;
+  /** `null` when the student has no marked attendance sessions. */
+  attendance: number | null;
   advisor: string;
   status: 'active' | 'detained' | 'graduated' | 'suspended';
   email: string;
@@ -89,8 +90,9 @@ export interface CourseResult {
   passed: number;
   failed: number;
   passPercentage: number;
-  avgScore: number;
-  highestScore: number;
+  /** `null` when no enrolment has a numeric mark — e.g. graded entirely in letters, or not yet graded. */
+  avgScore: number | null;
+  highestScore: number | null;
   gradeDistribution: { grade: string; count: number }[];
 }
 

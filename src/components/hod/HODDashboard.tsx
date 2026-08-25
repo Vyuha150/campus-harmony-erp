@@ -46,7 +46,11 @@ export default function HODDashboard() {
   const adjunctFaculty = departmentFaculty.filter(f => f.type !== 'permanent').length;
   const totalStudents = departmentStudents.length;
   const onLeaveFaculty = departmentFaculty.filter(f => f.isOnLeave).length;
-  const atRiskStudents = departmentStudents.filter(s => s.cgpa < 6 || s.attendance < 65).length;
+  // `s.attendance` is `null` for a student with no marked sessions, and
+  // `null < 65` is `true` in JavaScript (`null` coerces to `0` in a
+  // comparison) — without the explicit check, every unmarked student would be
+  // counted as at-risk on attendance grounds they have no data for.
+  const atRiskStudents = departmentStudents.filter(s => s.cgpa < 6 || (s.attendance !== null && s.attendance < 65)).length;
   const pendingApprovals = approvals.filter(a => a.status === 'pending').length;
 
   const studentsByYear = [1, 2, 3, 4].map(y => ({

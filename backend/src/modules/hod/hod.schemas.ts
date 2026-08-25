@@ -108,10 +108,19 @@ export const remedialNoteSchema = z
   })
   .strict();
 
-/** PUT /students/:id/advisor — the handler does not persist this today. */
+/**
+ * PUT /students/:id/advisor.
+ *
+ * `facultyProfileId`, not a name. The handler used to accept `{ advisor:
+ * string }` and do nothing with it — no write, just an echo — so changing a
+ * student's advisor appeared to succeed and silently reverted on the next
+ * page load. A name cannot be persisted as a foreign key without a fragile
+ * lookup that breaks the moment two faculty share a name; the frontend now
+ * submits the id `MenteeAssignment.facultyId` actually references.
+ */
 export const advisorAssignSchema = z
   .object({
-    advisor: optionalTrimmed(200)
+    facultyProfileId: trimmed(200)
   })
   .strict();
 

@@ -54,18 +54,38 @@ export default function HODStudentAcademics() {
   const avgCGPA = students.length > 0
     ? (students.reduce((s, st) => s + st.cgpa, 0) / students.length).toFixed(2)
     : '0.00';
-  const avgAttendance = students.length > 0
-    ? Math.round(students.reduce((s, st) => s + st.attendance, 0) / students.length)
-    : 0;
-  const atRisk = students.filter(s => s.cgpa < 6 || s.attendance < 65);
+  // Only students with a real attendance figure count toward the average, and
+  // only they can be flagged at-risk on attendance. `attendance` is `null` for
+  // a student with no marked sessions — `st.attendance` was previously summed
+  // directly, and `null` coerces to `0` in arithmetic, so an unmarked student
+  // silently dragged the department average down as if they had 0% attendance.
+  // Worse, `s.attendance < 65` is `true` when `attendance` is `null` (`null`
+  // coerces to `0` in a comparison too), so every unmarked student was flagged
+  // "at risk" the moment this screen started receiving real data instead of
+  // the old hardcoded 85.
+  const withAttendance = students.filter((st): st is typeof st & { attendance: number } => st.attendance !== null);
+  const avgAttendance = withAttendance.length > 0
+    ? Math.round(withAttendance.reduce((s, st) => s + st.attendance, 0) / withAttendance.length)
+    : null;
+  const atRisk = students.filter(s => s.cgpa < 6 || (s.attendance !== null && s.attendance < 65));
 
   const handleChangeAdvisor = async () => {
     if (selectedStudent && newAdvisor) {
       try {
-        await putApi(`/hod/students/${selectedStudent.id}/advisor`, { advisor: newAdvisor });
-        setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, advisor: newAdvisor } : s));
-        setSelectedStudent(prev => prev ? { ...prev, advisor: newAdvisor } : null);
-        toast({ title: 'Advisor Updated', description: `${selectedStudent.name}'s advisor changed to ${newAdvisor}` });
+        // `newAdvisor` holds a `facultyProfileId`, not a display name — the
+        // endpoint used to accept a name and silently discard it, so a change
+        // here appeared to work and reverted on the next page load. The
+        // response carries the resolved name, so the UI reflects what was
+        // actually written rather than assuming the id equals the label shown
+        // in the dropdown.
+        const result = await putApi<{ studentId: string; advisor: string | null }>(
+          `/hod/students/${selectedStudent.id}/advisor`,
+          { facultyProfileId: newAdvisor }
+        );
+        const advisorName = result.advisor ?? 'Not assigned';
+        setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, advisor: advisorName } : s));
+        setSelectedStudent(prev => prev ? { ...prev, advisor: advisorName } : null);
+        toast({ title: 'Advisor Updated', description: `${selectedStudent.name}'s advisor changed to ${advisorName}` });
         setShowAdvisorDialog(false);
         setNewAdvisor('');
       } catch (error: any) {
@@ -128,7 +148,7 @@ export default function HODStudentAcademics() {
           {[
             { label: 'Total Students', value: students.length, icon: Users, color: 'text-blue-600 bg-blue-100' },
             { label: 'Avg CGPA', value: avgCGPA, icon: TrendingUp, color: 'text-green-600 bg-green-100' },
-            { label: 'Avg Attendance', value: `${avgAttendance}%`, icon: GraduationCap, color: 'text-primary bg-primary/10' },
+            { label: 'Avg Attendance', value: avgAttendance === null ? 'No records' : `${avgAttendance}%`, icon: GraduationCap, color: 'text-primary bg-primary/10' },
             { label: 'At-Risk Students', value: atRisk.length, icon: AlertTriangle, color: 'text-destructive bg-destructive/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
@@ -161,7 +181,7 @@ export default function HODStudentAcademics() {
                     </span>
                     <div className="flex gap-2">
                       {s.cgpa < 6 && <Badge variant="destructive" className="text-[10px]">CGPA: {s.cgpa}</Badge>}
-                      {s.attendance < 65 && <Badge variant="secondary" className="text-[10px]">Att: {s.attendance}%</Badge>}
+                      {s.attendance !== null && s.attendance < 65 && <Badge variant="secondary" className="text-[10px]">Att: {s.attendance}%</Badge>}
                     </div>
                   </div>
                 ))}
@@ -229,10 +249,14 @@ export default function HODStudentAcademics() {
                       </span>
                     </TableCell>
                     <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Progress value={s.attendance} className="w-16 h-1.5" />
-                        <span className={`text-xs ${s.attendance < 65 ? 'text-destructive font-bold' : ''}`}>{s.attendance}%</span>
-                      </div>
+                      {s.attendance !== null ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <Progress value={s.attendance} className="w-16 h-1.5" />
+                          <span className={`text-xs ${s.attendance < 65 ? 'text-destructive font-bold' : ''}`}>{s.attendance}%</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No records</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{s.advisor}</TableCell>
                     <TableCell>
@@ -270,7 +294,11 @@ export default function HODStudentAcademics() {
                 <div><span className="text-muted-foreground">Year/Sem:</span> {selectedStudent.year}/{selectedStudent.semester}</div>
                 <div><span className="text-muted-foreground">Section:</span> {selectedStudent.section}</div>
                 <div><span className="text-muted-foreground">CGPA:</span> <span className={selectedStudent.cgpa < 6 ? 'text-destructive font-bold' : 'font-bold'}>{selectedStudent.cgpa}</span></div>
-                <div><span className="text-muted-foreground">Attendance:</span> <span className={selectedStudent.attendance < 65 ? 'text-destructive font-bold' : 'font-bold'}>{selectedStudent.attendance}%</span></div>
+                <div><span className="text-muted-foreground">Attendance:</span> {selectedStudent.attendance !== null ? (
+                  <span className={selectedStudent.attendance < 65 ? 'text-destructive font-bold' : 'font-bold'}>{selectedStudent.attendance}%</span>
+                ) : (
+                  <span className="text-muted-foreground">No records</span>
+                )}</div>
                 <div><span className="text-muted-foreground">Advisor:</span> {selectedStudent.advisor}</div>
                 <div className="flex items-center gap-1"><Mail className="h-3 w-3 text-muted-foreground" />{selectedStudent.email}</div>
               </div>
@@ -319,9 +347,11 @@ export default function HODStudentAcademics() {
             <Select value={newAdvisor} onValueChange={setNewAdvisor}>
               <SelectTrigger><SelectValue placeholder="Select new advisor..." /></SelectTrigger>
               <SelectContent>
-                {departmentFaculty.map(f => (
-                  <SelectItem key={f.id} value={f.name}>{f.name} – {f.designation}</SelectItem>
-                ))}
+                {departmentFaculty
+                  .filter((f: any) => f.facultyProfileId)
+                  .map((f: any) => (
+                    <SelectItem key={f.id} value={f.facultyProfileId}>{f.name} – {f.designation}</SelectItem>
+                  ))}
               </SelectContent>
             </Select>
             <div className="flex justify-end gap-2">
