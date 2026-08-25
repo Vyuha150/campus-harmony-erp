@@ -64,19 +64,25 @@ export default function FacultyMarks() {
 
   useEffect(() => {
     if (!selectedCourseId) return;
+    // WHAT THIS REPLACES. This used to take the single stored `total` and
+    // reverse-engineer a Quiz 1 / Quiz 2 / Midterm / Assignment / Attendance
+    // breakdown from it using fixed weights (10% / 10% / 50% / 20% / 10%) —
+    // five component scores presented as real marks, when `Enrollment` has
+    // never stored anything but one `grade` value. No one ever entered a
+    // midterm score of, say, 36; it was `Math.round(total * 0.5)`.
+    //
+    // It was not just misleading. `updateMarkField` recomputed `total` as the
+    // SUM of all five fields on every edit — so editing just the midterm score
+    // added the real new midterm to the four still-fabricated components and
+    // wrote that as the student's total. A faculty member correcting one
+    // number could silently corrupt the other four they never touched.
     fetchApi(`/faculty/marks/${selectedCourseId}`).then((d: any) => {
-      const mapped = (Array.isArray(d) ? d : []).map((entry: any) => {
-        const total = Number(entry.total || 0);
-        return {
-          ...entry,
-          quiz1: Math.min(10, Math.round(total * 0.1)),
-          quiz2: Math.min(10, Math.round(total * 0.1)),
-          midterm: Math.min(50, Math.round(total * 0.5)),
-          assignment: Math.min(20, Math.round(total * 0.2)),
-          attendance: Math.min(10, Math.round(total * 0.1)),
-          total
-        };
-      });
+      const mapped = (Array.isArray(d) ? d : []).map((entry: any) => ({
+        ...entry,
+        // `''` for ungraded, not `0` — an empty box invites a real mark; a `0`
+        // claims one was already given.
+        total: entry.total === null ? '' : String(entry.total)
+      }));
       setInternalMarks(mapped);
     }).catch((error) => { console.error('API request failed', error); });
   }, [selectedCourseId]);
@@ -84,13 +90,10 @@ export default function FacultyMarks() {
   const { toast } = useToast();
   const selectedCourse = facultyCourses.find((course: any) => course.id === selectedCourseId);
 
-  const updateMarkField = (studentId: string, field: string, value: string) => {
-    setInternalMarks((prev: any[]) => prev.map((entry) => {
-      if (entry.studentId !== studentId) return entry;
-      const next = { ...entry, [field]: Number(value || 0) };
-      next.total = Number(next.quiz1 || 0) + Number(next.quiz2 || 0) + Number(next.midterm || 0) + Number(next.assignment || 0) + Number(next.attendance || 0);
-      return next;
-    }));
+  const updateMarkField = (studentId: string, value: string) => {
+    setInternalMarks((prev: any[]) => prev.map((entry) => (
+      entry.studentId === studentId ? { ...entry, total: value } : entry
+    )));
   };
 
   const submitInternalMarks = async () => {
@@ -104,7 +107,9 @@ export default function FacultyMarks() {
       await putApi(`/faculty/marks/${selectedCourseId}`, {
         marks: internalMarks.map((entry: any) => ({
           studentId: entry.studentId,
-          grade: String(entry.total)
+          // An empty box submits as ungraded (`null`), not as a score of 0 —
+          // the same distinction the load path now makes in reverse.
+          grade: entry.total === '' || entry.total === undefined ? null : String(entry.total)
         }))
       });
       toast({ title: 'Marks submitted', description: 'Internal marks saved successfully.' });
@@ -155,16 +160,7 @@ export default function FacultyMarks() {
           <TabsContent value="internal" className="mt-4">
             <Card className="border-border">
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">{selectedCourse ? `${selectedCourse.code} – Internal Assessment Marks` : 'Internal Assessment Marks'}</CardTitle>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>Quiz 1: /10</span>
-                    <span>Quiz 2: /10</span>
-                    <span>Midterm: /50</span>
-                    <span>Assignment: /20</span>
-                    <span>Attendance: /10</span>
-                  </div>
-                </div>
+                <CardTitle className="text-lg">{selectedCourse ? `${selectedCourse.code} – Internal Assessment Marks` : 'Internal Assessment Marks'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -172,45 +168,41 @@ export default function FacultyMarks() {
                     <TableRow>
                       <TableHead>Roll No</TableHead>
                       <TableHead>Name</TableHead>
-                      <TableHead className="text-center">Quiz 1 (10)</TableHead>
-                      <TableHead className="text-center">Quiz 2 (10)</TableHead>
-                      <TableHead className="text-center">Midterm (50)</TableHead>
-                      <TableHead className="text-center">Assignment (20)</TableHead>
-                      <TableHead className="text-center">Attendance (10)</TableHead>
-                      <TableHead className="text-center">Total (100)</TableHead>
+                      <TableHead className="text-center">Total Marks (100)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {internalMarks.map((entry) => (
-                      <TableRow key={entry.studentId}>
-                        <TableCell className="font-mono">{entry.rollNumber}</TableCell>
-                        <TableCell className="font-medium">{entry.studentName}</TableCell>
-                        <TableCell className="text-center">
-                          <Input type="number" className="mx-auto w-16 text-center" value={entry.quiz1} onChange={(event) => updateMarkField(entry.studentId, 'quiz1', event.target.value)} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Input type="number" className="mx-auto w-16 text-center" value={entry.quiz2} onChange={(event) => updateMarkField(entry.studentId, 'quiz2', event.target.value)} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Input type="number" className="mx-auto w-16 text-center" value={entry.midterm} onChange={(event) => updateMarkField(entry.studentId, 'midterm', event.target.value)} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Input type="number" className="mx-auto w-16 text-center" value={entry.assignment} onChange={(event) => updateMarkField(entry.studentId, 'assignment', event.target.value)} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Input type="number" className="mx-auto w-16 text-center" value={entry.attendance} onChange={(event) => updateMarkField(entry.studentId, 'attendance', event.target.value)} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant={entry.total >= 60 ? 'default' : entry.total >= 40 ? 'secondary' : 'destructive'}>
-                            {entry.total}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {internalMarks.map((entry) => {
+                      const numeric = entry.total === '' ? null : Number(entry.total);
+                      const graded = numeric !== null && Number.isFinite(numeric);
+                      return (
+                        <TableRow key={entry.studentId}>
+                          <TableCell className="font-mono">{entry.rollNumber}</TableCell>
+                          <TableCell className="font-medium">{entry.studentName}</TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                className="mx-auto w-20 text-center"
+                                placeholder="—"
+                                value={entry.total}
+                                onChange={(event) => updateMarkField(entry.studentId, event.target.value)}
+                              />
+                              {graded && (
+                                <Badge variant={numeric >= 60 ? 'default' : numeric >= 40 ? 'secondary' : 'destructive'}>
+                                  {numeric}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
                 <div className="mt-4 flex justify-end gap-2">
-                  <Button variant="outline">Save Draft</Button>
                   <Button onClick={submitInternalMarks} disabled={submittingMarks}>
                     <Save className="mr-1 h-4 w-4" />{submittingMarks ? 'Submitting...' : 'Submit Marks'}
                   </Button>
@@ -225,33 +217,10 @@ export default function FacultyMarks() {
                 <CardTitle className="text-lg">End-Semester Marks Entry</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Roll No</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="text-center">Theory (70)</TableHead>
-                      <TableHead className="text-center">Practical (30)</TableHead>
-                      <TableHead className="text-center">Total (100)</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {internalMarks.map((entry) => (
-                      <TableRow key={entry.studentId}>
-                        <TableCell className="font-mono">{entry.rollNumber}</TableCell>
-                        <TableCell className="font-medium">{entry.studentName}</TableCell>
-                        <TableCell className="text-center"><Input type="number" className="mx-auto w-16 text-center" /></TableCell>
-                        <TableCell className="text-center"><Input type="number" className="mx-auto w-16 text-center" /></TableCell>
-                        <TableCell className="text-center"><span className="text-muted-foreground">—</span></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                <div className="mt-4 flex justify-end">
-                  <Button onClick={submitInternalMarks} disabled={submittingMarks}>
-                    <Save className="mr-1 h-4 w-4" />{submittingMarks ? 'Submitting...' : 'Submit to Exam Cell'}
-                  </Button>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  End-semester marks entry is not available yet — there is no exam-cell workflow wired up to record
+                  it separately from internal marks. Use the Internal Marks tab for now.
+                </p>
               </CardContent>
             </Card>
           </TabsContent>

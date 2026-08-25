@@ -1011,14 +1011,21 @@ router.get('/marks/:courseId', authenticate, async (req: Request, res: Response)
     });
     res.json({
       success: true,
+      // `total: Number.isFinite(storedTotal) ? storedTotal : 0` — `Number(null)`
+      // is `0` in JavaScript, which IS finite, so an ungraded enrolment
+      // (`grade` is `null`) reported a real mark of 0. Worse than a display bug:
+      // the gradebook screen this feeds reconstructs a fake quiz/midterm/
+      // assignment breakdown FROM this total, so a student who had never been
+      // marked showed a full row of fabricated component scores that summed to
+      // zero, rather than a blank, ungraded row.
       data: enrollments.map((e: any) => {
-        const storedTotal = Number(e.grade);
+        const numeric = e.grade != null && e.grade !== '' ? Number(e.grade) : NaN;
         return {
           studentId: e.student.id,
           rollNumber: e.student.rollNumber,
           studentName: e.student.user.name,
           grade: e.grade,
-          total: Number.isFinite(storedTotal) ? storedTotal : 0,
+          total: Number.isFinite(numeric) ? numeric : null,
           maxTotal: 100
         };
       })
@@ -1041,48 +1048,6 @@ router.put('/marks/:courseId', authenticate, validate({ params: z.object({ cours
       }
     }
     res.json({ success: true, message: 'Marks updated' });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
-
-router.get('/marks/internal', authenticate, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.id;
-    const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const profile = await getFacultyProfile(userId);
-    const where: any = { facultyId: profile.id };
-    if (Number.isFinite(semesterQuery)) where.semester = semesterQuery;
-    const courses = await prisma.course.findMany({
-      where
-    });
-    const enrollments = await prisma.enrollment.findMany({
-      where: { courseId: { in: courses.map((course: any) => course.id) } },
-      include: { student: { include: { user: true } } },
-      take: 100
-    });
-
-    res.json({
-      success: true,
-      data: enrollments.map((enrollment: any, index: number) => {
-        const quiz1 = Math.min(10, 6 + (index % 4));
-        const quiz2 = Math.min(10, 5 + (index % 5));
-        const midterm = Math.min(50, 28 + (index % 20));
-        const assignment = Math.min(20, 12 + (index % 8));
-        const attendance = Math.min(10, 7 + (index % 4));
-        return {
-          studentId: enrollment.student.id,
-          rollNumber: enrollment.student.rollNumber,
-          studentName: enrollment.student.user.name,
-          quiz1,
-          quiz2,
-          midterm,
-          assignment,
-          attendance,
-          total: quiz1 + quiz2 + midterm + assignment + attendance
-        };
-      })
-    });
   } catch (error: any) {
     sendError(res, error);
   }

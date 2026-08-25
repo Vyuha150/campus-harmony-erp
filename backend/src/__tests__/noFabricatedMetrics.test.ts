@@ -52,6 +52,17 @@
  *                 a reliability percentage no monitoring in this system has
  *                 ever measured. (Phase 4.)
  *
+ *   faculty.ts    `GET /marks/:courseId` did `Number(e.grade)` with no null
+ *                 check, so an ungraded enrolment (`grade` is `null`) reported
+ *                 a real mark of 0 — the same `Number(null) === 0` bug as
+ *                 hod.ts and dean.ts. A second, unused endpoint,
+ *                 `GET /marks/internal`, fabricated a five-part quiz/midterm/
+ *                 assignment/attendance breakdown per row from nothing but the
+ *                 row's array index (`6 + (index % 4)`, `28 + (index % 20)`,
+ *                 …) — not read from any table, not derived from the total,
+ *                 just a function of position in the result set. It had no
+ *                 frontend caller; removed rather than fixed. (Phase 4.)
+ *
  * The rule: when there is no data, say so. A dashboard that fills gaps with
  * plausible numbers is worse than an empty one, because nobody can tell which
  * figures were measured.
@@ -111,6 +122,16 @@ const HARDCODED_METRIC =
  * being invented from a *fraction*, not read from a record.
  */
 const INVENTED_DISTRIBUTION = /count\s*:\s*Math\.(?:round|max|min)\([\s\S]{0,60}?\*\s*0\.\d+/;
+
+/**
+ * A per-row value built from the row's position in a `.map()` result rather
+ * than anything read from the database — `faculty.ts`'s deleted
+ * `GET /marks/internal` did `const quiz1 = Math.min(10, 6 + (index % 4))` for
+ * five different "scores," none of them backed by a column. Bounding the
+ * result with `Math.min`/`Math.max` made it look like a plausible score
+ * instead of an obviously wrong one.
+ */
+const INDEX_FABRICATED_VALUE = /-?\d+\s*\+\s*\(?\s*index\s*%\s*\d+\s*\)?/;
 
 describe('handlers do not fabricate figures', () => {
   it('found route files to scan — otherwise every check below is vacuous', () => {
@@ -186,6 +207,20 @@ describe('handlers do not fabricate figures', () => {
     }
   );
 
+  it.each([...sources.keys()].map((f) => [f] as const))(
+    '%s does not fabricate a value from the row index',
+    (file) => {
+      const src = sources.get(file)!;
+      const hit = INDEX_FABRICATED_VALUE.exec(src);
+      expect(
+        hit?.[0] ?? null,
+        `${file} derives a "score" from a row's position in the result set ` +
+          '(an offset plus index modulo N) instead of a real column. ' +
+          'faculty.ts did this for a fake quiz/midterm/assignment breakdown.'
+      ).toBeNull();
+    }
+  );
+
   describe('NEGATIVE CONTROLS: each matcher detects what it bans', () => {
     // Without these, a regex that silently stopped matching would turn every
     // check above into a guaranteed pass.
@@ -232,6 +267,13 @@ describe('handlers do not fabricate figures', () => {
       ).toBe(true);
       // a real tally — counting actual rows — must NOT trip it
       expect(INVENTED_DISTRIBUTION.test('counts.set(grade, (counts.get(grade) ?? 0) + 1)')).toBe(false);
+    });
+
+    it('index-fabricated value', () => {
+      expect(INDEX_FABRICATED_VALUE.test('const quiz1 = Math.min(10, 6 + (index % 4));')).toBe(true);
+      expect(INDEX_FABRICATED_VALUE.test('const midterm = Math.min(50, 28 + (index % 20));')).toBe(true);
+      // a real value read from the row itself must NOT trip it
+      expect(INDEX_FABRICATED_VALUE.test('const grade = enrollment.grade;')).toBe(false);
     });
   });
 });
