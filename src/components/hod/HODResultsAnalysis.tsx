@@ -29,9 +29,14 @@ export default function HODResultsAnalysis() {
   const [selectedCourse, setSelectedCourse] = useState<CourseResult | null>(null);
   const [remedialNote, setRemedialNote] = useState('');
 
-  const overallPass = courseResults.length > 0
-    ? Math.round(courseResults.reduce((s, c) => s + c.passPercentage, 0) / courseResults.length * 10) / 10
-    : 0;
+  // `passPercentage` is `null` for a course with no graded enrolments —
+  // summing it directly would coerce `null` to `0`, which drags the
+  // department-wide figure down for courses nobody has graded yet, exactly
+  // the same way `avgScore` below needed the same guard.
+  const coursesWithPass = courseResults.filter((c): c is typeof c & { passPercentage: number } => c.passPercentage !== null);
+  const overallPass = coursesWithPass.length > 0
+    ? Math.round(coursesWithPass.reduce((s, c) => s + c.passPercentage, 0) / coursesWithPass.length * 10) / 10
+    : null;
   // Only courses with a real average (some numeric marks recorded) count
   // toward the department-wide figure. `avgScore` is `null` for a course
   // graded entirely in letters, or not yet graded at all — summing it
@@ -99,7 +104,7 @@ export default function HODResultsAnalysis() {
         {/* Summary */}
         <div className="grid gap-4 sm:grid-cols-4">
           {[
-            { label: 'Overall Pass %', value: `${overallPass}%`, icon: TrendingUp, color: 'text-green-600 bg-green-100' },
+            { label: 'Overall Pass %', value: overallPass === null ? 'N/A' : `${overallPass}%`, icon: TrendingUp, color: 'text-green-600 bg-green-100' },
             { label: 'Average Score', value: overallAvg === null ? 'N/A' : overallAvg, icon: BarChart3, color: 'text-blue-600 bg-blue-100' },
             { label: 'Total Failures', value: totalFailed, icon: TrendingDown, color: 'text-destructive bg-destructive/10' },
             { label: 'Verified', value: `${verifiedCourses.length}/${courseResults.length}`, icon: CheckCircle, color: 'text-primary bg-primary/10' },
@@ -150,12 +155,16 @@ export default function HODResultsAnalysis() {
                     <TableCell className="text-center text-green-600 font-medium">{c.passed}</TableCell>
                     <TableCell className="text-center text-destructive font-medium">{c.failed}</TableCell>
                     <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Progress value={c.passPercentage} className="w-16 h-1.5" />
-                        <span className={`text-xs font-medium ${c.passPercentage < 80 ? 'text-destructive' : 'text-green-600'}`}>
-                          {c.passPercentage}%
-                        </span>
-                      </div>
+                      {c.passPercentage !== null ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <Progress value={c.passPercentage} className="w-16 h-1.5" />
+                          <span className={`text-xs font-medium ${c.passPercentage < 80 ? 'text-destructive' : 'text-green-600'}`}>
+                            {c.passPercentage}%
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">N/A</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-center">{c.avgScore ?? 'N/A'}</TableCell>
                     <TableCell className="text-center font-bold text-green-600">{c.highestScore ?? 'N/A'}</TableCell>
@@ -205,8 +214,11 @@ export default function HODResultsAnalysis() {
           ))}
         </div>
 
-        {/* Courses needing remedial action */}
-        {courseResults.filter(c => c.passPercentage < 90).length > 0 && (
+        {/* Courses needing remedial action. `null < 90` is `true` in
+            JavaScript, so a course with no graded enrolments yet would be
+            flagged as needing remedial attention for a pass rate that was
+            never computed. */}
+        {courseResults.filter(c => c.passPercentage !== null && c.passPercentage < 90).length > 0 && (
           <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
@@ -215,7 +227,7 @@ export default function HODResultsAnalysis() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {courseResults.filter(c => c.passPercentage < 90).map(c => (
+              {courseResults.filter(c => c.passPercentage !== null && c.passPercentage < 90).map(c => (
                 <div key={c.courseCode} className="flex items-center justify-between text-sm">
                   <span className="text-foreground">{c.courseCode} – {c.courseName}</span>
                   <div className="flex items-center gap-2">
@@ -261,7 +273,7 @@ export default function HODResultsAnalysis() {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-muted-foreground">Course:</span> {selectedCourse.courseName}</div>
                 <div><span className="text-muted-foreground">Faculty:</span> {selectedCourse.faculty}</div>
-                <div><span className="text-muted-foreground">Pass %:</span> <span className="font-bold">{selectedCourse.passPercentage}%</span></div>
+                <div><span className="text-muted-foreground">Pass %:</span> <span className="font-bold">{selectedCourse.passPercentage === null ? 'N/A' : `${selectedCourse.passPercentage}%`}</span></div>
                 <div><span className="text-muted-foreground">Avg Score:</span> {selectedCourse.avgScore ?? 'N/A'}</div>
                 <div><span className="text-muted-foreground">Highest:</span> {selectedCourse.highestScore ?? 'N/A'}</div>
                 <div><span className="text-muted-foreground">Total:</span> {selectedCourse.totalStudents}</div>

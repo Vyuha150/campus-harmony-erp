@@ -28,7 +28,14 @@ export default function DeanResults() {
   }, [resultSummaries]);
 
   const pending = results.filter(r => r.status === 'pending_approval');
-  const avgPass = results.length > 0 ? Math.round(results.reduce((s, r) => s + r.passPercentage, 0) / results.length * 10) / 10 : 0;
+  // `passPercentage` is `null` for a department with no graded enrolments yet.
+  // Only departments with a real figure count toward the overall average —
+  // summing `null` directly coerces it to `0` in JS, which would silently drag
+  // the average down for departments that simply haven't been graded.
+  const gradedResults = results.filter((r): r is ResultSummary & { passPercentage: number } => r.passPercentage !== null);
+  const avgPass = gradedResults.length > 0
+    ? Math.round(gradedResults.reduce((s, r) => s + r.passPercentage, 0) / gradedResults.length * 10) / 10
+    : null;
 
   const approveResult = async (result: ResultSummary) => {
     const identifier = result.departmentId || result.department;
@@ -55,7 +62,7 @@ export default function DeanResults() {
           {[
             { label: 'Programs Reviewed', value: results.length, icon: BarChart3, color: 'text-blue-600 bg-blue-100' },
             { label: 'Pending Approval', value: pending.length, icon: Clock, color: 'text-amber-600 bg-amber-100' },
-            { label: 'Overall Pass %', value: `${avgPass}%`, icon: TrendingUp, color: 'text-green-600 bg-green-100' },
+            { label: 'Overall Pass %', value: avgPass === null ? 'N/A' : `${avgPass}%`, icon: TrendingUp, color: 'text-green-600 bg-green-100' },
             { label: 'Published', value: results.filter(r => r.status === 'published').length, icon: CheckCircle, color: 'text-primary bg-primary/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
@@ -82,7 +89,7 @@ export default function DeanResults() {
                 <div key={r.departmentId || r.department} className="flex items-center justify-between rounded-lg border border-amber-200 bg-white/60 dark:bg-background/60 p-3">
                   <div>
                     <p className="text-sm font-medium text-foreground">{r.department}</p>
-                    <p className="text-xs text-muted-foreground">{r.department} • {r.totalStudents} students • Pass: {r.passPercentage}%</p>
+                    <p className="text-xs text-muted-foreground">{r.department} • {r.totalStudents} students • Pass: {r.passPercentage === null ? 'N/A' : `${r.passPercentage}%`}</p>
                   </div>
                   <Button size="sm" onClick={() => approveResult(r)}>
                     <CheckCircle className="mr-1 h-4 w-4" />Approve & Publish
@@ -116,10 +123,14 @@ export default function DeanResults() {
                     <TableCell className="text-center text-green-600">{r.passed}</TableCell>
                     <TableCell className="text-center text-destructive">{r.failed}</TableCell>
                     <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <Progress value={r.passPercentage} className="w-12 h-1.5" />
-                        <span className="text-xs font-medium">{r.passPercentage}%</span>
-                      </div>
+                      {r.passPercentage !== null ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <Progress value={r.passPercentage} className="w-12 h-1.5" />
+                          <span className="text-xs font-medium">{r.passPercentage}%</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">N/A</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-center font-medium">{r.avgGPA ?? 'N/A'}</TableCell>
                     <TableCell>

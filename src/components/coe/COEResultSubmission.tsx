@@ -73,10 +73,14 @@ export default function COEResultSubmission() {
                     <TableCell className="font-medium">{row.department}</TableCell>
                     <TableCell className="text-center">{row.totalStudents}</TableCell>
                     <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Progress value={row.passPercentage} className="h-1.5 w-16" />
-                        <span className="text-xs">{row.passPercentage}%</span>
-                      </div>
+                      {row.passPercentage !== null ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <Progress value={row.passPercentage} className="h-1.5 w-16" />
+                          <span className="text-xs">{row.passPercentage}%</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No graded results</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={row.status === 'published' ? 'default' : row.status === 'pending_approval' ? 'secondary' : 'outline'} className="capitalize">

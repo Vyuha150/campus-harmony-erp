@@ -248,9 +248,17 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: departments.map((d: any) => {
-        const totalEnrollments = d.courses.reduce((sum: number, c: any) => sum + c.enrollments.length, 0);
-        const passed = d.courses.reduce((sum: number, c: any) =>
-          sum + c.enrollments.filter((e: any) => e.grade && !['F', 'I'].includes(e.grade)).length, 0);
+        const allEnrollments = d.courses.flatMap((c: any) => c.enrollments);
+        const totalEnrollments = allEnrollments.length;
+        // GRADED, not all enrollments. `failed: total - passed` previously
+        // counted every UNGRADED student as a failure alongside the real ones —
+        // a department with five enrolled students and zero grades entered
+        // reported "0% pass rate," which reads as "everyone failed" rather than
+        // the true fact, "nobody has been graded yet." Mirrors the identical
+        // fix already applied to coe.service.ts's own department-results
+        // computation, which this screen's numbers should agree with.
+        const graded = allEnrollments.filter((e: any) => e.grade != null && e.grade !== '');
+        const passed = graded.filter((e: any) => !['F', 'I'].includes(String(e.grade))).length;
 
         const approval = approvalByDepartmentId.get(String(d.id));
         let status = 'draft';
@@ -262,8 +270,8 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
           department: d.name,
           totalStudents: totalEnrollments,
           passed,
-          failed: totalEnrollments - passed,
-          passPercentage: totalEnrollments > 0 ? Math.round((passed / totalEnrollments) * 100) : 0,
+          failed: graded.length - passed,
+          passPercentage: graded.length > 0 ? Math.round((passed / graded.length) * 100) : null,
           // REMOVED: `avgGPA: 7.2`, a literal presented as this department's
           // average. It never varied by department, semester or cohort. The
           // figure belongs to SemesterResult and is computed there; asserting it

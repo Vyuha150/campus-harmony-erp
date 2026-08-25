@@ -510,14 +510,23 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
       // invented percentage split.
       data: courses.map((c: any) => {
         const total = c.enrollments.length;
-        const passed = c.enrollments.filter((e: any) => e.grade && !['F', 'I'].includes(e.grade)).length;
-        const numericMarks = c.enrollments
+        // GRADED, not all enrollments. `Number(null)` is `0` in JavaScript, so
+        // an ungraded enrollment — `grade` is `null` — was silently treated as
+        // a real numeric score of 0: it counted toward `failed`, dragged down
+        // `avgScore`, and could even set `highestScore` on a course where
+        // nobody had been graded at all. Excluding it here is not the same fix
+        // as the `null` fallback already applied below; that fallback only
+        // covered the case of NO numeric marks at all, not a mix of graded and
+        // ungraded students.
+        const graded = c.enrollments.filter((e: any) => e.grade != null && e.grade !== '');
+        const passed = graded.filter((e: any) => !['F', 'I'].includes(String(e.grade))).length;
+        const numericMarks = graded
           .map((e: any) => Number(e.grade))
           .filter((v: number) => Number.isFinite(v));
         return {
           courseCode: c.code, courseName: c.name, faculty: c.faculty?.user?.name || 'N/A',
-          totalStudents: total, passed, failed: total - passed,
-          passPercentage: total > 0 ? Math.round((passed / total) * 100) : 0,
+          totalStudents: total, passed, failed: graded.length - passed,
+          passPercentage: graded.length > 0 ? Math.round((passed / graded.length) * 100) : null,
           avgScore:
             numericMarks.length > 0
               ? Math.round(numericMarks.reduce((s: number, v: number) => s + v, 0) / numericMarks.length)
@@ -1227,14 +1236,18 @@ router.get('/courseresults', authenticate, async (req: Request, res: Response) =
       success: true,
       data: courses.map((course: any) => {
         const totalStudents = course.enrollments.length;
-        const numericMarks = course.enrollments.map((enrollment: any) => Number(enrollment.grade)).filter((value: number) => Number.isFinite(value));
-        const passed = totalStudents > 0
-          ? course.enrollments.filter((enrollment: any) => {
-              const value = Number(enrollment.grade);
-              if (Number.isFinite(value)) return value >= 35;
-              return enrollment.grade && !['F', 'I'].includes(String(enrollment.grade));
-            }).length
-          : 0;
+        // GRADED, not all enrollments — see the identical fix in GET /results.
+        // `Number(null)` is `0` in JavaScript, so `numericMarks` previously
+        // included every ungraded enrollment as a real score of 0, and
+        // `passPercentage`/`failed` were computed against the full roster
+        // rather than the students actually assessed.
+        const graded = course.enrollments.filter((enrollment: any) => enrollment.grade != null && enrollment.grade !== '');
+        const numericMarks = graded.map((enrollment: any) => Number(enrollment.grade)).filter((value: number) => Number.isFinite(value));
+        const passed = graded.filter((enrollment: any) => {
+          const value = Number(enrollment.grade);
+          if (Number.isFinite(value)) return value >= 35;
+          return !['F', 'I'].includes(String(enrollment.grade));
+        }).length;
 
         // `65` / `95` / a fixed 25%-35%-40% split were literals — see the
         // identical fabrication in GET /results above, fixed the same way:
@@ -1251,8 +1264,8 @@ router.get('/courseresults', authenticate, async (req: Request, res: Response) =
           faculty: course.faculty?.user?.name || 'Unassigned',
           totalStudents,
           passed,
-          failed: totalStudents - passed,
-          passPercentage: totalStudents > 0 ? Math.round((passed / totalStudents) * 100) : 0,
+          failed: graded.length - passed,
+          passPercentage: graded.length > 0 ? Math.round((passed / graded.length) * 100) : null,
           avgScore,
           highestScore,
           gradeDistribution: tallyGrades(course.enrollments)

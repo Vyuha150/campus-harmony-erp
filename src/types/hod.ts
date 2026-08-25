@@ -89,7 +89,8 @@ export interface CourseResult {
   totalStudents: number;
   passed: number;
   failed: number;
-  passPercentage: number;
+  /** `null` when no enrolment in the course has been graded yet. */
+  passPercentage: number | null;
   /** `null` when no enrolment has a numeric mark — e.g. graded entirely in letters, or not yet graded. */
   avgScore: number | null;
   highestScore: number | null;

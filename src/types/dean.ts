@@ -74,15 +74,15 @@ export interface DepartmentBudget {
 export interface ResultSummary {
   departmentId?: string;
   department: string;
-  program: string;
-  semester: number;
   totalStudents: number;
   passed: number;
   failed: number;
-  passPercentage: number;
-  avgGPA: number;
-  toppers: { name: string; gpa: number }[];
-  status: 'pending_approval' | 'approved' | 'published';
+  /** `null` when no enrolment in the department has been graded yet. */
+  passPercentage: number | null;
+  /** `null` when no student has a published semester result yet. */
+  avgGPA: number | null;
+  publishedResultCount: number;
+  status: 'draft' | 'pending_approval' | 'published';
 }
 
 export interface QualityMetric {
