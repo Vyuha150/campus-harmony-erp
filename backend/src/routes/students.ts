@@ -1118,10 +1118,16 @@ router.get('/hostel', authenticate, async (req: Request, res: Response) => {
 // Get Placements
 router.get('/placements', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
+    // PlacementDrive has no institutionId of its own — the `applications`
+    // filter below only narrows which applications are nested per drive, not
+    // which drives are returned, so without this every institution's drives
+    // were visible to every student.
     const drives = await prisma.placementDrive.findMany({
       take: 200,
+      where: { company: { institutionId: context.institutionId } },
       include: {
         company: true,
         applications: {
@@ -1145,11 +1151,24 @@ router.get('/placements', authenticate, async (req: Request, res: Response) => {
 // Apply for Placement
 router.post('/placements/:id/apply', authenticate, validate({ body: placementApplySchema }), async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
     const placementDriveId = req.params.id;
     if (typeof placementDriveId !== 'string') {
       return res.status(400).json({ success: false, message: 'Invalid placement drive id' });
+    }
+
+    // PlacementDrive has no institutionId of its own, and the id is a raw
+    // URL param — without this, a student could apply to another
+    // institution's drive.
+    const drive = await prisma.placementDrive.findFirst({
+      where: { id: placementDriveId, company: { institutionId: context.institutionId } },
+      select: { id: true }
+    });
+    if (!drive) {
+      res.status(404).json({ success: false, message: 'Placement drive not found' });
+      return;
     }
 
     const application = await prisma.studentApplication.upsert({
@@ -1404,10 +1423,23 @@ router.get('/feedback', authenticate, async (req: Request, res: Response) => {
 // Submit Feedback Form
 router.post('/feedback/:id/submit', authenticate, validate({ body: feedbackSubmitSchema }), async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
     const feedbackFormId = String(req.params.id);
     const { responses } = req.body as { responses?: Record<string, unknown> };
+
+    // FeedbackForm has no institutionId of its own, and the id is a raw URL
+    // param — without this, a response could be filed against another
+    // institution's form.
+    const form = await prisma.feedbackForm.findFirst({
+      where: { id: feedbackFormId, course: { institutionId: context.institutionId } },
+      select: { id: true }
+    });
+    if (!form) {
+      res.status(404).json({ success: false, message: 'Feedback form not found' });
+      return;
+    }
 
     const existing = await prisma.feedbackResponse.findFirst({
       where: {
@@ -1479,9 +1511,21 @@ router.post('/certificates/request', authenticate, validate({ body: certificateR
 // ─── Enrollment ───
 router.post('/enroll', authenticate, validate({ body: enrollSchema }), async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
     const { courseId, semester } = req.body;
+    // Enrollment has no institutionId of its own, and courseId is
+    // client-supplied — without this, a student could enroll in another
+    // institution's course.
+    const course = await prisma.course.findFirst({
+      where: { id: courseId, institutionId: context.institutionId },
+      select: { id: true }
+    });
+    if (!course) {
+      res.status(404).json({ success: false, message: 'Course not found' });
+      return;
+    }
     const enrollment = await prisma.enrollment.create({
       data: {
         courseId,
