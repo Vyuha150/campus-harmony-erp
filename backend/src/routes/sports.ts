@@ -503,9 +503,13 @@ router.get('/events/:id/results', authenticate, async (req: Request, res: Respon
 // ─── Health & Fitness ───
 router.get('/health', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const query = req.query as Record<string, string | undefined>;
     const { studentId } = query;
-    const where: any = {};
+    // FitnessRecord has no institutionId of its own — reach it through the
+    // (tenant-owned, auto-scoped) StudentProfile relation instead. Without
+    // this, an empty studentId filter returned every institution's records.
+    const where: any = { student: { institutionId: context.institutionId } };
     if (studentId) where.studentId = studentId;
     const records = await prisma.fitnessRecord.findMany({ where, orderBy: { testDate: 'desc' } });
     res.json({ success: true, data: records });
