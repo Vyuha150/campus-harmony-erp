@@ -804,6 +804,7 @@ async function main() {
   });
 
   await upsertById(prisma.systemNotificationRecord, 'seed-system-notification-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'ERP seed completed',
     message: 'Baseline records were created/updated successfully.',
     type: 'success',

@@ -445,13 +445,16 @@ router.put('/academic-years/:id', authenticate, async (req: Request, res: Respon
 // ─── Audit Logs ───
 router.get('/audit-logs', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const query = req.query as Record<string, string | undefined>;
     const userId = query.userId;
     const action = query.action;
     const mod = query.module;
     const startDate = query.startDate;
     const endDate = query.endDate;
-    const where: any = {};
+    // SystemAuditLog has no institutionId of its own, but a real relation
+    // (userId -> User, added in 0019) — reach it through that instead.
+    const where: any = { user: { institutionId: context.institutionId } };
     if (userId) where.userId = userId;
     if (action) where.action = { contains: action, mode: 'insensitive' };
     if (mod) where.module = mod;
@@ -506,8 +509,9 @@ router.post('/notifications', authenticate,
 });
 
 // ─── Analytics ───
-router.get('/analytics/login-trend', authenticate, async (_req: Request, res: Response) => {
+router.get('/analytics/login-trend', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const now = new Date();
     const points = [] as Array<{ time: string; users: number }>;
 
@@ -517,10 +521,13 @@ router.get('/analytics/login-trend', authenticate, async (_req: Request, res: Re
       const end = new Date(start);
       end.setHours(start.getHours() + 1);
 
+      // SystemAuditLog has no institutionId of its own — reach it through
+      // the (tenant-owned, auto-scoped) User relation instead.
       const users = await db.systemAuditLog.count({
         where: {
           action: { contains: 'login', mode: 'insensitive' },
-          timestamp: { gte: start, lt: end }
+          timestamp: { gte: start, lt: end },
+          user: { institutionId: context.institutionId }
         }
       });
 
@@ -536,10 +543,12 @@ router.get('/analytics/login-trend', authenticate, async (_req: Request, res: Re
   }
 });
 
-router.get('/analytics/module-usage', authenticate, async (_req: Request, res: Response) => {
+router.get('/analytics/module-usage', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const grouped = await db.systemAuditLog.groupBy({
       by: ['module'],
+      where: { user: { institutionId: context.institutionId } },
       _count: { module: true },
       orderBy: { _count: { module: 'desc' } },
       take: 10

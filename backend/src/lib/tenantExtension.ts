@@ -199,7 +199,9 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   'AQARRecord',
   'IQACActionItem',
   'QualityDocument',
-  'IQACMeeting'
+  'IQACMeeting',
+  // 0040 — admin.ts's orphan model. `sentBy` is free text, not a foreign key.
+  'SystemNotificationRecord'
 ]);
 
 

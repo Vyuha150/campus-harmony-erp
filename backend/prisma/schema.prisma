@@ -135,6 +135,7 @@ model Institution {
   iqacActionItems         IQACActionItem[]
   qualityDocuments        QualityDocument[]
   iqacMeetings            IQACMeeting[]
+  systemNotificationRecords SystemNotificationRecord[]
   journalEntries          JournalEntry[]
   antiRaggingAffidavits   AntiRaggingAffidavit[]
   qualityMetrics          QualityMetric[]
@@ -2858,6 +2859,9 @@ model SystemAuditLog {
 // Admin — System Notifications
 model SystemNotificationRecord {
   id                String    @id @default(uuid())
+  /// TENANT KEY, added in 0040. `sentBy` is free text, not a foreign key, so
+  /// there is no relation to derive an owner from.
+  institutionId     String
   title             String
   message           String
   type              String    @default("info")
@@ -2869,6 +2873,10 @@ model SystemNotificationRecord {
   totalRecipients   Int       @default(0)
   status            String    @default("draft")
   scheduledDate     DateTime? @db.Timestamptz(3)
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // Admin — Module Configuration
