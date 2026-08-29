@@ -51,6 +51,17 @@ export interface DeleteSpec {
   blockers?: { model: string; foreignKey: string; describe: string }[];
   /** `true` for records whose deletion would destroy evidence. */
   soft?: boolean;
+  /**
+   * For a model with no institutionId column of its own — e.g. MenteeAssignment,
+   * scoped only via `studentId -> StudentProfile.institutionId`. Builds the
+   * relation-based tenant filter in place of the default `{ institutionId }`.
+   * Without this, `findFirst`/`updateMany`/`deleteMany` below throw a Prisma
+   * validation error ("Unknown argument institutionId") for such a model —
+   * fails closed, but completely broken, for every caller, not just a
+   * cross-tenant one. Found live: DELETE /dean/mentoring/assignments/:studentId
+   * crashed with exactly that error on a same-institution delete.
+   */
+  scopeWhere?: (institutionId: string) => Record<string, unknown>;
 }
 
 export async function deleteTenantEntity(
@@ -65,9 +76,12 @@ export async function deleteTenantEntity(
   }
 
   const delegate = (basePrisma as unknown as Record<string, any>)[spec.model];
+  const tenantWhere = spec.scopeWhere
+    ? spec.scopeWhere(context.institutionId)
+    : { institutionId: context.institutionId };
 
   const existing = await delegate.findFirst({
-    where: { id: spec.id, institutionId: context.institutionId }
+    where: { id: spec.id, ...tenantWhere }
   });
   if (!existing) throw new NotFoundError(`${spec.entity} ${spec.id}`);
 
@@ -102,7 +116,7 @@ export async function deleteTenantEntity(
 
       if (spec.soft) {
         const result = await txDelegate.updateMany({
-          where: { id: spec.id, institutionId: context.institutionId },
+          where: { id: spec.id, ...tenantWhere },
           data: { deletedAt: new Date(), deletedBy: context.userId }
         });
         if (result.count === 0) throw new NotFoundError(`${spec.entity} ${spec.id}`);
@@ -110,7 +124,7 @@ export async function deleteTenantEntity(
       }
 
       const result = await txDelegate.deleteMany({
-        where: { id: spec.id, institutionId: context.institutionId }
+        where: { id: spec.id, ...tenantWhere }
       });
       if (result.count === 0) throw new NotFoundError(`${spec.entity} ${spec.id}`);
       return { id: spec.id, softDeleted: false };

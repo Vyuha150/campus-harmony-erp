@@ -518,7 +518,19 @@ router.post('/health/fitness-test', authenticate,
   validate({ body: fitnessRecordCreateSchema }),
   async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const userId = (req as any).user.id;
+    // FitnessRecord has no institutionId of its own, and studentId is
+    // client-supplied — without this check, a sports director could create a
+    // fitness record against another institution's student by id.
+    const student = await prisma.studentProfile.findFirst({
+      where: { id: String(req.body.studentId), institutionId: context.institutionId },
+      select: { id: true }
+    });
+    if (!student) {
+      res.status(404).json({ success: false, message: 'Student not found' });
+      return;
+    }
     const record = await prisma.fitnessRecord.create({
       data: { ...req.body, conductedBy: userId, testDate: new Date(req.body.testDate || Date.now()) }
     });
@@ -534,13 +546,26 @@ router.put(
   validate({ params: z.object({ id: entityId }), body: fitnessRecordUpdateSchema }),
   async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const id = String(req.params.id);
     const data = {
       ...req.body,
       ...(req.body.testDate ? { testDate: new Date(req.body.testDate) } : {}),
       ...(req.body.nextTestDate ? { nextTestDate: new Date(req.body.nextTestDate) } : {})
     };
-    const updated = await prisma.fitnessRecord.update({ where: { id }, data });
+    // FitnessRecord has no institutionId of its own — `update({ where: { id
+    // } })` cannot carry the institution check, so `updateMany` + a
+    // student-derived filter, then re-read, is the pattern this codebase
+    // uses everywhere a model has no institutionId column of its own.
+    const changed = await prisma.fitnessRecord.updateMany({
+      where: { id, student: { institutionId: context.institutionId } },
+      data
+    });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Fitness record not found' });
+      return;
+    }
+    const updated = await prisma.fitnessRecord.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
     sendError(res, error);
@@ -564,7 +589,12 @@ router.delete(
       entity: 'FitnessRecord',
       module: 'sports',
       id: String(req.params.id),
-      reason: String(req.body.reason)
+      reason: String(req.body.reason),
+      // FitnessRecord has no institutionId of its own — Prisma throws
+      // "Unknown argument institutionId" without this (found live, see
+      // entityDelete.service.ts). StudentProfile is tenant-owned, so this
+      // reaches it.
+      scopeWhere: (institutionId) => ({ student: { institutionId } })
     });
 
     res.json({ success: true, data: result });

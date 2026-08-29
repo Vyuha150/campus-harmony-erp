@@ -533,7 +533,11 @@ router.delete(
       blockers: [
         { model: 'studentApplication', foreignKey: 'driveId', describe: 'student applications' }
       ],
-      reason: String(req.body.reason)
+      reason: String(req.body.reason),
+      // PlacementDrive has no institutionId of its own — Prisma throws
+      // "Unknown argument institutionId" without this (found live, see
+      // entityDelete.service.ts). Company is tenant-owned, so this reaches it.
+      scopeWhere: (institutionId) => ({ company: { institutionId } })
     });
 
     res.json({ success: true, data: result });

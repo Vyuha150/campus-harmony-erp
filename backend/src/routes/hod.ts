@@ -1214,7 +1214,11 @@ router.delete(
       entity: 'CourseClass',
       module: 'academics',
       id: String(req.params.id),
-      reason: String(req.body.reason)
+      reason: String(req.body.reason),
+      // CourseClass has no institutionId of its own — Prisma throws "Unknown
+      // argument institutionId" without this (found live, see
+      // entityDelete.service.ts). Course is tenant-owned, so this reaches it.
+      scopeWhere: (institutionId) => ({ course: { institutionId } })
     });
 
     res.json({ success: true, data: result });

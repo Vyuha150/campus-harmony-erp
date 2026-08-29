@@ -128,7 +128,13 @@ router.get('/academics', authenticate, async (req: Request, res: Response) => {
 // ─── Curriculum Proposals ───
 router.get('/curriculum-proposals', authenticate, async (req: Request, res: Response) => {
   try {
-    const proposals = await prisma.curriculumProposal.findMany({ orderBy: { submittedAt: 'desc' } });
+    const context = getTenantContext(req);
+    // CurriculumProposal carries no institutionId of its own — reach it
+    // through the (tenant-owned, auto-scoped) Department relation instead.
+    const proposals = await prisma.curriculumProposal.findMany({
+      where: { department: { institutionId: context.institutionId } },
+      orderBy: { submittedAt: 'desc' }
+    });
     res.json({ success: true, data: proposals });
   } catch (error: any) {
     sendError(res, error);
@@ -201,7 +207,13 @@ router.get('/faculty', authenticate, async (req: Request, res: Response) => {
 
 router.get('/recruitment', authenticate, async (req: Request, res: Response) => {
   try {
-    const rec = await prisma.facultyRecruitment.findMany({ include: { department: true } });
+    const context = getTenantContext(req);
+    // FacultyRecruitment carries no institutionId of its own — reach it
+    // through the (tenant-owned, auto-scoped) Department relation instead.
+    const rec = await prisma.facultyRecruitment.findMany({
+      where: { department: { institutionId: context.institutionId } },
+      include: { department: true }
+    });
     res.json({ success: true, data: rec });
   } catch (error: any) {
     sendError(res, error);
@@ -211,7 +223,13 @@ router.get('/recruitment', authenticate, async (req: Request, res: Response) => 
 // ─── Student Affairs ───
 router.get('/student-affairs', authenticate, async (req: Request, res: Response) => {
   try {
-    const cases = await prisma.disciplinaryCase.findMany({ orderBy: { reportedAt: 'desc' } });
+    const context = getTenantContext(req);
+    // DisciplinaryCase carries no institutionId of its own — reach it
+    // through the (tenant-owned, auto-scoped) Department relation instead.
+    const cases = await prisma.disciplinaryCase.findMany({
+      where: { department: { institutionId: context.institutionId } },
+      orderBy: { reportedAt: 'desc' }
+    });
     const scholarships = await prisma.feeRecord.count({ where: { type: 'other' as any, status: 'paid' } });
     res.json({ success: true, data: { disciplinaryCases: cases, scholarshipCount: scholarships } });
   } catch (error: any) {
@@ -221,9 +239,23 @@ router.get('/student-affairs', authenticate, async (req: Request, res: Response)
 
 router.put('/disciplinary/:id', authenticate, validate({ params: z.object({ id: entityId }), body: disciplinaryDecisionSchema }), async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const id = String(req.params.id);
     const { status, severity } = req.body;
-    const updated = await prisma.disciplinaryCase.update({ where: { id }, data: { status, ...(severity && { severity }) } });
+    // `update({ where: { id } })` cannot carry the institution check — the
+    // tenant extension constrains a `where` clause but not a unique-key
+    // update — so `updateMany` + a department-derived institutionId filter,
+    // then re-read, is the pattern this codebase uses everywhere a model has
+    // no institutionId column of its own (see curriculumProposal above).
+    const changed = await prisma.disciplinaryCase.updateMany({
+      where: { id, department: { institutionId: context.institutionId } },
+      data: { status, ...(severity && { severity }) }
+    });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Disciplinary case not found' });
+      return;
+    }
+    const updated = await prisma.disciplinaryCase.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
     sendError(res, error);
@@ -768,7 +800,11 @@ router.delete(
       entity: 'CourseClass',
       module: 'academics',
       id: String(req.params.id),
-      reason: String(req.body.reason)
+      reason: String(req.body.reason),
+      // CourseClass has no institutionId of its own — Prisma throws "Unknown
+      // argument institutionId" without this (found live, see
+      // entityDelete.service.ts). Course is tenant-owned, so this reaches it.
+      scopeWhere: (institutionId) => ({ course: { institutionId } })
     });
 
     res.json({ success: true, data: result });
@@ -879,11 +915,19 @@ router.put('/meetings/:id', authenticate, validate({ params: z.object({ id: enti
 // ─── Mentoring Assignment Management ───
 router.get('/mentoring/options', authenticate, async (_req: Request, res: Response) => {
   try {
-    const [faculty, students, assignments] = await Promise.all([
+    const [faculty, students] = await Promise.all([
       prisma.facultyProfile.findMany({ include: { user: { include: { department: true } } } }),
-      prisma.studentProfile.findMany({ include: { user: { include: { department: true } } } }),
-      prisma.menteeAssignment.findMany()
+      prisma.studentProfile.findMany({ include: { user: { include: { department: true } } } })
     ]);
+    // MenteeAssignment carries no institutionId of its own. faculty/students
+    // above are already scoped (FacultyProfile/StudentProfile are
+    // tenant-owned), so filtering assignments to studentIds drawn from that
+    // list keeps this consistent without a second manual institutionId path —
+    // an assignment can only exist for a real student, who belongs to exactly
+    // one institution.
+    const assignments = await prisma.menteeAssignment.findMany({
+      where: { studentId: { in: students.map((s: any) => s.id) } }
+    });
 
     const facultyById = new Map(faculty.map((item: any) => [item.id, item]));
     const studentsById = new Map(students.map((item: any) => [item.id, item]));
@@ -1013,20 +1057,28 @@ router.delete(
     body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
   }),
   asyncHandler(async (req: Request, res: Response) => {
+    const context = getTenantContext(req);
     const studentId = String(req.params.studentId);
-    const assignment = await prisma.menteeAssignment.findFirst({ where: { studentId } });
+    // MenteeAssignment has no institutionId of its own — scope the lookup
+    // through the student, the same relation deleteTenantEntity's
+    // scopeWhere uses below, so a foreign-institution studentId 404s here
+    // instead of surfacing a row that the delete would then reject anyway.
+    const assignment = await prisma.menteeAssignment.findFirst({
+      where: { studentId, student: { institutionId: context.institutionId } }
+    });
 
     if (!assignment) {
       res.status(404).json({ success: false, message: 'No assignment found for this student' });
       return;
     }
 
-    const result = await deleteTenantEntity(getTenantContext(req), {
+    const result = await deleteTenantEntity(context, {
       model: 'menteeAssignment',
       entity: 'MenteeAssignment',
       module: 'academics',
       id: assignment.id,
-      reason: String(req.body.reason)
+      reason: String(req.body.reason),
+      scopeWhere: (institutionId) => ({ student: { institutionId } })
     });
 
     res.json({ success: true, data: result });
