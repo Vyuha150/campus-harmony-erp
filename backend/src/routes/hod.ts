@@ -600,8 +600,23 @@ router.put('/accreditation/:id', authenticate,
   validate({ params: z.object({ id: entityId }), body: accreditationDataUpdateSchema }),
   async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const department = await getHODDepartment(userId);
+    if (!department) throw new Error('Department unassigned');
     const id = String(req.params.id);
-    const updated = await db.accreditationData.update({ where: { id }, data: { ...req.body, lastUpdated: new Date() } });
+    // AccreditationData has no institutionId of its own — `update({ where: {
+    // id } })` cannot carry the department check, so `updateMany` + a
+    // department-derived filter, then re-read, is the pattern this codebase
+    // uses everywhere a model has no institutionId column of its own.
+    const changed = await db.accreditationData.updateMany({
+      where: { id, departmentId: department.id },
+      data: { ...req.body, lastUpdated: new Date() }
+    });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Accreditation record not found for this department' });
+      return;
+    }
+    const updated = await db.accreditationData.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
     sendError(res, error);
@@ -1448,15 +1463,25 @@ router.put('/accreditationdata/:id', authenticate,
   validate({ params: z.object({ id: entityId }), body: accreditationDataUpdateSchema }),
   async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const department = await getHODDepartment(userId);
+    if (!department) throw new Error('Department unassigned');
     const id = String(req.params.id);
-    const updated = await db.accreditationData.update({
-      where: { id },
+    // Same fix as PUT /accreditation/:id above: no institutionId column,
+    // so `updateMany` + a department-derived filter, then re-read.
+    const changed = await db.accreditationData.updateMany({
+      where: { id, departmentId: department.id },
       data: {
         ...req.body,
-        updatedBy: (req as any).user.id,
+        updatedBy: userId,
         lastUpdated: new Date()
       }
     });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Accreditation record not found for this department' });
+      return;
+    }
+    const updated = await db.accreditationData.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
     sendError(res, error);
@@ -1581,11 +1606,24 @@ router.put('/labinventory/:id', authenticate, validate({ params: z.object({ id: 
 
 router.put('/labinventory/:id/maintenance', authenticate, async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const department = await getHODDepartment(userId);
+    if (!department) throw new Error('Department unassigned');
     const id = String(req.params.id);
-    const updated = await db.labInventoryItem.update({
-      where: { id },
+    // LabInventoryItem has no institutionId of its own — `update({ where: {
+    // id } })` cannot carry the department check, so `updateMany` + a
+    // department-derived filter, then re-read, matching the sibling PUT
+    // /labinventory/:id above (which does this via a pre-check findFirst
+    // instead — same effect).
+    const changed = await db.labInventoryItem.updateMany({
+      where: { id, departmentId: department.id },
       data: { status: 'maintenance', lastMaintenance: new Date() }
     });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Inventory item not found for this department' });
+      return;
+    }
+    const updated = await db.labInventoryItem.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
     sendError(res, error);
