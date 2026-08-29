@@ -209,7 +209,11 @@ router.put('/documents/:id', authenticate,
 // ─── Feedback ───
 router.get('/feedback', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
+    // FeedbackForm has no institutionId of its own — reach it through the
+    // (tenant-owned, auto-scoped) Course relation instead.
     const forms = await prisma.feedbackForm.findMany({
+      where: { course: { institutionId: context.institutionId } },
       include: { responses: true },
       orderBy: { deadline: 'desc' }
     });
@@ -250,6 +254,19 @@ router.post('/feedback/create-form', authenticate, validate({ body: feedbackForm
       return res.status(400).json({ success: false, message: 'No course found to attach the feedback form.' });
     }
 
+    // courseId is client-supplied and, when provided, overrides the safe
+    // default above — without this check it could name another
+    // institution's course (FeedbackForm has no institutionId of its own to
+    // catch that afterward).
+    const courseId = req.body?.courseId ? String(req.body.courseId) : defaultCourse.id;
+    if (req.body?.courseId) {
+      const course = await prisma.course.findFirst({ where: { id: courseId }, select: { id: true } });
+      if (!course) {
+        res.status(404).json({ success: false, message: 'Course not found' });
+        return;
+      }
+    }
+
     const deadline = toDateOrUndefined(req.body?.deadline);
     if (!deadline) {
       return res.status(400).json({ success: false, message: 'Invalid deadline provided.' });
@@ -260,7 +277,7 @@ router.post('/feedback/create-form', authenticate, validate({ body: feedbackForm
         title: String(req.body?.title || 'Feedback Form'),
         status: String(req.body?.status || 'open'),
         deadline,
-        courseId: String(req.body?.courseId || defaultCourse.id)
+        courseId
       }
     });
     res.json({ success: true, data: form });
@@ -283,6 +300,9 @@ router.post('/reports/generate', authenticate, validate({ body: aqarGenerateSche
   try {
     const userId = (req as any).user.id;
     const { academicYear } = req.body;
+    // institutionId is required on the model since 0039 but injected by the
+    // tenant extension at runtime — `as any` because tsc checks a named
+    // object literal's keys even though every value on it is `any`.
     const aqar = await prisma.aQARRecord.create({
       data: {
         academicYear,
@@ -293,7 +313,7 @@ router.post('/reports/generate', authenticate, validate({ body: aqarGenerateSche
         keyIndicators: {},
         bestPractices: {},
         distinctiveFeatures: {}
-      }
+      } as any
     });
     res.json({ success: true, data: aqar });
   } catch (error: any) {
@@ -343,6 +363,9 @@ router.post('/meetings', authenticate, validate({ body: iqacMeetingCreateSchema 
       return res.status(400).json({ success: false, message: 'Invalid meeting date provided.' });
     }
 
+    // institutionId is required on the model since 0039 but injected by the
+    // tenant extension at runtime — `as any` for the same reason as the
+    // AQARRecord create above.
     const meeting = await prisma.iQACMeeting.create({
       data: {
         title: String(req.body?.title || 'IQAC Meeting'),
@@ -356,7 +379,7 @@ router.post('/meetings', authenticate, validate({ body: iqacMeetingCreateSchema 
         ...(nextMeetingDate ? { nextMeetingDate } : {}),
         status: String(req.body?.status || 'scheduled'),
         documentsShared: toStringArray(req.body?.documentsShared)
-      }
+      } as any
     });
 
     res.json({ success: true, data: meeting });

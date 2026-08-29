@@ -1305,6 +1305,7 @@ async function main() {
   });
 
   await upsertById(prisma.iQACActionItem, 'seed-iqac-action-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'Close NBA documentation gaps',
     description: 'Collect and upload missing criterion evidence.',
     category: 'accreditation',
@@ -1321,6 +1322,7 @@ async function main() {
   });
 
   await upsertById(prisma.qualityDocument, 'seed-quality-document-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'NAAC Criterion 2 Evidence Binder',
     criteriaNumber: 2,
     documentType: 'evidence',
@@ -1350,7 +1352,9 @@ async function main() {
   });
 
   await prisma.aQARRecord.upsert({
-    where: { academicYear: '2025-26' },
+    // academicYear was globally unique; migration 0039 made it unique per
+    // institution instead, so the upsert key is now the composite.
+    where: { academicYear_institutionId: { academicYear: '2025-26', institutionId: SEED_INSTITUTION_ID } },
     update: {
       id: 'seed-aqar-record-1',
       institutionDetails: { name: 'Campus Harmony University' },
@@ -1364,6 +1368,7 @@ async function main() {
     },
     create: {
       id: 'seed-aqar-record-1',
+      institutionId: SEED_INSTITUTION_ID,
       academicYear: '2025-26',
       institutionDetails: { name: 'Campus Harmony University' },
       criteria: { criterion1: 'complete', criterion2: 'in_progress' },
@@ -1377,6 +1382,7 @@ async function main() {
   });
 
   await upsertById(prisma.iQACMeeting, 'seed-iqac-meeting-1', {
+    institutionId: SEED_INSTITUTION_ID,
     title: 'IQAC Quarterly Review',
     date: daysFromNow(9),
     venue: 'Board Room',

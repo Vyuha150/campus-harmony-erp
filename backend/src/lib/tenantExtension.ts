@@ -191,7 +191,15 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   'DegreeRecord',
   'TrainingSession',
   'PlacementMessage',
-  'SportsEvent'
+  'SportsEvent',
+  // 0039 — IQAC's four orphan models. No relation to derive an owner from —
+  // generatedBy/assignedTo/uploadedBy/chairperson are free-text strings, not
+  // foreign keys — so every AQAR record, action item, quality document and
+  // IQAC meeting in the deployment was visible to every institution.
+  'AQARRecord',
+  'IQACActionItem',
+  'QualityDocument',
+  'IQACMeeting'
 ]);
 
 

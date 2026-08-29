@@ -131,6 +131,10 @@ model Institution {
   trainingSessions        TrainingSession[]
   placementMessages       PlacementMessage[]
   sportsEvents            SportsEvent[]
+  aqarRecords             AQARRecord[]
+  iqacActionItems         IQACActionItem[]
+  qualityDocuments        QualityDocument[]
+  iqacMeetings            IQACMeeting[]
   journalEntries          JournalEntry[]
   antiRaggingAffidavits   AntiRaggingAffidavit[]
   qualityMetrics          QualityMetric[]
@@ -2483,6 +2487,8 @@ model ProgressionSurvey {
 // IQAC — Action Items
 model IQACActionItem {
   id                   String    @id @default(uuid())
+  /// TENANT KEY, added in 0039. No relation to derive an owner from.
+  institutionId String
   title                String
   description          String
   category             String
@@ -2496,11 +2502,17 @@ model IQACActionItem {
   createdDate          DateTime  @default(now()) @db.Timestamptz(3)
   completedDate        DateTime? @db.Timestamptz(3)
   impact               String?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // IQAC — Quality Documents
 model QualityDocument {
   id             String    @id @default(uuid())
+  /// TENANT KEY, added in 0039. No relation to derive an owner from.
+  institutionId String
   title          String
   criteriaNumber Int
   documentType   String
@@ -2513,11 +2525,17 @@ model QualityDocument {
   reviewedBy     String?
   reviewDate     DateTime? @db.Timestamptz(3)
   tags           Json?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // IQAC — Meetings
 model IQACMeeting {
   id              String    @id @default(uuid())
+  /// TENANT KEY, added in 0039. No relation to derive an owner from.
+  institutionId String
   title           String
   date            DateTime  @db.Timestamptz(3)
   venue           String
@@ -2530,12 +2548,18 @@ model IQACMeeting {
   nextMeetingDate DateTime? @db.Timestamptz(3)
   status          String    @default("scheduled")
   documentsShared Json?
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId])
 }
 
 // IQAC — AQAR Data
 model AQARRecord {
   id                  String    @id @default(uuid())
-  academicYear        String    @unique
+  /// TENANT KEY, added in 0039. No relation to derive an owner from.
+  institutionId String
+  academicYear        String
   institutionDetails  Json?
   criteria            Json?
   keyIndicators       Json?
@@ -2544,6 +2568,11 @@ model AQARRecord {
   status              String    @default("draft")
   submissionDate      DateTime? @db.Timestamptz(3)
   generatedBy         String
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@unique([academicYear, institutionId])
+  @@index([institutionId])
 }
 
 // Grievance — Enhanced Cases
