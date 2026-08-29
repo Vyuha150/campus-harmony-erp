@@ -75,6 +75,11 @@ const buildPlacementPackages = (offerRows: any[], selectedApplications: any[]): 
 // ─── Dashboard ───
 router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
+    // PlacementDrive, JobOffer and StudentApplication carry no institutionId
+    // of their own — each is reached through its owning Company/StudentProfile
+    // relation instead, the same pattern used for the other orphan models
+    // this audit found.
     const [
       totalStudents,
       activeDrives,
@@ -85,18 +90,27 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       participatingCompanies
     ] = await Promise.all([
       prisma.studentProfile.count(),
-      prisma.placementDrive.count({ where: { status: { in: ['active', 'ongoing', 'upcoming'] } } }),
-      prisma.placementDrive.count(),
-      prisma.jobOffer.count(),
-      prisma.jobOffer.findMany({ select: { package: true } }),
+      prisma.placementDrive.count({
+        where: { status: { in: ['active', 'ongoing', 'upcoming'] }, company: { institutionId: context.institutionId } }
+      }),
+      prisma.placementDrive.count({ where: { company: { institutionId: context.institutionId } } }),
+      prisma.jobOffer.count({ where: { student: { institutionId: context.institutionId } } }),
+      prisma.jobOffer.findMany({
+        where: { student: { institutionId: context.institutionId } },
+        select: { package: true }
+      }),
       prisma.studentApplication.findMany({
-        where: { status: 'selected' },
+        where: { status: 'selected', student: { institutionId: context.institutionId } },
         select: {
           studentProfileId: true,
           drive: { select: { package: true } }
         }
       }),
-      prisma.placementDrive.findMany({ distinct: ['companyId'], select: { companyId: true } })
+      prisma.placementDrive.findMany({
+        where: { company: { institutionId: context.institutionId } },
+        distinct: ['companyId'],
+        select: { companyId: true }
+      })
     ]);
 
     const placedStudentIds = new Set((selectedApplications as any[]).map((a: any) => String(a.studentProfileId)));
@@ -433,7 +447,9 @@ router.delete(
 // ─── Drives ───
 router.get('/drives', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const drives = await prisma.placementDrive.findMany({
+      where: { company: { institutionId: context.institutionId } },
       include: { company: true, applications: true },
       orderBy: { driveDate: 'desc' }
     });
@@ -467,7 +483,19 @@ router.get('/drives', authenticate, async (req: Request, res: Response) => {
 
 router.post('/drives', authenticate, validate({ body: driveCreateSchema }), async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const payload = req.body ?? {};
+    // PlacementDrive has no institutionId of its own — companyId is
+    // client-supplied, so without this a drive could be created against
+    // another institution's company.
+    const company = await prisma.company.findFirst({
+      where: { id: String(payload.companyId), institutionId: context.institutionId },
+      select: { id: true }
+    });
+    if (!company) {
+      res.status(404).json({ success: false, message: 'Company not found' });
+      return;
+    }
     const drive = await prisma.placementDrive.create({
       data: {
         companyId: String(payload.companyId),
@@ -492,10 +520,25 @@ router.post('/drives', authenticate, validate({ body: driveCreateSchema }), asyn
 
 router.put('/drives/:id', authenticate, validate({ params: z.object({ id: entityId }), body: driveUpdateSchema }), async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const id = String(req.params.id);
     const payload = req.body ?? {};
-    const updated = await prisma.placementDrive.update({
-      where: { id },
+    if (payload.companyId !== undefined) {
+      const company = await prisma.company.findFirst({
+        where: { id: String(payload.companyId), institutionId: context.institutionId },
+        select: { id: true }
+      });
+      if (!company) {
+        res.status(404).json({ success: false, message: 'Company not found' });
+        return;
+      }
+    }
+    // PlacementDrive has no institutionId of its own — `update({ where: {
+    // id } })` cannot carry the institution check, so `updateMany` + a
+    // company-derived filter, then re-read, is the pattern this codebase
+    // uses everywhere a model has no institutionId column of its own.
+    const changed = await prisma.placementDrive.updateMany({
+      where: { id, company: { institutionId: context.institutionId } },
       data: {
         ...(payload.companyId !== undefined ? { companyId: String(payload.companyId) } : {}),
         ...(payload.role !== undefined || payload.jobRole !== undefined ? { role: String(payload.role ?? payload.jobRole) } : {}),
@@ -507,6 +550,11 @@ router.put('/drives/:id', authenticate, validate({ params: z.object({ id: entity
         ...(payload.jobDescription !== undefined ? { jobDescription: String(payload.jobDescription) } : {})
       }
     });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Placement drive not found' });
+      return;
+    }
+    const updated = await prisma.placementDrive.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
     sendError(res, error);
@@ -546,9 +594,10 @@ router.delete(
 
 router.get('/drives/:id/applications', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const id = String(req.params.id);
     const apps = await prisma.studentApplication.findMany({
-      where: { placementDriveId: id },
+      where: { placementDriveId: id, drive: { company: { institutionId: context.institutionId } } },
       include: { student: { include: { user: true } } }
     });
     res.json({
@@ -566,6 +615,7 @@ router.get('/drives/:id/applications', authenticate, async (req: Request, res: R
 
 router.put('/drives/:driveId/applications/:applicationId', authenticate, validate({ params: z.object({ driveId: entityId, applicationId: entityId }), body: applicationStatusUpdateSchema }), async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const driveId = String(req.params.driveId);
     const applicationId = String(req.params.applicationId);
     const status = String(req.body?.status || '').trim().toLowerCase();
@@ -576,7 +626,7 @@ router.put('/drives/:driveId/applications/:applicationId', authenticate, validat
     }
 
     const updated = await prisma.studentApplication.updateMany({
-      where: { id: applicationId, placementDriveId: driveId },
+      where: { id: applicationId, placementDriveId: driveId, drive: { company: { institutionId: context.institutionId } } },
       data: { status }
     });
 
@@ -686,18 +736,26 @@ router.delete(
 // ─── Reports ───
 router.get('/reports', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const [totalStudents, drives, selectedApplications, offerRows, participatingCompanies] = await Promise.all([
       prisma.studentProfile.count(),
-      prisma.placementDrive.count(),
+      prisma.placementDrive.count({ where: { company: { institutionId: context.institutionId } } }),
       prisma.studentApplication.findMany({
-        where: { status: 'selected' },
+        where: { status: 'selected', student: { institutionId: context.institutionId } },
         select: {
           studentProfileId: true,
           drive: { select: { package: true } }
         }
       }),
-      prisma.jobOffer.findMany({ select: { package: true } }),
-      prisma.placementDrive.findMany({ distinct: ['companyId'], select: { companyId: true } })
+      prisma.jobOffer.findMany({
+        where: { student: { institutionId: context.institutionId } },
+        select: { package: true }
+      }),
+      prisma.placementDrive.findMany({
+        where: { company: { institutionId: context.institutionId } },
+        distinct: ['companyId'],
+        select: { companyId: true }
+      })
     ]);
 
     const placedStudentIds = new Set((selectedApplications as any[]).map((a: any) => String(a.studentProfileId)));
@@ -751,9 +809,14 @@ router.get('/analytics/department-wise', authenticate, async (_req: Request, res
   }
 });
 
-router.get('/offers/recent', authenticate, async (_req: Request, res: Response) => {
+router.get('/offers/recent', authenticate, async (req: Request, res: Response) => {
   try {
-    const offers = await prisma.jobOffer.findMany({ orderBy: { offerDate: 'desc' }, take: 20 });
+    const context = getTenantContext(req);
+    const offers = await prisma.jobOffer.findMany({
+      where: { student: { institutionId: context.institutionId } },
+      orderBy: { offerDate: 'desc' },
+      take: 20
+    });
     res.json({ success: true, data: offers });
   } catch (error: any) {
     sendError(res, error);
@@ -784,11 +847,15 @@ router.get('/reports/department-wise', authenticate, async (_req: Request, res: 
   }
 });
 
-router.get('/reports/outcomes', authenticate, async (_req: Request, res: Response) => {
+router.get('/reports/outcomes', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const [totalStudents, selectedApplications] = await Promise.all([
       prisma.studentProfile.count(),
-      prisma.studentApplication.findMany({ where: { status: 'selected' }, select: { studentProfileId: true } })
+      prisma.studentApplication.findMany({
+        where: { status: 'selected', student: { institutionId: context.institutionId } },
+        select: { studentProfileId: true }
+      })
     ]);
 
     const selected = new Set((selectedApplications as any[]).map((a: any) => String(a.studentProfileId))).size;
@@ -806,12 +873,16 @@ router.get('/reports/outcomes', authenticate, async (_req: Request, res: Respons
   }
 });
 
-router.get('/reports/salary-bands', authenticate, async (_req: Request, res: Response) => {
+router.get('/reports/salary-bands', authenticate, async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const [offers, selectedApplications] = await Promise.all([
-      prisma.jobOffer.findMany({ select: { package: true } }),
+      prisma.jobOffer.findMany({
+        where: { student: { institutionId: context.institutionId } },
+        select: { package: true }
+      }),
       prisma.studentApplication.findMany({
-        where: { status: 'selected' },
+        where: { status: 'selected', student: { institutionId: context.institutionId } },
         select: { studentProfileId: true, drive: { select: { package: true } } }
       })
     ]);
