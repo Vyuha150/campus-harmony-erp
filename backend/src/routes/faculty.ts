@@ -692,7 +692,18 @@ router.put('/courses/:courseId/lesson-plans/:weekNumber', authenticate, validate
 
 router.get('/courses/:id/students', authenticate, async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const profile = await getFacultyProfile(userId);
     const id = String(req.params.id);
+    // Enrollment has no institutionId of its own, and courseId is a raw URL
+    // param — without the facultyId check, any authenticated faculty member
+    // could pull another faculty's (or institution's) full roster — names,
+    // roll numbers, CGPA, email — by guessing a course id.
+    const course = await prisma.course.findFirst({ where: { id, facultyId: profile.id } });
+    if (!course) {
+      res.status(404).json({ success: false, message: 'Course not found for this faculty' });
+      return;
+    }
     const enrollments = await prisma.enrollment.findMany({
       where: { courseId: id },
       include: { student: { include: { user: true } } }
@@ -784,18 +795,38 @@ router.post('/attendance/mark', authenticate, validate({ body: attendanceMarkSch
     const profile = await getFacultyProfile(userId);
     const { courseId, date, startTime, endTime, type, students } = req.body;
 
+    // courseId is client-supplied — without this, a faculty member could
+    // mark attendance for a course (and its students) that isn't theirs.
+    const course = await prisma.course.findFirst({ where: { id: courseId, facultyId: profile.id } });
+    if (!course) {
+      res.status(404).json({ success: false, message: 'Course not found for this faculty' });
+      return;
+    }
+
     const session = await prisma.attendanceSession.create({
       data: { courseId, facultyId: profile.id, date: new Date(date), startTime, endTime, type: type || 'lecture' }
     });
 
     if (students && Array.isArray(students)) {
-      await prisma.attendance.createMany({
-        data: students.map((s: any) => ({
-          attendanceSessionId: session.id,
-          studentProfileId: s.studentId,
-          status: s.status
-        }))
+      // Each studentId is also client-supplied — restrict to students
+      // actually enrolled in this course, so attendance can't be recorded
+      // for an arbitrary (or foreign-institution) studentProfileId.
+      const enrolled = await prisma.enrollment.findMany({
+        where: { courseId, studentProfileId: { in: students.map((s: any) => s.studentId) } },
+        select: { studentProfileId: true }
       });
+      const enrolledIds = new Set(enrolled.map((e: any) => e.studentProfileId));
+      const validStudents = students.filter((s: any) => enrolledIds.has(s.studentId));
+
+      if (validStudents.length > 0) {
+        await prisma.attendance.createMany({
+          data: validStudents.map((s: any) => ({
+            attendanceSessionId: session.id,
+            studentProfileId: s.studentId,
+            status: s.status
+          }))
+        });
+      }
     }
 
     res.json({ success: true, data: session });
@@ -908,11 +939,17 @@ router.post('/assignments', authenticate, validate({ body: assignmentCreateSchem
 
 router.put('/assignments/:id', authenticate, validate({ params: z.object({ id: entityId }), body: assignmentUpdateSchema }), async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const profile = await getFacultyProfile(userId);
     const id = String(req.params.id);
     const { title, description, dueDate, maxMarks, status } = req.body;
 
-    const updated = await prisma.assignment.update({
-      where: { id },
+    // Assignment has no institutionId of its own — `update({ where: { id }
+    // })` cannot carry the ownership check, so `updateMany` + a
+    // class-derived filter, then re-read, is the pattern this codebase uses
+    // everywhere a model has no institutionId column of its own.
+    const changed = await prisma.assignment.updateMany({
+      where: { id, class: { facultyId: profile.id } },
       data: {
         ...(title !== undefined ? { title } : {}),
         ...(description !== undefined ? { description } : {}),
@@ -921,7 +958,11 @@ router.put('/assignments/:id', authenticate, validate({ params: z.object({ id: e
         ...(status !== undefined ? { status } : {})
       }
     });
-
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Assignment not found for this faculty' });
+      return;
+    }
+    const updated = await prisma.assignment.findFirst({ where: { id } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
     sendError(res, error);
@@ -930,7 +971,17 @@ router.put('/assignments/:id', authenticate, validate({ params: z.object({ id: e
 
 router.get('/assignments/:id/submissions', authenticate, async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const profile = await getFacultyProfile(userId);
     const id = String(req.params.id);
+    // Submission has no institutionId of its own, and the assignment id is a
+    // raw URL param — without this, any faculty could pull another
+    // faculty's (or institution's) submissions, names and marks included.
+    const assignment = await prisma.assignment.findFirst({ where: { id, class: { facultyId: profile.id } } });
+    if (!assignment) {
+      res.status(404).json({ success: false, message: 'Assignment not found for this faculty' });
+      return;
+    }
     const submissions = await prisma.submission.findMany({
       where: { assignmentId: id },
       include: { student: { include: { user: true } } }
@@ -989,12 +1040,23 @@ router.get('/assignments/submissions', authenticate, async (req: Request, res: R
 
 router.put('/assignments/:id/submissions/:subId/grade', authenticate, validate({ params: z.object({ id: entityId, subId: entityId }), body: submissionGradeSchema }), async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const profile = await getFacultyProfile(userId);
     const subId = String(req.params.subId);
     const { marks, feedback } = req.body;
-    const updated = await prisma.submission.update({
-      where: { id: subId },
+    // Submission has no institutionId of its own — `update({ where: { id }
+    // })` cannot carry the ownership check, so `updateMany` + an
+    // assignment/class-derived filter, then re-read, is the pattern this
+    // codebase uses everywhere a model has no institutionId column of its own.
+    const changed = await prisma.submission.updateMany({
+      where: { id: subId, assignment: { class: { facultyId: profile.id } } },
       data: { obtainedMarks: marks, feedback, status: 'evaluated' }
     });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Submission not found for this faculty' });
+      return;
+    }
+    const updated = await prisma.submission.findFirst({ where: { id: subId } });
     res.json({ success: true, data: updated });
   } catch (error: any) {
     sendError(res, error);
@@ -1004,7 +1066,17 @@ router.put('/assignments/:id/submissions/:subId/grade', authenticate, validate({
 // ─── Internal Marks ───
 router.get('/marks/:courseId', authenticate, async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const profile = await getFacultyProfile(userId);
     const courseId = String(req.params.courseId);
+    // Enrollment has no institutionId of its own, and courseId is a raw URL
+    // param — without this, any faculty could read another faculty's (or
+    // institution's) gradebook.
+    const course = await prisma.course.findFirst({ where: { id: courseId, facultyId: profile.id } });
+    if (!course) {
+      res.status(404).json({ success: false, message: 'Course not found for this faculty' });
+      return;
+    }
     const enrollments = await prisma.enrollment.findMany({
       where: { courseId },
       include: { student: { include: { user: true } } }
@@ -1037,7 +1109,16 @@ router.get('/marks/:courseId', authenticate, async (req: Request, res: Response)
 
 router.put('/marks/:courseId', authenticate, validate({ params: z.object({ courseId: entityId }), body: marksUpdateSchema }), async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const profile = await getFacultyProfile(userId);
     const courseId = String(req.params.courseId);
+    // courseId is a raw URL param — without this, any faculty member could
+    // overwrite another faculty's (or institution's) stored grades.
+    const course = await prisma.course.findFirst({ where: { id: courseId, facultyId: profile.id } });
+    if (!course) {
+      res.status(404).json({ success: false, message: 'Course not found for this faculty' });
+      return;
+    }
     const { marks } = req.body;
     if (marks && Array.isArray(marks)) {
       for (const m of marks) {
@@ -1586,6 +1667,15 @@ router.post('/messages', authenticate, validate({ body: facultyClassMessageCreat
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
     const { courseId, courseCode, subject, message } = req.body;
+
+    // courseId is client-supplied — without this, a faculty member could
+    // attribute a class message to a course that isn't theirs, and the
+    // enrollment count below would leak that foreign course's class size.
+    const course = await prisma.course.findFirst({ where: { id: courseId, facultyId: profile.id } });
+    if (!course) {
+      res.status(404).json({ success: false, message: 'Course not found for this faculty' });
+      return;
+    }
 
     const enrollmentCount = await prisma.enrollment.count({ where: { courseId } });
 

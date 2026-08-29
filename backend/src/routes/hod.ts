@@ -359,18 +359,60 @@ router.get('/workload', authenticate, async (req: Request, res: Response) => {
 
 router.put('/workload/assign', authenticate, validate({ body: workloadAssignSchema }), async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.id;
+    const department = await getHODDepartment(userId);
+    if (!department) throw new Error('Department unassigned');
+
     const classId = req.body?.classId ? String(req.body.classId) : null;
     const courseId = req.body?.courseId ? String(req.body.courseId) : null;
     const facultyId = req.body?.facultyId ? String(req.body.facultyId) : null;
 
+    if ((classId && facultyId) || (courseId && facultyId)) {
+      // facultyId is client-supplied either way — verify it names a faculty
+      // member in the HOD's own department before assigning them anywhere.
+      const faculty = await prisma.facultyProfile.findFirst({
+        where: { id: facultyId!, user: { departmentId: department.id } },
+        select: { id: true }
+      });
+      if (!faculty) {
+        res.status(404).json({ success: false, message: 'Faculty not found in this department' });
+        return;
+      }
+    }
+
     if (classId && facultyId) {
-      const updatedClass = await prisma.courseClass.update({ where: { id: classId }, data: { facultyId } });
+      // CourseClass has no institutionId of its own — `update({ where: {
+      // id } })` cannot carry the department check, so `updateMany` +
+      // a course-derived filter, then re-read, is the pattern this codebase
+      // uses everywhere a model has no institutionId column of its own.
+      const changed = await prisma.courseClass.updateMany({
+        where: { id: classId, course: { departmentId: department.id } },
+        data: { facultyId }
+      });
+      if (changed.count === 0) {
+        res.status(404).json({ success: false, message: 'Class not found in this department' });
+        return;
+      }
+      const updatedClass = await prisma.courseClass.findFirst({ where: { id: classId } });
       res.json({ success: true, data: updatedClass });
       return;
     }
 
     if (courseId && facultyId) {
-      const updatedCourse = await prisma.course.update({ where: { id: courseId }, data: { facultyId } });
+      // Course IS tenant-owned, so `update` here already has the extension's
+      // institutionId merged into its where clause automatically — but that
+      // is institution-wide, not department-wide, so the department check
+      // above is still required to stop one HOD reassigning another
+      // department's course within the same institution.
+      const changed = await prisma.course.updateMany({
+        where: { id: courseId, departmentId: department.id },
+        data: { facultyId }
+      });
+      if (changed.count === 0) {
+        res.status(404).json({ success: false, message: 'Course not found in this department' });
+        return;
+      }
+      const updatedCourse = await prisma.course.findFirst({ where: { id: courseId } });
       res.json({ success: true, data: updatedCourse });
       return;
     }
@@ -1092,6 +1134,20 @@ router.put('/workload/course/:id', authenticate, authorizeRoles('hod', 'dean'), 
     }
 
     const { courseCode, courseName, credits, semester, facultyId, section, type, studentEmails, roomId, day, startTime, endTime } = req.body;
+
+    if (facultyId) {
+      // facultyId is client-supplied — verify it names a faculty member in
+      // this HOD's own department before reassigning the class to them,
+      // the same check /workload/assign makes.
+      const faculty = await prisma.facultyProfile.findFirst({
+        where: { id: String(facultyId), user: { departmentId: department.id } },
+        select: { id: true }
+      });
+      if (!faculty) {
+        res.status(400).json({ success: false, message: 'Selected faculty does not belong to your department' });
+        return;
+      }
+    }
 
     const updatedCourse = await prisma.course.update({
       where: { id: existing.courseId },
