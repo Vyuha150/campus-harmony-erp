@@ -199,6 +199,12 @@ router.post(
     const record = await prisma.alumniCommunicationRecord.create({
       data: {
         ...body,
+        // `sentDate` is the RESULT of sending, so the schema refuses it from
+        // the caller — but nothing was setting it either, so a campaign
+        // created as "sent" recorded no send time at all. Set here, from the
+        // server clock, which is what "not accepted from the caller" was
+        // always meant to imply.
+        ...(body.status === 'sent' ? { sentDate: new Date() } : {})
       } as any
     });
 
@@ -351,7 +357,17 @@ router.post('/progression/surveys', authenticate,
   async (req: Request, res: Response) => {
   try {
     const survey = await prisma.progressionSurvey.create({
-      data: { ...req.body, startDate: new Date(req.body.startDate), endDate: new Date(req.body.endDate) }
+      data: {
+        ...req.body,
+        startDate: new Date(req.body.startDate),
+        endDate: new Date(req.body.endDate),
+        // This route IS the "Launch Survey" action (AlumniProgression.tsx has
+        // no draft path), so the survey it creates is active by definition.
+        // ProgressionSurvey.status defaults to "draft" for a draft-then-launch
+        // flow the UI never implemented; set explicitly here rather than
+        // accepting the value from the caller, which the schema refuses.
+        status: 'active'
+      }
     });
     res.json({ success: true, data: survey });
   } catch (error: any) {

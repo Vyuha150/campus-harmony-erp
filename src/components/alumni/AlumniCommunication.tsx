@@ -80,7 +80,9 @@ export default function AlumniCommunication() {
         content: content.trim(),
         targetAudience: { segment: targetAudience },
         status,
-        ...(status === 'sent' ? { sentDate: new Date().toISOString() } : {}),
+        // `sentDate` is not sent: createCommunicationSchema refuses it (it is
+        // the result of sending, not a claim the request makes) and the route
+        // now sets it server-side whenever status is 'sent'.
         ...(schedule ? { scheduledDate: new Date(schedule).toISOString() } : {}),
       });
       await loadData();

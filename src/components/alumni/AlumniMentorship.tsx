@@ -86,7 +86,9 @@ export default function AlumniMentorship() {
         duration: duration.trim() || '3 months',
         maxMentees: Number(maxMentees || 0),
         startDate: new Date(startDate).toISOString(),
-        status: 'active',
+        // `status` is not sent: mentorshipProgramCreateSchema refuses it, and
+        // MentorshipProgram.status already defaults to "active" — the exact
+        // value this hardcoded.
       });
       await loadData();
       setOpen(false);

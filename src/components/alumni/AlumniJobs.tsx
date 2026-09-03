@@ -77,7 +77,9 @@ export default function AlumniJobs() {
         jobType,
         applicationDeadline: new Date(applicationDeadline).toISOString(),
         contactEmail: contactEmail.trim().toLowerCase(),
-        status: 'active',
+        // `status` is not sent: alumniJobLegacyCreateSchema excludes it, and
+        // AlumniJobPosting.status already defaults to "active" — the exact
+        // value this hardcoded. Sending it rejected every job posting.
       });
       await loadData();
       setOpen(false);

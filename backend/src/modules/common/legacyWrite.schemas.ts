@@ -99,8 +99,18 @@ export const fitnessRecordCreateSchema = z
   .strict();
 
 
-/** AlumniEvent — create. */
-// Not accepted from the caller: status.
+/**
+ * AlumniEvent — create.
+ *
+ * `status` WAS excluded here ("not accepted from the caller"), on the same
+ * mistaken assumption as academicYearCreateSchema above: that a new row
+ * always starts in one server-decided state. It doesn't. AlumniEvents.tsx
+ * has two distinct buttons — "Save Draft" and "Publish" — and the choice
+ * between them IS this field, passed as `handleCreateEvent('draft' |
+ * 'published')`. Excluding it didn't default the value; it rejected both
+ * buttons outright. Enum matches updateAlumniEventSchema
+ * (entityUpdate.schemas.ts) so one model has one status vocabulary.
+ */
 export const alumniEventLegacyCreateSchema = z
   .object({
     title: z.string().trim().max(4000),
@@ -114,6 +124,7 @@ export const alumniEventLegacyCreateSchema = z
     maxCapacity: z.coerce.number().int().nullable().optional(),
     registrationDeadline: z.coerce.date(),
     organizer: z.string().trim().max(4000),
+    status: z.enum(['draft', 'published', 'cancelled', 'completed']).optional(),
     targetAudience: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional(),
     registrations: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional(),
     images: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional(),

@@ -59,7 +59,8 @@ export default function AlumniProgression() {
         graduationYear: currentYear - 1,
         surveyPeriod: `${currentYear}-${currentYear + 1}`,
         questions: [],
-        status: 'active',
+        // `status` is not sent: progressionSurveyCreateSchema refuses it, and
+        // the route sets 'active' itself since this endpoint is the launch.
         startDate: new Date().toISOString(),
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       });
