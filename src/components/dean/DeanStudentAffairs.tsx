@@ -9,7 +9,7 @@ import {
   AlertTriangle, Shield, CheckCircle, Clock, Gavel, FileWarning,
   Send, UserX, Users
 } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { DisciplinaryCase } from '@/types/dean';
@@ -107,8 +107,10 @@ export default function DeanStudentAffairs() {
   };
 
   const removeAssignment = async (studentId: string) => {
+    const reason = promptForDeleteReason('this mentoring assignment');
+    if (!reason) return;
     try {
-      await deleteApi(`/dean/mentoring/assignments/${studentId}`);
+      await deleteApi(`/dean/mentoring/assignments/${studentId}`, { reason });
       setMentoringData((prev: any) => ({
         ...prev,
         assignments: (prev.assignments || []).filter((item: any) => item.studentId !== studentId)

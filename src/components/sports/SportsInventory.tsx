@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Package, Plus, Search, Download, AlertTriangle, IndianRupee, Filter } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { toast } from '@/hooks/use-toast';
 
 export default function SportsInventory() {
@@ -136,8 +136,10 @@ export default function SportsInventory() {
 
   const deleteItem = async (item: any) => {
     if (!window.confirm(`Delete inventory item ${item.itemName}?`)) return;
+    const reason = promptForDeleteReason(`inventory item ${item.itemName}`);
+    if (!reason) return;
     try {
-      await deleteApi(`/sports/inventory/${item.id}`);
+      await deleteApi(`/sports/inventory/${item.id}`, { reason });
       setSportsInventory((prev: any[]) => prev.filter((entry) => entry.id !== item.id));
       toast({ title: 'Item deleted', description: 'Inventory item removed.' });
     } catch (error: any) {

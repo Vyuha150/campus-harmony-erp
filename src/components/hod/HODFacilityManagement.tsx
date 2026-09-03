@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 
 type Facility = {
@@ -92,8 +92,10 @@ export default function HODFacilityManagement() {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this facility?')) return;
+    const reason = promptForDeleteReason('this facility');
+    if (!reason) return;
     try {
-      await deleteApi(`/hod/facility-management/${id}`);
+      await deleteApi(`/hod/facility-management/${id}`, { reason });
       setFacilities((prev) => prev.filter((item) => item.id !== id));
       toast({ title: 'Facility deleted' });
     } catch (error: any) {

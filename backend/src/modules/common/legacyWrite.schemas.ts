@@ -252,13 +252,23 @@ export const qualityDocumentUpdateSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update.' });
 
 
-/** AcademicYear — create. */
-// Not accepted from the caller: status.
+/**
+ * AcademicYear — create.
+ *
+ * `status` WAS excluded here ("not accepted from the caller"), on the
+ * assumption a new academic year always starts in one server-decided state.
+ * It doesn't: AdminSystemConfig.tsx uses one form for both create and edit,
+ * with a real Status select (upcoming/active/completed) whose value is
+ * always in the payload either way. The `.strict()` schema was rejecting
+ * every academic year this screen tried to create. Same three values as
+ * `academicYearUpdateSchema` (admin.schemas.ts) — one dropdown, one model.
+ */
 export const academicYearCreateSchema = z
   .object({
     year: z.string().trim().max(4000),
     startDate: z.coerce.date(),
     endDate: z.coerce.date(),
+    status: z.enum(['upcoming', 'active', 'completed']).optional(),
     isCurrent: z.boolean().optional(),
     semesters: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional()
   })

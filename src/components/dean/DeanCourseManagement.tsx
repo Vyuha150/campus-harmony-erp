@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 
 type CourseRow = {
@@ -113,8 +113,10 @@ export default function DeanCourseManagement() {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this course?')) return;
+    const reason = promptForDeleteReason('this course');
+    if (!reason) return;
     try {
-      await deleteApi(`/dean/course-management/${id}`);
+      await deleteApi(`/dean/course-management/${id}`, { reason });
       setCourses((prev) => prev.filter((item) => item.id !== id));
       toast({ title: 'Course deleted' });
     } catch (error: any) {

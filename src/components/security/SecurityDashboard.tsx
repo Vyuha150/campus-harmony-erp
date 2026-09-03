@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ShieldCheck, AlertTriangle, Users, Car, CreditCard, FileText, Search, Plus, Clock, Eye, Bell, MapPin, Siren, UserCheck, Scan } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -256,9 +256,11 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
   };
 
   const deleteIdCardRequest = async (requestId: string) => {
+    const reason = promptForDeleteReason('this ID card request');
+    if (!reason) return;
     try {
       setSubmittingAction(`id-delete-${requestId}`);
-      await deleteApi(`/security/id-cards/${requestId}`);
+      await deleteApi(`/security/id-cards/${requestId}`, { reason });
       setIdCardRequests((prev: any[]) => prev.filter((item) => item.id !== requestId));
       toast({ title: 'Request deleted', description: 'ID card request removed.' });
     } catch (error: any) {
@@ -282,9 +284,11 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
   };
 
   const deleteIncident = async (incidentId: string) => {
+    const reason = promptForDeleteReason('this incident');
+    if (!reason) return;
     try {
       setSubmittingAction(`incident-delete-${incidentId}`);
-      await deleteApi(`/security/incidents/${incidentId}`);
+      await deleteApi(`/security/incidents/${incidentId}`, { reason });
       setSecurityIncidents((prev: any[]) => prev.filter((item) => item.id !== incidentId));
       toast({ title: 'Incident deleted', description: 'Incident removed from records.' });
     } catch (error: any) {
@@ -335,9 +339,11 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
   };
 
   const deleteVisitor = async (visitorId: string) => {
+    const reason = promptForDeleteReason('this visitor pass');
+    if (!reason) return;
     try {
       setSubmittingAction(`visitor-delete-${visitorId}`);
-      await deleteApi(`/security/visitors/${visitorId}`);
+      await deleteApi(`/security/visitors/${visitorId}`, { reason });
       setVisitorPasses((prev: any[]) => prev.filter((item) => item.id !== visitorId));
       toast({ title: 'Visitor deleted', description: 'Visitor entry removed.' });
     } catch (error: any) {
@@ -401,9 +407,11 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
   };
 
   const deleteVehiclePass = async (passId: string) => {
+    const reason = promptForDeleteReason('this vehicle pass');
+    if (!reason) return;
     try {
       setSubmittingAction(`vehicle-delete-${passId}`);
-      await deleteApi(`/security/vehicle-passes/${passId}`);
+      await deleteApi(`/security/vehicle-passes/${passId}`, { reason });
       setVehiclePasses((prev: any[]) => prev.filter((item) => item.id !== passId));
       toast({ title: 'Vehicle pass deleted', description: 'Pass removed from records.' });
     } catch (error: any) {
@@ -455,9 +463,11 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
   };
 
   const deleteVigilanceCase = async (caseId: string) => {
+    const reason = promptForDeleteReason('this vigilance case');
+    if (!reason) return;
     try {
       setSubmittingAction(`vigilance-delete-${caseId}`);
-      await deleteApi(`/security/vigilance-cases/${caseId}`);
+      await deleteApi(`/security/vigilance-cases/${caseId}`, { reason });
       setVigilanceCases((prev: any[]) => prev.filter((item) => item.id !== caseId));
       toast({ title: 'Case deleted', description: 'Vigilance case removed.' });
     } catch (error: any) {
@@ -494,9 +504,11 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
   };
 
   const deleteGuard = async (guardId: string) => {
+    const reason = promptForDeleteReason('this guard');
+    if (!reason) return;
     try {
       setSubmittingAction(`guard-delete-${guardId}`);
-      await deleteApi(`/security/guards/${guardId}`);
+      await deleteApi(`/security/guards/${guardId}`, { reason });
       setGuards((prev: any[]) => prev.filter((item) => item.id !== guardId));
       toast({ title: 'Guard removed', description: 'Guard removed from roster.' });
     } catch (error: any) {

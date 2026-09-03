@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar, Plus, RefreshCw } from 'lucide-react';
-import { deleteApi, fetchApi, postApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, promptForDeleteReason } from '@/lib/apiService';
 import { toast } from '@/hooks/use-toast';
 
 type Team = { id: string; sport: string; category: string };
@@ -115,8 +115,10 @@ export default function SportsAttendance() {
 
   const deleteAttendanceRecord = async (record: AttendanceRecord) => {
     if (!window.confirm('Delete this attendance record?')) return;
+    const reason = promptForDeleteReason('this attendance record');
+    if (!reason) return;
     try {
-      await deleteApi(`/sports/attendance/${record.id}`);
+      await deleteApi(`/sports/attendance/${record.id}`, { reason });
       setRecords((prev) => prev.filter((item) => item.id !== record.id));
       toast({ title: 'Record deleted', description: 'Attendance record removed successfully.' });
     } catch (error: any) {

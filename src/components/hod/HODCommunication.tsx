@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { deleteApi, fetchApi, postApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, promptForDeleteReason } from '@/lib/apiService';
 
 interface Message {
   id: string;
@@ -71,8 +71,10 @@ export default function HODCommunication() {
   };
 
   const handleDelete = async (id: string) => {
+    const reason = promptForDeleteReason('this message');
+    if (!reason) return;
     try {
-      await deleteApi(`/hod/communication/messages/${id}`);
+      await deleteApi(`/hod/communication/messages/${id}`, { reason });
       setMessages(prev => prev.filter(m => m.id !== id));
       toast({ title: 'Message Deleted' });
     } catch (error: any) {

@@ -523,16 +523,28 @@ router.put('/guards/:id/duty', authenticate, validate({ params: z.object({ id: e
   }
 });
 
-router.delete('/guards/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.patrolLog.deleteMany({ where: { officerId: id } });
-    await prisma.user.delete({ where: { id } });
-    res.json({ success: true, data: { id } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.patrolLog.deleteMany({ where: { officerId: id } })` then
+ * `prisma.user.delete({ where: { id } })` — no reason, no audit trail, no
+ * institution check, and no confirmation the target was even a guard. See
+ * `securityService.removeGuard` for what that let a security officer do.
+ */
+router.delete(
+  '/guards/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await securityService.removeGuard(
+      getTenantContext(req),
+      String(req.params.id),
+      String(req.body.reason)
+    );
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── ID Cards ───
 router.get('/id-cards', authenticate, async (req: Request, res: Response) => {

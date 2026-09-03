@@ -102,13 +102,39 @@ export async function putApi<T = any>(endpoint: string, body: any): Promise<T> {
   }
 }
 
-export async function deleteApi(endpoint: string): Promise<void> {
+/**
+ * `body` goes through axios's `data` config, since axios's `delete()` has no
+ * separate body parameter. Optional because plenty of DELETE routes take
+ * none — but roughly 30 across the app now require `{ reason }` (T-hardening
+ * passes across several modules), and every one of those was unreachable
+ * from the UI until this parameter existed: there was no way to send the
+ * body they validate against.
+ */
+export async function deleteApi(endpoint: string, body?: Record<string, unknown>): Promise<void> {
   try {
-    const { data } = await api.delete(endpoint);
+    const { data } = await api.delete(endpoint, body ? { data: body } : undefined);
     if (data.success === false) throw new Error(data.message || 'API Error');
   } catch (error: any) {
     throw new Error(getApiErrorMessage(error, 'API Error'));
   }
+}
+
+/**
+ * Collect a delete reason via a native prompt, enforcing the same 10-500
+ * character bound every hardened DELETE route validates server-side — so a
+ * caller finds out a reason is too short here, not from a failed request.
+ * Returns null if the user cancelled or never met the minimum; callers
+ * should treat null as "abort the delete", not retry silently.
+ */
+export function promptForDeleteReason(subject: string): string | null {
+  const reason = window.prompt(`Reason for deleting ${subject} (at least 10 characters):`);
+  if (reason === null) return null;
+  const trimmed = reason.trim();
+  if (trimmed.length < 10) {
+    window.alert('A reason of at least 10 characters is required to delete this record.');
+    return null;
+  }
+  return trimmed;
 }
 
 export async function uploadApi<T = any>(file: File, module: string): Promise<T> {

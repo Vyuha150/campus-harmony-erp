@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   Calendar, Clock, BookOpen, Users, AlertTriangle, Plus, Shuffle, Download, CheckCircle
 } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { CourseAssignment } from '@/types/hod';
@@ -158,8 +158,10 @@ export default function HODWorkload() {
   };
 
   const handleRemoveAssignment = async (id: string) => {
+    const reason = promptForDeleteReason('this workload assignment');
+    if (!reason) return;
     try {
-      await deleteApi(`/hod/workload/course/${id}`);
+      await deleteApi(`/hod/workload/course/${id}`, { reason });
       setAssignments(prev => prev.filter(a => a.id !== id));
       toast({ title: 'Assignment Removed' });
     } catch (error: any) {

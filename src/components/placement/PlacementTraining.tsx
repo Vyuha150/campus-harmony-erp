@@ -11,7 +11,7 @@ import {
   BookOpen, ClipboardList, Star, FileText, CheckCircle2, Play, Eye, Edit, Trash2
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 
 interface SessionFormState {
@@ -195,9 +195,12 @@ export default function PlacementTraining() {
   const handleDeleteSession = async () => {
     if (!selectedSession) return;
 
+    const reason = promptForDeleteReason(`the training session "${selectedSession.title}"`);
+    if (!reason) return;
+
     try {
       setSaving(true);
-      await deleteApi(`/placements/training/${selectedSession.id}`);
+      await deleteApi(`/placements/training/${selectedSession.id}`, { reason });
       await loadTraining();
       setDeleteOpen(false);
       setSelectedSession(null);

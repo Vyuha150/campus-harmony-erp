@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar, MapPin, Trophy, Users, Plus, Download, Eye } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { toast } from '@/hooks/use-toast';
 
 export default function SportsEvents() {
@@ -134,8 +134,10 @@ export default function SportsEvents() {
 
   const deleteEvent = async (eventId: string, eventName: string) => {
     if (!window.confirm(`Delete event ${eventName}?`)) return;
+    const reason = promptForDeleteReason(`event ${eventName}`);
+    if (!reason) return;
     try {
-      await deleteApi(`/sports/events/${eventId}`);
+      await deleteApi(`/sports/events/${eventId}`, { reason });
       setSportsEvents((prev: any[]) => prev.filter((event) => event.id !== eventId));
       toast({ title: 'Event deleted', description: 'Sports event removed successfully.' });
     } catch (error: any) {

@@ -12,7 +12,7 @@ import {
   Upload, ClipboardList, Target, Plus, Edit, Trash2, Eye
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 
 interface DriveFormState {
@@ -183,9 +183,12 @@ export default function PlacementDrives() {
   const handleDeleteDrive = async () => {
     if (!selectedDrive) return;
 
+    const reason = promptForDeleteReason(`the ${selectedDrive.companyName || 'placement'} drive`);
+    if (!reason) return;
+
     try {
       setSaving(true);
-      await deleteApi(`/placements/drives/${selectedDrive.id}`);
+      await deleteApi(`/placements/drives/${selectedDrive.id}`, { reason });
       await loadDrives();
       setDeleteOpen(false);
       setSelectedDrive(null);

@@ -131,3 +131,71 @@ export async function removeRecord(
     }
   );
 }
+
+/**
+ * Remove a guard account.
+ *
+ * Was `prisma.patrolLog.deleteMany(...)` then `prisma.user.delete({ where: {
+ * id } })` — no reason, no audit record, and no `institutionId` filter on
+ * either `where` clause, so a security officer could delete a `User` row in
+ * ANY institution by id. Worse: it never checked the target was actually a
+ * guard, so this route could delete any user account in the system —
+ * faculty, a dean, another institution's super_admin — not just the guards
+ * it lists.
+ *
+ * `adminService.deleteUser()` was considered instead of a new function here
+ * and rejected: it deletes any user in the caller's institution regardless
+ * of role, which is exactly the privilege escalation this closes. Scoping
+ * the lookup to `role: 'security_officer'` is what makes this a guard-roster
+ * operation rather than a general account deletion reachable by a
+ * non-admin role.
+ */
+export async function removeGuard(
+  context: TenantContext,
+  id: string,
+  reason: string
+): Promise<{ id: string }> {
+  if (!reason || reason.trim().length < 10) {
+    throw new ValidationError(
+      'A reason of at least 10 characters is required to remove a guard.',
+      { field: 'reason' }
+    );
+  }
+
+  if (id === context.userId) {
+    throw new ValidationError(
+      'You cannot remove your own guard account. Ask another security officer or administrator to do it.',
+      { field: 'id' }
+    );
+  }
+
+  const existing = await basePrisma.user.findFirst({
+    where: { id, institutionId: context.institutionId, role: 'security_officer' },
+    select: { id: true, name: true, email: true, designation: true, campus: true }
+  });
+  if (!existing) throw new NotFoundError(`Guard ${id}`);
+
+  return mutate(
+    context,
+    {
+      action: 'DELETE',
+      module: 'security',
+      resource: `User:${id}`,
+      details: `Removed guard ${existing.email} (${existing.name}) from the roster`,
+      // Captured before removal; afterwards there is nothing left to describe.
+      oldValue: JSON.stringify(existing),
+      reason: reason.trim(),
+      severity: 'critical'
+    },
+    async (tx) => {
+      await tx.patrolLog.deleteMany({
+        where: { officerId: id, institutionId: context.institutionId }
+      });
+      const result = await tx.user.deleteMany({
+        where: { id, institutionId: context.institutionId, role: 'security_officer' }
+      });
+      if (result.count === 0) throw new NotFoundError(`Guard ${id}`);
+      return { id };
+    }
+  );
+}

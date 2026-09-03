@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { ClipboardList, CheckCircle, Clock, AlertTriangle, Send, Users, Calendar, FileText, Download, Plus, Pencil, Trash2 } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { ExamProgress } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
@@ -173,8 +173,10 @@ export default function COEExamOversight() {
 
   const deleteExam = async () => {
     if (!selectedExam) return;
+    const reason = promptForDeleteReason('this exam cycle');
+    if (!reason) return;
     try {
-      await deleteApi(`/coe/exams/${selectedExam.id}`);
+      await deleteApi(`/coe/exams/${selectedExam.id}`, { reason });
       setExams((prev) => prev.filter((item) => item.id !== selectedExam.id));
       setDeleteOpen(false);
       const deletedName = selectedExam.examName;

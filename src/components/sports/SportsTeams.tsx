@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Trophy, Users, Calendar, MapPin, Plus, Edit, Clock, Swords } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { toast } from '@/hooks/use-toast';
 
 export default function SportsTeams() {
@@ -298,8 +298,10 @@ export default function SportsTeams() {
   const deleteTeam = async () => {
     if (!team) return;
     if (!window.confirm(`Delete ${team.sport} ${team.category} team?`)) return;
+    const reason = promptForDeleteReason(`the ${team.sport} ${team.category} team`);
+    if (!reason) return;
     try {
-      await deleteApi(`/sports/teams/${team.id}`);
+      await deleteApi(`/sports/teams/${team.id}`, { reason });
       setSportsTeams((prev: any[]) => prev.filter((item) => item.id !== team.id));
       setSelectedTeam(null);
       toast({ title: 'Team deleted', description: 'Team removed successfully.' });

@@ -11,7 +11,7 @@ import {
   Building2, Search, Plus, Users, Calendar, Mail,
   MapPin, Download, Edit, ExternalLink, Award, Eye, Trash2, ChevronLeft, ChevronRight, RefreshCw
 } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 
 interface CompanyFormState {
@@ -161,9 +161,12 @@ export default function PlacementCompanies() {
   const handleDeleteCompany = async () => {
     if (!selectedCompany) return;
 
+    const reason = promptForDeleteReason(`company ${selectedCompany.name}`);
+    if (!reason) return;
+
     try {
       setSaving(true);
-      await deleteApi(`/placements/companies/${selectedCompany.id}`);
+      await deleteApi(`/placements/companies/${selectedCompany.id}`, { reason });
       await loadCompanies();
       await loadDrives();
       const deletedName = selectedCompany.name;

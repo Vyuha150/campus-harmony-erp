@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from '@/components/ui/textarea';
 import { Heart, Plus, Activity, UserCheck, Stethoscope, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { deleteApi, fetchApi, postApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, promptForDeleteReason } from '@/lib/apiService';
 import { toast } from '@/hooks/use-toast';
 
 type FitnessRecord = {
@@ -95,8 +95,10 @@ export default function SportsHealth() {
 
   const deleteRecord = async (record: FitnessRecord) => {
     if (!window.confirm(`Delete fitness record for ${record.studentId}?`)) return;
+    const reason = promptForDeleteReason(`the fitness record for ${record.studentId}`);
+    if (!reason) return;
     try {
-      await deleteApi(`/sports/health/${record.id}`);
+      await deleteApi(`/sports/health/${record.id}`, { reason });
       setRecords((prev) => prev.filter((item) => item.id !== record.id));
       toast({ title: 'Record deleted', description: 'Fitness record removed successfully.' });
     } catch (error: any) {

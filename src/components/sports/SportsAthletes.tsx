@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, Plus, Dumbbell, Medal, Trophy, Edit, Eye, FileText, Download, Filter, UserCheck } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { toast } from '@/hooks/use-toast';
 
 export default function SportsAthletes() {
@@ -185,8 +185,10 @@ export default function SportsAthletes() {
   const deleteAthlete = async () => {
     if (!athlete) return;
     if (!window.confirm(`Delete athlete ${athlete.studentName}?`)) return;
+    const reason = promptForDeleteReason(`athlete ${athlete.studentName}`);
+    if (!reason) return;
     try {
-      await deleteApi(`/sports/athletes/${athlete.id}`);
+      await deleteApi(`/sports/athletes/${athlete.id}`, { reason });
       setSportsAthletes((prev: any[]) => prev.filter((item) => item.id !== athlete.id));
       setSelectedAthlete(null);
       toast({ title: 'Athlete deleted', description: 'Athlete removed successfully.' });

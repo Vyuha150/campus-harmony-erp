@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import {
   GraduationCap, CheckCircle, XCircle, Clock
 } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 import { CurriculumProposal } from '@/types/dean';
 
@@ -146,8 +146,11 @@ export default function DeanAcademics() {
   const handleDeleteClass = async (classId: string) => {
     if (!window.confirm('Delete this class? This will remove class enrollment links.')) return;
 
+    const reason = promptForDeleteReason('this class');
+    if (!reason) return;
+
     try {
-      await deleteApi(`/dean/class-management/${classId}`);
+      await deleteApi(`/dean/class-management/${classId}`, { reason });
       setClasses((prev) => prev.filter((item) => item.id !== classId));
       toast({ title: 'Class Deleted', description: 'Class was removed successfully.' });
     } catch (error: any) {

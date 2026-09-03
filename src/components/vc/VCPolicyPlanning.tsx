@@ -15,7 +15,7 @@ import {
   TrendingUp, TrendingDown, Lightbulb, Calculator, BarChart3,
   ArrowRight, Settings, Play, Info, Download, Save
 } from 'lucide-react';
-import { deleteApi, fetchApi, postApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, promptForDeleteReason } from '@/lib/apiService';
 import { PolicyScenario } from '@/types/vc';
 
 const impactColors = { positive: 'text-emerald-600 bg-emerald-50', negative: 'text-red-600 bg-red-50', neutral: 'text-amber-600 bg-amber-50' };
@@ -84,8 +84,10 @@ export default function VCPolicyPlanning() {
   };
 
   const handleDeleteScenario = async (id: string) => {
+    const reason = promptForDeleteReason('this policy scenario');
+    if (!reason) return;
     try {
-      await deleteApi(`/vc/policyscenarios/${id}`);
+      await deleteApi(`/vc/policyscenarios/${id}`, { reason });
       setScenarios(prev => prev.filter(s => s.id !== id));
       toast({ title: 'Deleted', description: 'Scenario removed.' });
     } catch (error: any) {

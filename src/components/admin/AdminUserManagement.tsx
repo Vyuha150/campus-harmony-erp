@@ -14,7 +14,7 @@ import {
   ShieldCheck, UserX, UserCheck, Mail, Phone, Clock
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { ROLE_INFO, UserRole } from '@/types/erp';
 import { useState, useEffect } from 'react';
 import { safeArray, safeDate, safeString } from '@/lib/normalize';
@@ -128,8 +128,10 @@ export default function AdminUserManagement() {
   };
 
   const removeUser = async (id: string) => {
+    const reason = promptForDeleteReason('this user account');
+    if (!reason) return;
     try {
-      await deleteApi(`/admin/users/${id}`);
+      await deleteApi(`/admin/users/${id}`, { reason });
       setSystemUsers((prev: any[]) => prev.filter((user) => user.id !== id));
       toast({ title: 'User deleted', description: 'User account removed successfully.' });
     } catch (error: any) {

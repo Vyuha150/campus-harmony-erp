@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 
 type Facility = {
@@ -110,8 +110,10 @@ export default function DeanFacilityManagement() {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this facility?')) return;
+    const reason = promptForDeleteReason('this facility');
+    if (!reason) return;
     try {
-      await deleteApi(`/dean/facility-management/${id}`);
+      await deleteApi(`/dean/facility-management/${id}`, { reason });
       setFacilities((prev) => prev.filter((item) => item.id !== id));
       toast({ title: 'Facility deleted' });
     } catch (error: any) {

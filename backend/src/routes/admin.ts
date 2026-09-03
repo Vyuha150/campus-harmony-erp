@@ -382,7 +382,15 @@ router.get('/academicyears', authenticate, async (req: Request, res: Response) =
   }
 });
 
-router.post('/academic-years', authenticate, authorizeRoles('dean'),
+// Was `authorizeRoles('dean')` — copied from the unrelated dean-facing
+// POST /dean/semester-management/academic-years (dean.ts), which is mounted
+// under /api/dean and legitimately dean-only. This route is mounted under
+// the super_admin-only /api/admin and is the one AdminSystemConfig.tsx (the
+// "Super Admin Portal" screen, App.tsx) actually calls — no dean ever
+// reaches it, and the super_admin who does was rejected by this leftover
+// check. Confirmed live: a super_admin request got "Access denied for this
+// role" before this fix.
+router.post('/academic-years', authenticate,
   validate({ body: academicYearCreateSchema }),
   async (req: Request, res: Response) => {
   try {
@@ -391,7 +399,17 @@ router.post('/academic-years', authenticate, authorizeRoles('dean'),
       return res.status(400).json({ success: false, message: 'Academic year is required' });
     }
 
-    const existing = await db.academicYear.findUnique({ where: { year: yearValue } });
+    // Was `findUnique({ where: { year: yearValue } })` — a standalone lookup
+    // on a field that hasn't been globally unique since migration 0030 made
+    // academic years per-institution (`@@unique([institutionId, year])`).
+    // Prisma rejects that shape outright ("needs at least one of `id` or
+    // `institutionId_year`"), so this route has thrown a 500 on every create
+    // since that migration landed — the duplicate check never ran because
+    // the call itself never completed.
+    const context = getTenantContext(req);
+    const existing = await db.academicYear.findFirst({
+      where: { institutionId: context.institutionId, year: yearValue }
+    });
     if (existing) {
       return res.status(400).json({ success: false, message: `Academic year ${yearValue} already exists` });
     }
@@ -414,13 +432,13 @@ router.put('/academic-years/:id', authenticate, validate({ body: academicYearUpd
   try {
     const id = String(req.params.id);
     const payload = req.body ?? {};
-    const userRole = String((req as any).user?.role || '');
 
-    if (payload.semesters !== undefined && userRole !== 'dean') {
-      res.status(403).json({ success: false, message: 'Only dean can create semesters' });
-      return;
-    }
-
+    // Was `if (payload.semesters !== undefined && userRole !== 'dean') 403`.
+    // This route is mounted under /api/admin, behind authorizeRoles('super_admin')
+    // (server.ts) — no dean request ever reaches it, so the check rejected
+    // every caller who included `semesters`, which AdminSystemConfig.tsx (the
+    // only frontend caller) always does. Confirmed live: a super_admin update
+    // with `semesters` got "Only dean can create semesters" before this fix.
     const data: any = {
       ...(payload.year ? { year: String(payload.year).trim() } : {}),
       ...(payload.status ? { status: String(payload.status) } : {}),
@@ -613,7 +631,15 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/courses', authenticate, authorizeRoles('hod', 'dean'), validate({ body: adminCourseCreateSchema }), async (req: Request, res: Response) => {
+// Was `authorizeRoles('hod', 'dean')` — but this router is mounted at
+// `/api/admin` behind `authorizeRoles('super_admin')` (server.ts), which runs
+// BEFORE this middleware. No hod or dean request ever reaches past the
+// mount, and no super_admin request passed this check either: the route was
+// unreachable by every role. No frontend caller exists for course creation
+// under any path (`/admin`, `/hod`, or `/dean`), so there is no working
+// alternative this duplicates — removed rather than widened, matching the
+// GET and DELETE routes for this same resource, which rely on the mount.
+router.post('/courses', authenticate, validate({ body: adminCourseCreateSchema }), async (req: Request, res: Response) => {
   try {
     const context = getTenantContext(req);
     const { code, name, credits, semester, departmentId, facultyId } = req.body;
@@ -652,10 +678,12 @@ router.post('/courses', authenticate, authorizeRoles('hod', 'dean'), validate({ 
   }
 });
 
+// Same contradiction as the POST above: unreachable by any role, since this
+// router sits behind the super_admin-only /api/admin mount. Removed for the
+// same reason.
 router.put(
   '/courses/:id',
   authenticate,
-  authorizeRoles('hod', 'dean'),
   validate({ params: z.object({ id: entityId }), body: updateCourseSchema }),
   asyncHandler(async (req: Request, res: Response) => {
     const updated = await updateTenantEntity(getTenantContext(req), {
