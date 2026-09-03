@@ -77,11 +77,13 @@ export default function Payroll() {
       return;
     }
 
-    const grossSalary = basicSalary + allowanceAmount;
-    const netSalary = grossSalary - deductionAmount;
-
     try {
       const now = new Date();
+      // `grossSalary`/`netSalary` and `status` are deliberately not sent:
+      // createPayrollSchema (backend) derives the two totals from
+      // basicSalary + allowances - deductions and computes them itself, and
+      // `status` describes whether payment has actually happened — not
+      // something the record's creation gets to assert.
       await postApi<any>('/finance/payroll/process', {
         employeeId,
         employeeName,
@@ -92,9 +94,6 @@ export default function Payroll() {
         basicSalary,
         allowances: [{ name: 'Allowance', amount: allowanceAmount }],
         deductions: [{ name: 'Deduction', amount: deductionAmount }],
-        grossSalary,
-        netSalary,
-        status: 'draft',
         paymentMethod: 'bank_transfer',
       });
       await loadPayrollData();

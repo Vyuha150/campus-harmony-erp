@@ -569,13 +569,32 @@ router.post(
     // grossSalary / netSalary are DERIVED and are not accepted from the client.
     // A payroll row whose stated net contradicts its own components is not a
     // record of anything.
-    const sum = (v: unknown) =>
-      v && typeof v === 'object'
-        ? Object.values(v as Record<string, unknown>).reduce<number>(
-            (a, b) => a + (Number(b) || 0),
-            0
-          )
-        : 0;
+    //
+    // Was `Object.values(v).reduce((a, b) => a + (Number(b) || 0), 0)`, written
+    // for a flat `{label: amount}` record — but createPayrollSchema's
+    // `allowances`/`deductions` also accept an array, and Payroll.tsx (the only
+    // real caller) always sends one: `[{ name, amount }]`. `Object.values()` on
+    // that array returns the objects themselves, `Number({name,amount})` is
+    // NaN, and every term silently summed to 0 — so gross/net salary was
+    // always just basicSalary, understating every payroll record this route
+    // has ever created.
+    const sum = (v: unknown): number => {
+      if (Array.isArray(v)) {
+        return v.reduce<number>((a, item) => {
+          if (item && typeof item === 'object' && 'amount' in (item as Record<string, unknown>)) {
+            return a + (Number((item as Record<string, unknown>).amount) || 0);
+          }
+          return a + (Number(item) || 0);
+        }, 0);
+      }
+      if (v && typeof v === 'object') {
+        return Object.values(v as Record<string, unknown>).reduce<number>(
+          (a, b) => a + (Number(b) || 0),
+          0
+        );
+      }
+      return 0;
+    };
     const gross = body.basicSalary + sum(body.allowances);
     const net = gross - sum(body.deductions);
     const record = await prisma.payrollRecord.create({
