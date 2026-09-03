@@ -145,17 +145,20 @@ export default function COEExamOversight() {
   const saveExam = async () => {
     if (!selectedExam) return;
     try {
+      // `marksEntered`/`resultsPublished` are deliberately not accepted by the
+      // backend (exams.schema.ts, exams.service.ts) — both are consequences of
+      // real marks-entry work, not values a caller may assert, and a `.strict()`
+      // schema rejected every save that included them (i.e. every save this
+      // dialog ever made).
       const updated = await putApi<ExamProgress>(`/coe/exams/${selectedExam.id}`, {
         examName: editForm.examName,
         semester: editForm.semester,
         program: editForm.program,
         totalStudents: Number(editForm.totalStudents),
-        marksEntered: Number(editForm.marksEntered),
         status: editForm.status,
         startDate: editForm.startDate,
         endDate: editForm.endDate,
         coordinator: editForm.coordinator,
-        resultsPublished: editForm.status === 'published'
       });
       setExams((prev) => prev.map((item) => (item.id === selectedExam.id ? updated : item)));
       setEditOpen(false);
@@ -314,7 +317,8 @@ export default function COEExamOversight() {
                 </div>
                 <div>
                   <Label>Marks Entered</Label>
-                  <Input type="number" value={editForm.marksEntered} onChange={(e) => setEditForm((p) => ({ ...p, marksEntered: e.target.value }))} />
+                  <Input type="number" value={editForm.marksEntered} disabled readOnly />
+                  <p className="mt-1 text-xs text-muted-foreground">Set by marks entry, not editable here.</p>
                 </div>
               </div>
               <div>
