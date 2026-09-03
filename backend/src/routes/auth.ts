@@ -10,19 +10,16 @@ import { authenticate } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
 import { config } from '../config/env.js';
 import { loginRateLimiter } from '../middleware/rateLimit.js';
+import { validate } from '../middleware/validate.js';
+import { loginSchema } from '../modules/auth/auth.schemas.js';
 
 const router = Router();
 const JWT_SECRET = config.auth.jwtSecret;
 
 // Basic Login Route
-router.post('/login', loginRateLimiter, async (req: Request, res: Response): Promise<void> => {
+router.post('/login', loginRateLimiter, validate({ body: loginSchema }), async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, role } = req.body;
-
-    if (!email || !password) {
-      res.status(400).json({ success: false, message: 'Email and password are required' });
-      return;
-    }
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {

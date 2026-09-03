@@ -30,6 +30,8 @@ import { recordFromRequest } from '../lib/audit.js';
 import { getTenantContext } from '../lib/tenant.js';
 import { assertCanReadFile, assertCanDeleteFile } from '../lib/fileAccess.js';
 import { createStorageProvider, buildStorageKey } from '../lib/storage.js';
+import { validate } from '../middleware/validate.js';
+import { uploadMetadataSchema } from '../modules/uploads/uploads.schemas.js';
 
 const router = Router();
 
@@ -90,7 +92,7 @@ const upload = multer({
 
 // ─── Upload ───────────────────────────────────────────────────────────────────
 
-router.post('/', upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', upload.single('file'), validate({ body: uploadMetadataSchema }), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const ctx = getTenantContext(req);
 

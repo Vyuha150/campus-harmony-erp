@@ -440,13 +440,13 @@ describe('mutate() is scoped by construction', () => {
  * variables, is already safe. This is what actually closed all four shapes,
  * including the two nobody had found yet when the sweep began.
  *
- * SCOPE. 28 more unvalidated write handlers exist outside these 9 files
+ * SCOPE. Phase 3c closed a specific 86-handler category across 9 files, not
+ * every unvalidated write in the codebase — 28 more existed outside it
  * (`admin.ts` 4, `auth.ts` 1, `finance.ts` 3, `registrar.ts` 5, `security.ts`
- * 14, `uploads.ts` 1) — found by running this exact check across every route
- * file, not estimated. They are real and are NOT fixed here: this task closed
- * the specific 86-handler category Phase 3c named, not every unvalidated write
- * in the codebase. A repo-wide version of this guard would fail on them today,
- * so it is intentionally scoped to the files this sweep actually covers.
+ * 14, `uploads.ts` 1), found by running this exact check across every route
+ * file. A follow-up sweep is closing these; `auth.ts` and `uploads.ts` are
+ * done and have moved into COMPLETED_FILES above. The rest remain in the
+ * `outside` map below until each is closed the same way.
  */
 describe('Phase 3c: every write route in the completed files is validated', () => {
   const COMPLETED_FILES = [
@@ -458,7 +458,12 @@ describe('Phase 3c: every write route in the completed files is validated', () =
     'vc.ts',
     'sports.ts',
     'grievances.ts',
-    'alumni.ts'
+    'alumni.ts',
+    // Closed in the follow-up sweep of the 28 handlers left outside Phase 3c's
+    // original 9 files (see the count below, which shrinks as each file joins
+    // this list).
+    'auth.ts',
+    'uploads.ts'
   ];
 
   /**
@@ -542,11 +547,9 @@ router.post('/second', authenticate, validate({ body: secondSchema }), async (re
     const routesDirPath = routesDir();
     const outside: Record<string, number> = {
       'admin.ts': 4,
-      'auth.ts': 1,
       'finance.ts': 3,
       'registrar.ts': 5,
-      'security.ts': 14,
-      'uploads.ts': 1
+      'security.ts': 14
     };
     for (const [file, expected] of Object.entries(outside)) {
       const src = stripComments(readFileSync(join(routesDirPath, file), 'utf8'));
