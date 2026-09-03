@@ -12,10 +12,15 @@ import { z } from 'zod';
 
 const text = (min: number, max: number) => z.string().trim().min(min).max(max);
 
+// `pending_action` was missing: GrievanceDetail.tsx's status dropdown has
+// always offered it as a real option, rejected by this enum on every
+// selection since there's no DB-level CHECK constraint backing this list —
+// it's purely this file's own, and it was short one value.
 export const GRIEVANCE_STATUSES = [
   'received',
   'under_review',
   'investigating',
+  'pending_action',
   'resolved',
   'closed',
   'escalated'
