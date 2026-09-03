@@ -81,7 +81,7 @@ export default function HODDashboard() {
   const handleReject = async () => {
     if (selectedApproval) {
       try {
-        await putApi(`/hod/hodapprovals/${selectedApproval.id}/status`, { status: 'rejected', reason: rejectReason });
+        await putApi(`/hod/hodapprovals/${selectedApproval.id}/status`, { status: 'rejected', note: rejectReason });
         setApprovals(prev => prev.map(a => a.id === selectedApproval.id ? { ...a, status: 'rejected' } : a));
         toast({ title: '❌ Rejected', description: `${selectedApproval.title}${rejectReason ? ` — Reason: ${rejectReason}` : ''}` });
         setShowRejectDialog(false);

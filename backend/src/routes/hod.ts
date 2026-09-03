@@ -977,9 +977,18 @@ router.put('/hodapprovals/:id/status', authenticate, validate({ params: z.object
       });
       return;
     }
+    // Was missing entirely, unlike the identical PUT /approvals/:id above —
+    // `note` validated by the same schema but never reached `decisionNote`,
+    // the column both routes share.
+    const note = req.body?.note;
     const changed = await prisma.approvalItem.updateMany({
       where: { id, status: 'pending' },
-      data: { status, decidedBy: getTenantContext(req).userId, decidedAt: new Date() }
+      data: {
+        status,
+        decidedBy: getTenantContext(req).userId,
+        decidedAt: new Date(),
+        decisionNote: typeof note === 'string' ? note.slice(0, 500) : null
+      }
     });
     if (changed.count === 0) {
       res.status(404).json({

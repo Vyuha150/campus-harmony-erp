@@ -150,14 +150,17 @@ router.put('/approvals/:id', authenticate, validate({ body: vcApprovalDecisionSc
     if (typeof id !== 'string') {
       return res.status(400).json({ success: false, message: 'Invalid approval id' });
     }
-    const { status } = req.body;
+    const { status, notes } = req.body;
     // updateMany + a pending filter, NOT update-by-id.
     //
     // The tenant extension can constrain a `where` clause but cannot filter a
     // unique-key update, so `update({ where: { id } })` let anyone holding an id
     // from ANOTHER institution decide that approval. Demonstrated live before
     // migration 0022. The status is validated above rather than written raw.
-    const ALLOWED_DECISIONS = ['approved', 'rejected', 'forwarded'];
+    //
+    // 'pending' included: "Forward to Board of Management" (VCApprovals.tsx,
+    // VCDashboard.tsx) sends status back as 'pending' rather than 'forwarded'.
+    const ALLOWED_DECISIONS = ['approved', 'rejected', 'forwarded', 'pending'];
     if (!ALLOWED_DECISIONS.includes(status)) {
       res.status(400).json({
         success: false,
@@ -167,7 +170,12 @@ router.put('/approvals/:id', authenticate, validate({ body: vcApprovalDecisionSc
     }
     const changed = await prisma.approvalItem.updateMany({
       where: { id, status: 'pending' },
-      data: { status, decidedBy: getTenantContext(req).userId, decidedAt: new Date() }
+      data: {
+        status,
+        decidedBy: getTenantContext(req).userId,
+        decidedAt: new Date(),
+        decisionNote: typeof notes === 'string' ? notes.slice(0, 500) : null
+      }
     });
     if (changed.count === 0) {
       res.status(404).json({

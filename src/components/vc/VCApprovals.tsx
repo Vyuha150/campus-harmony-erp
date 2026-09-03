@@ -64,7 +64,7 @@ export default function VCApprovals() {
     if (!selectedApproval || !actionType) return;
     try {
       const payload = actionType === 'forward'
-        ? { status: 'pending', forwardedFrom: 'Vice Chancellor', notes: comment }
+        ? { status: 'pending', notes: comment }
         : { status: actionType === 'approve' ? 'approved' : 'rejected', notes: comment };
 
       const updated = await putApi<any>(`/vc/approvals/${selectedApproval.id}`, payload);
