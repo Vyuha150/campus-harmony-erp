@@ -51,7 +51,9 @@ export default function HODWorkload() {
   const freeFaculty = departmentFaculty.filter(f => !f.isOnLeave && f.weeklyHours < 16);
 
   const handleAssignCourse = async () => {
-    const fac = departmentFaculty.find(f => f.id === newCourse.faculty);
+    // Both faculty dropdowns carry facultyProfileId as their value, since that
+    // is what every assignment handler resolves faculty by.
+    const fac = departmentFaculty.find(f => f.facultyProfileId === newCourse.faculty);
     const selectedCourse = (courseOptions.courses || []).find((course: any) => course.id === newCourse.courseId);
     if (!fac || !selectedCourse || !newCourse.section || !newCourse.roomId || !newCourse.day || !newCourse.startTime || !newCourse.endTime) {
       toast({ title: 'Missing Fields', description: 'Please fill all required fields', variant: 'destructive' });
@@ -62,7 +64,9 @@ export default function HODWorkload() {
         courseId: selectedCourse.id,
         semester: selectedCourse.semester,
         section: newCourse.section,
-        facultyId: fac.id,
+        // `fac.id` is the USER id; the handler resolves faculty by
+        // FacultyProfile id, which /hod/faculty now returns alongside it.
+        facultyId: fac.facultyProfileId,
         type: newCourse.type,
         studentEmails: newCourse.studentEmails,
         roomId: newCourse.roomId,
@@ -342,7 +346,10 @@ export default function HODWorkload() {
                   </TableHeader>
                   <TableBody>
                     {departmentFaculty.map(f => {
-                      const courses = assignments.filter(c => c.facultyId === f.id);
+                      // `c.facultyId` is a FacultyProfile id; `f.id` is a User
+                      // id, so this comparison never matched and every row's
+                      // course/student counts read zero.
+                      const courses = assignments.filter(c => c.facultyId === f.facultyProfileId);
                       const students = courses.reduce((s, c) => s + c.students, 0);
                       const overloaded = f.weeklyHours > 18;
                       return (
@@ -475,7 +482,7 @@ export default function HODWorkload() {
                 <SelectTrigger><SelectValue placeholder="Select faculty..." /></SelectTrigger>
                 <SelectContent>
                   {departmentFaculty.filter(f => !f.isOnLeave).map(f => (
-                    <SelectItem key={f.id} value={f.id}>{f.name} ({f.weeklyHours}h/wk)</SelectItem>
+                    <SelectItem key={f.id} value={f.facultyProfileId}>{f.name} ({f.weeklyHours}h/wk)</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -569,7 +576,7 @@ export default function HODWorkload() {
                   <SelectTrigger><SelectValue placeholder="Select faculty..." /></SelectTrigger>
                   <SelectContent>
                     {departmentFaculty.map((faculty) => (
-                      <SelectItem key={faculty.id} value={faculty.id}>{faculty.name}</SelectItem>
+                      <SelectItem key={faculty.id} value={faculty.facultyProfileId}>{faculty.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

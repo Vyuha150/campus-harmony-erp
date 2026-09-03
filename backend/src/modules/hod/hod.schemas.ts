@@ -21,11 +21,15 @@
  * check) already restricts them to.
  *
  * One documented exception: `workloadAssignSchema` is NOT `.strict()`. The
- * substitution-request branch of `PUT /workload/assign` currently accepts an
- * arbitrary body shape and performs no write for it (`res.json({ data: {
- * accepted: true } })`), so a `.strict()` schema would 400 a payload the
- * endpoint currently returns 200 for — exactly the "breaks a working endpoint"
- * failure this sweep is required to avoid.
+ * substitution-request branch of `PUT /workload/assign` accepts an arbitrary
+ * body shape, so a `.strict()` schema would 400 a payload the endpoint
+ * accepted — exactly the "breaks a working endpoint" failure that sweep was
+ * required to avoid.
+ *
+ * That branch no longer reports a false success, though: it stored nothing
+ * while telling the HOD a substitute had been arranged, and now returns 501
+ * (see the route). The looseness is kept so the shape it rejects is decided
+ * by the route's own explanation rather than by a generic "unrecognized key".
  */
 
 import { z } from 'zod';

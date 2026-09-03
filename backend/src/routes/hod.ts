@@ -227,7 +227,15 @@ router.get('/faculty', authenticate, async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: faculty.map((f: any) => ({
-        id: f.id, name: f.name, employeeId: f.facultyProfile?.employeeId,
+        id: f.id,
+        // `id` above is the USER id. Course.facultyId and CourseClass.facultyId
+        // both reference FacultyProfile, and every assignment handler looks the
+        // faculty up by FacultyProfile id — so a caller sending `id` here got
+        // "Faculty not found in this department" every time. The profile was
+        // already loaded and simply never exposed; `id` is left as the user id
+        // because the screens key their rows on it.
+        facultyProfileId: f.facultyProfile?.id ?? null,
+        name: f.name, employeeId: f.facultyProfile?.employeeId,
         designation: f.designation || 'Assistant Professor', qualification: f.facultyProfile?.qualification,
         specialization: f.facultyProfile?.specialization, email: f.email,
         coursesAssigned: f.facultyProfile?.coursesTaught?.length || 0,
@@ -417,8 +425,25 @@ router.put('/workload/assign', authenticate, validate({ body: workloadAssignSche
       return;
     }
 
-    // Substitution flow from UI currently sends absent/substitute data; accept as successful action.
-    res.json({ success: true, data: { accepted: true } });
+    // Was: `res.json({ success: true, data: { accepted: true } })` with the
+    // comment "Substitution flow from UI currently sends absent/substitute
+    // data; accept as successful action."
+    //
+    // It accepted and stored NOTHING. No model in this schema can record a
+    // substitution, so the HOD saw "✅ Substitution Arranged — X will
+    // substitute for Y today" while no substitute was assigned, nobody was
+    // notified, and no row existed anywhere. A silent no-op that reports
+    // success is worse than a visible failure: it ends the user's attempt to
+    // solve the problem.
+    res.status(501).json({
+      success: false,
+      error: {
+        code: 'NOT_IMPLEMENTED',
+        message:
+          'Recording a substitution is not implemented — there is no store for it yet. ' +
+          'Reassign the class or course directly instead (send classId or courseId with facultyId).'
+      }
+    });
   } catch (error: any) {
     sendError(res, error);
   }
