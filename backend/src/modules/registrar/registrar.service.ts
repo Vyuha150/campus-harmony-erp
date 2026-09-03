@@ -165,6 +165,13 @@ export async function decideRequest(
     note?: string | undefined;
     /** Column carrying the decider, where the model has one. */
     decidedByField?: string | undefined;
+    /**
+     * VerificationRequest-only: the text sent back to the requesting
+     * employer or institution. Only ever supplied for that one model, so
+     * the other four never see this key and Prisma never sees a column
+     * they don't have.
+     */
+    response?: string | undefined;
   }
 ) {
   const delegate = (basePrisma as unknown as Record<string, any>)[spec.model];
@@ -191,7 +198,8 @@ export async function decideRequest(
         where: { id: spec.id, institutionId: context.institutionId },
         data: {
           status: spec.status,
-          ...(spec.decidedByField ? { [spec.decidedByField]: context.userId } : {})
+          ...(spec.decidedByField ? { [spec.decidedByField]: context.userId } : {}),
+          ...(spec.response !== undefined ? { response: spec.response, respondedAt: new Date() } : {})
         }
       });
       if (result.count === 0) throw new NotFoundError(`${spec.entity} ${spec.id}`);

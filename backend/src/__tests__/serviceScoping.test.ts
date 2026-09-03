@@ -465,7 +465,8 @@ describe('Phase 3c: every write route in the completed files is validated', () =
     'auth.ts',
     'uploads.ts',
     'finance.ts',
-    'admin.ts'
+    'admin.ts',
+    'registrar.ts'
   ];
 
   /**
@@ -548,7 +549,6 @@ router.post('/second', authenticate, validate({ body: secondSchema }), async (re
     // boundary of what this task closed.
     const routesDirPath = routesDir();
     const outside: Record<string, number> = {
-      'registrar.ts': 5,
       'security.ts': 14
     };
     for (const [file, expected] of Object.entries(outside)) {

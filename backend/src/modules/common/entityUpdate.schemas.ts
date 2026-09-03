@@ -163,7 +163,20 @@ export const updateVacancySchema = nonEmpty(
       type: text(2, 40).optional(),
       sanctioned: z.coerce.number().int().min(0).max(10000).optional(),
       filled: z.coerce.number().int().min(0).max(10000).optional(),
-      status: z.enum(['advertised', 'screening', 'interviewing', 'closed', 'filled']).optional(),
+      // Was ['advertised','screening','interviewing','closed','filled'] — a
+      // guessed vocabulary that didn't match RegistrarHR.tsx's real seven-step
+      // hiring pipeline. Verified live: the "advance stage" button sent
+      // 'applications_received' and got a 400 for it, on every vacancy, since
+      // this schema was wired in.
+      status: z.enum([
+        'advertised',
+        'applications_received',
+        'shortlisted',
+        'interview_scheduled',
+        'selected',
+        'joined',
+        'closed'
+      ]).optional(),
       lastDate: isoDate.nullable().optional(),
       applicants: z.coerce.number().int().min(0).max(1000000).optional()
     })

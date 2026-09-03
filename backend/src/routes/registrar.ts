@@ -9,13 +9,19 @@ import { getTenantContext } from '../lib/tenant.js';
 import * as registrarService from '../modules/registrar/registrar.service.js';
 import {
   updateStudentRecordSchema,
-  decideRequestSchema
+  decideRequestSchema,
+  verificationDecisionSchema,
+  workflowFileDecisionSchema,
+  registrarDocumentCreateSchema,
+  vacancyCreateSchema,
+  promotionForwardSchema
 } from '../modules/registrar/registrar.schemas.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { z } from 'zod';
 import { entityId } from '../schemas/common.js';
 import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
 import {
   updateTransferRequestSchema,
   updateVacancySchema,
@@ -267,21 +273,25 @@ router.get('/verifications', authenticate, async (req: Request, res: Response) =
 });
 
 /**
- * Decide a verifications request. Previously a status flip with no
- * record of who decided it.
+ * Decide a verifications request. Previously a status flip with no record of
+ * who decided it — then, once audited, still broken: it had been wired to
+ * decideRequestSchema's generic approval enum, which RegistrarQueries.tsx's
+ * real pending/processing/responded workflow can't express (verified live —
+ * every "Mark In Progress" and "Send Response" click 400'd). Its own schema
+ * now, and the response text this route never used to save at all.
  */
 router.put(
   '/verifications/:id',
   authenticate,
-  validate({ params: z.object({ id: entityId }), body: decideRequestSchema }),
+  validate({ params: z.object({ id: entityId }), body: verificationDecisionSchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const body = req.body as { status: string; note?: string };
+    const body = req.body as { status: string; response?: string };
     const updated = await registrarService.decideRequest(getTenantContext(req), {
       model: 'verificationRequest',
       entity: 'VerificationRequest',
       id: String(req.params.id),
       status: body.status,
-      note: body.note
+      response: body.response
     });
     res.json({ success: true, data: updated });
   })
@@ -424,7 +434,7 @@ router.get('/workflow-files', authenticate, async (_req: Request, res: Response)
   }
 });
 
-router.put('/workflow-files/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/workflow-files/:id', authenticate, validate({ body: workflowFileDecisionSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const { status, remarks } = req.body;
@@ -480,7 +490,7 @@ router.put('/workflow-files/:id', authenticate, async (req: Request, res: Respon
   }
 });
 
-router.post('/documents', authenticate, async (req: Request, res: Response) => {
+router.post('/documents', authenticate, validate({ body: registrarDocumentCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const {
@@ -520,15 +530,32 @@ router.post('/documents', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/documents/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.adminDocument.delete({ where: { id } });
-    res.json({ success: true, message: 'Document deleted' });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.adminDocument.delete({ where: { id } })` — no reason, no
+ * audit trail. These are the institution's own government orders, UGC
+ * communications, circulars, minutes and audit reports; losing the record
+ * of who removed one and why is the same defect Phase 3c's delete sweep
+ * closed everywhere else. AdminDocument has no dependents to block on.
+ */
+router.delete(
+  '/documents/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'adminDocument',
+      entity: 'AdminDocument',
+      module: 'registrar',
+      id: String(req.params.id),
+      reason: String(req.body.reason)
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 // ─── HR / Establishment ───
 router.get('/hr/summary', authenticate, async (req: Request, res: Response) => {
@@ -583,7 +610,7 @@ router.get('/hr/vacancies', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.post('/hr/vacancies', authenticate, async (req: Request, res: Response) => {
+router.post('/hr/vacancies', authenticate, validate({ body: vacancyCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { position, department, type, sanctioned, filled, status, postedAt, lastDate, applicants } = req.body;
     const vacancy = await prisma.vacancy.create({
@@ -623,15 +650,10 @@ router.put(
   })
 );
 
-router.post('/hr/promotions/forward', authenticate, async (req: Request, res: Response) => {
+router.post('/hr/promotions/forward', authenticate, validate({ body: promotionForwardSchema }), async (req: Request, res: Response) => {
   try {
     const userId = String((req as any).user.id);
-    const { name, fromDesignation, toDesignation, department, years } = req.body || {};
-
-    if (!name || !fromDesignation || !toDesignation || !department) {
-      res.status(400).json({ success: false, message: 'Missing required promotion details' });
-      return;
-    }
+    const { name, fromDesignation, toDesignation, department, years } = req.body;
 
     const created = await prisma.approvalItem.create({
       data: {
@@ -691,18 +713,10 @@ router.get('/queries', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/queries/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    const { status, response } = req.body;
-    const updated = await prisma.verificationRequest.update({
-      where: { id }, data: { status, response, respondedAt: new Date() }
-    });
-    res.json({ success: true, data: updated });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+// PUT /queries/:id removed: a raw, unscoped, unaudited duplicate of PUT
+// /verifications/:id above, which now covers everything this one did
+// (including saving `response`) safely. No frontend caller ever used this
+// path — confirmed by grep — only /verifications/:id.
 
 // ─── Promotions ───
 router.get('/promotions', authenticate, async (req: Request, res: Response) => {

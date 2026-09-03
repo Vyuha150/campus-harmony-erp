@@ -20,6 +20,10 @@
 import { z } from 'zod';
 
 const text = (min: number, max: number) => z.string().trim().min(min).max(max);
+const isoDate = z
+  .string()
+  .trim()
+  .refine((v) => !Number.isNaN(Date.parse(v)), 'must be a valid date');
 
 export const updateStudentRecordSchema = z
   .object({
@@ -61,5 +65,108 @@ export const decideRequestSchema = z
   .object({
     status: z.enum(['pending', 'approved', 'rejected', 'issued', 'completed', 'cancelled']),
     note: z.string().trim().max(1000).optional()
+  })
+  .strict();
+
+/**
+ * PUT /verifications/:id.
+ *
+ * NOT decideRequestSchema, even though verificationRequest is one of the
+ * five models that helper covers. An employer or another university
+ * verification request has its own real lifecycle — RegistrarQueries.tsx
+ * has always sent `pending -> processing -> responded`, matching the
+ * `response`/`respondedAt` columns VerificationRequest has carried since
+ * migration 0034 — and none of those three values is in the generic
+ * approval enum above. Forcing this route onto the shared schema would
+ * mean either rejecting every request this screen has ever sent, or
+ * stretching `approved`/`completed` to mean something they don't for the
+ * other four models that schema serves.
+ */
+export const verificationDecisionSchema = z
+  .object({
+    status: z.enum(['pending', 'processing', 'responded', 'rejected']),
+    response: z.string().trim().max(2000).optional()
+  })
+  .strict();
+
+/** PUT /workflow-files/:id. Status set already matched what the handler enforced by hand. */
+export const workflowFileDecisionSchema = z
+  .object({
+    status: z.enum(['pending', 'approved', 'rejected', 'forwarded', 'published']).optional(),
+    remarks: z.string().trim().max(1000).optional()
+  })
+  .strict();
+
+/**
+ * POST /registrar/documents.
+ *
+ * `category` takes the real seven values from RegistrarDocuments.tsx's own
+ * label map. `filePath`/`fileName` are optional even though the frontend
+ * schema-shape suggests they're always sent: `uploadApi()`'s response
+ * (POST /uploads) doesn't actually carry a `storagePath` or `fileName`
+ * field, so in practice the caller sends `undefined` for both today — a
+ * separate, lower-severity mismatch than the two live-breaking ones this
+ * pass already fixed, left as a follow-up rather than pulled into this one.
+ */
+export const registrarDocumentCreateSchema = z
+  .object({
+    title: text(1, 300),
+    category: z.enum([
+      'government_order',
+      'ugc_communication',
+      'circular',
+      'minutes',
+      'policy',
+      'notification',
+      'audit_report'
+    ]),
+    tags: z.array(z.string().trim().max(60)).max(30).optional(),
+    isConfidential: z.boolean().optional(),
+    accessRoles: z.array(z.string().trim().max(60)).max(30).optional(),
+    filePath: z.string().trim().max(1000).optional(),
+    fileUrl: z.string().trim().max(1000).optional(),
+    fileName: z.string().trim().max(300).optional(),
+    mimeType: z.string().trim().max(200).optional(),
+    fileSize: z.string().trim().max(40).optional()
+  })
+  .strict();
+
+/**
+ * POST /hr/vacancies.
+ *
+ * `status` takes the same corrected seven-value pipeline as
+ * updateVacancySchema (entityUpdate.schemas.ts) — both schemas now agree
+ * with RegistrarHR.tsx, which is the point.
+ */
+export const vacancyCreateSchema = z
+  .object({
+    position: text(2, 160),
+    department: text(2, 160),
+    type: z.enum(['teaching', 'non_teaching']),
+    sanctioned: z.coerce.number().int().min(0).max(10000).optional(),
+    filled: z.coerce.number().int().min(0).max(10000).optional(),
+    status: z.enum([
+      'advertised',
+      'applications_received',
+      'shortlisted',
+      'interview_scheduled',
+      'selected',
+      'joined',
+      'closed'
+    ]).optional(),
+    postedAt: isoDate.optional(),
+    lastDate: isoDate.optional(),
+    applicants: z.coerce.number().int().min(0).max(1000000).optional()
+  })
+  .strict();
+
+/** POST /hr/promotions/forward. */
+export const promotionForwardSchema = z
+  .object({
+    name: text(2, 160),
+    fromDesignation: text(2, 120),
+    toDesignation: text(2, 120),
+    department: text(2, 160),
+    years: z.coerce.number().min(0).max(60).optional()
   })
   .strict();
