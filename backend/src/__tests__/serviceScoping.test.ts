@@ -444,9 +444,14 @@ describe('mutate() is scoped by construction', () => {
  * every unvalidated write in the codebase — 28 more existed outside it
  * (`admin.ts` 4, `auth.ts` 1, `finance.ts` 3, `registrar.ts` 5, `security.ts`
  * 14, `uploads.ts` 1), found by running this exact check across every route
- * file. A follow-up sweep is closing these; `auth.ts` and `uploads.ts` are
- * done and have moved into COMPLETED_FILES above. The rest remain in the
- * `outside` map below until each is closed the same way.
+ * file. The follow-up sweep that closed these also found and fixed three
+ * live bugs it wasn't looking for: two guessed enums that had been silently
+ * rejecting real workflow transitions (`registrar.ts` verification decisions,
+ * `common/entityUpdate.schemas.ts`'s vacancy and incident status pipelines),
+ * and a guard-account creation form with no password field at all, sitting
+ * behind a backend that had stopped accepting a default one. All 28 are now
+ * closed and every file has moved into COMPLETED_FILES above; the `outside`
+ * map below is empty and stays only so a regression in any of them fails loudly.
  */
 describe('Phase 3c: every write route in the completed files is validated', () => {
   const COMPLETED_FILES = [
@@ -466,7 +471,8 @@ describe('Phase 3c: every write route in the completed files is validated', () =
     'uploads.ts',
     'finance.ts',
     'admin.ts',
-    'registrar.ts'
+    'registrar.ts',
+    'security.ts'
   ];
 
   /**
@@ -546,11 +552,12 @@ router.post('/second', authenticate, validate({ body: secondSchema }), async (re
 
   it('the 28-handler outside-scope count is not stale', () => {
     // If this drifts from the header comment, the comment is lying about the
-    // boundary of what this task closed.
+    // boundary of what this task closed. Empty now that security.ts (the last
+    // of the 28) is closed and in COMPLETED_FILES above — kept so a
+    // regression in any of these six files fails loudly instead of silently
+    // reopening a hole this test once caught.
     const routesDirPath = routesDir();
-    const outside: Record<string, number> = {
-      'security.ts': 14
-    };
+    const outside: Record<string, number> = {};
     for (const [file, expected] of Object.entries(outside)) {
       const src = stripComments(readFileSync(join(routesDirPath, file), 'utf8'));
       const actual = unvalidatedBodyRoutes(src).length;

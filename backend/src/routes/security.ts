@@ -19,6 +19,22 @@ import {
   supportTicketCreateSchema,
   vigilanceCaseCreateSchema
 } from '../modules/common/legacyWrite.schemas.js';
+import {
+  visitorCreateSchema,
+  visitorUpdateSchema,
+  incidentCreateSchema,
+  patrolCreateSchema,
+  patrolUpdateSchema,
+  guardCreateSchema,
+  guardUpdateSchema,
+  guardDutySchema,
+  idCardCreateSchema,
+  idCardUpdateSchema,
+  vehiclePassCreateSchema,
+  vehiclePassUpdateSchema,
+  vigilanceCaseUpdateSchema,
+  supportTicketUpdateSchema
+} from '../modules/security/security.schemas.js';
 
 const router = Router();
 
@@ -60,12 +76,9 @@ router.get('/visitors', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/visitors', authenticate, async (req: Request, res: Response) => {
+router.post('/visitors', authenticate, validate({ body: visitorCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { visitorName, purpose, hostName, checkInTime, status } = req.body || {};
-    if (!visitorName || !purpose || !hostName) {
-      return res.status(400).json({ success: false, message: 'visitorName, purpose, and hostName are required' });
-    }
 
     const visitor = await prisma.visitorPass.create({
       data: {
@@ -83,7 +96,7 @@ router.post('/visitors', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/visitors/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/visitors/:id', authenticate, validate({ params: z.object({ id: entityId }), body: visitorUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const { status, checkOutTime, visitorName, purpose, hostName } = req.body || {};
@@ -146,12 +159,9 @@ router.get('/incidents', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/incidents', authenticate, async (req: Request, res: Response) => {
+router.post('/incidents', authenticate, validate({ body: incidentCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { title, description, location, severity, status } = req.body || {};
-    if (!title || !description || !location || !severity) {
-      return res.status(400).json({ success: false, message: 'title, description, location, and severity are required' });
-    }
 
     const incident = await prisma.incidentReport.create({
       data: {
@@ -222,12 +232,9 @@ router.get('/patrols', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/patrols', authenticate, async (req: Request, res: Response) => {
+router.post('/patrols', authenticate, validate({ body: patrolCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { officerId, officerName, shift, patrolRoute, startTime, endTime, checkpoints, status, location } = req.body || {};
-    if (!officerId || !officerName || !shift || !patrolRoute || !startTime) {
-      return res.status(400).json({ success: false, message: 'officerId, officerName, shift, patrolRoute, and startTime are required' });
-    }
 
     const created = await prisma.patrolLog.create({
       data: {
@@ -250,7 +257,7 @@ router.post('/patrols', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/patrols/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/patrols/:id', authenticate, validate({ params: z.object({ id: entityId }), body: patrolUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const { officerId, officerName, shift, patrolRoute, startTime, endTime, checkpoints, status, location } = req.body || {};
@@ -344,12 +351,9 @@ router.get('/guards', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/guards', authenticate, async (req: Request, res: Response) => {
+router.post('/guards', authenticate, validate({ body: guardCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { name, email, password, designation, campus } = req.body || {};
-    if (!name || !email) {
-      return res.status(400).json({ success: false, message: 'name and email are required' });
-    }
 
     const existing = await prisma.user.findUnique({ where: { email: String(email) } });
     if (existing) {
@@ -415,7 +419,7 @@ router.post('/guards', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/guards/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/guards/:id', authenticate, validate({ params: z.object({ id: entityId }), body: guardUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const { name, email, designation, campus } = req.body || {};
@@ -460,14 +464,10 @@ router.put('/guards/:id', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/guards/:id/duty', authenticate, async (req: Request, res: Response) => {
+router.put('/guards/:id/duty', authenticate, validate({ params: z.object({ id: entityId }), body: guardDutySchema }), async (req: Request, res: Response) => {
   try {
     const officerId = String(req.params.id);
     const { shift, patrolRoute, location, status, startTime, endTime } = req.body || {};
-
-    if (!shift || !patrolRoute) {
-      return res.status(400).json({ success: false, message: 'shift and patrolRoute are required' });
-    }
 
     const guard = await prisma.user.findUnique({
       where: { id: officerId },
@@ -545,13 +545,10 @@ router.get('/id-cards', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/id-cards', authenticate, async (req: Request, res: Response) => {
+router.post('/id-cards', authenticate, validate({ body: idCardCreateSchema }), async (req: Request, res: Response) => {
   try {
     const count = await prisma.iDCardRequest.count();
     const { applicantId, applicantName, applicantType, requestType, reason, feesPaid, documents } = req.body || {};
-    if (!applicantId || !applicantName || !applicantType) {
-      return res.status(400).json({ success: false, message: 'applicantId, applicantName, and applicantType are required' });
-    }
 
     const request = await prisma.iDCardRequest.create({
       data: {
@@ -572,7 +569,7 @@ router.post('/id-cards', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/id-cards/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/id-cards/:id', authenticate, validate({ params: z.object({ id: entityId }), body: idCardUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const userId = String((req as any).user.id || 'system');
@@ -640,7 +637,7 @@ router.get('/vehicle-passes', authenticate, async (req: Request, res: Response) 
   }
 });
 
-router.post('/vehicle-passes', authenticate, async (req: Request, res: Response) => {
+router.post('/vehicle-passes', authenticate, validate({ body: vehiclePassCreateSchema }), async (req: Request, res: Response) => {
   try {
     const count = await prisma.vehiclePass.count();
     const {
@@ -657,10 +654,6 @@ router.post('/vehicle-passes', authenticate, async (req: Request, res: Response)
       feesPaid,
       documents
     } = req.body || {};
-
-    if (!ownerName || !ownerType || !ownerIdNumber || !vehicleType || !vehicleNumber || !validFrom || !validUntil || !parkingZone) {
-      return res.status(400).json({ success: false, message: 'ownerName, ownerType, ownerIdNumber, vehicleType, vehicleNumber, validFrom, validUntil, and parkingZone are required' });
-    }
 
     const pass = await prisma.vehiclePass.create({
       data: {
@@ -686,7 +679,7 @@ router.post('/vehicle-passes', authenticate, async (req: Request, res: Response)
   }
 });
 
-router.put('/vehicle-passes/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/vehicle-passes/:id', authenticate, validate({ params: z.object({ id: entityId }), body: vehiclePassUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const {
@@ -784,7 +777,7 @@ router.post('/vigilance-cases', authenticate,
   }
 });
 
-router.put('/vigilance-cases/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/vigilance-cases/:id', authenticate, validate({ params: z.object({ id: entityId }), body: vigilanceCaseUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const {
@@ -876,7 +869,7 @@ router.post('/support-tickets', authenticate,
   }
 });
 
-router.put('/support-tickets/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/support-tickets/:id', authenticate, validate({ params: z.object({ id: entityId }), body: supportTicketUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const {

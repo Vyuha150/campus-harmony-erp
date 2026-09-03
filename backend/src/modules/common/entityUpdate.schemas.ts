@@ -211,7 +211,10 @@ export const updateIncidentSchema = nonEmpty(
       description: text(1, 8000).optional(),
       location: text(2, 200).optional(),
       severity: z.enum(['low', 'medium', 'high', 'critical']).optional(),
-      status: z.enum(['pending', 'investigating', 'resolved', 'closed']).optional()
+      // Was `'investigating'` — a value SecurityDashboard.tsx has never sent.
+      // The "Log Incident" dialog's real status options are pending/open/
+      // under_investigation, and the two action buttons send resolved/closed.
+      status: z.enum(['pending', 'open', 'under_investigation', 'resolved', 'closed']).optional()
     })
     // `reportedAt` is when it happened. An incident whose timestamp can be moved
     // is not evidence of anything.

@@ -100,6 +100,7 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
   const [guardForm, setGuardForm] = useState({
     name: '',
     email: '',
+    password: '',
     designation: 'Security Guard',
     campus: '',
   });
@@ -467,8 +468,8 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
   };
 
   const createGuard = async () => {
-    if (!guardForm.name.trim() || !guardForm.email.trim()) {
-      toast({ title: 'Missing details', description: 'Guard name and email are required.', variant: 'destructive' });
+    if (!guardForm.name.trim() || !guardForm.email.trim() || !guardForm.password.trim()) {
+      toast({ title: 'Missing details', description: 'Guard name, email, and password are required.', variant: 'destructive' });
       return;
     }
 
@@ -477,11 +478,12 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
       const created = await postApi('/security/guards', {
         name: guardForm.name.trim(),
         email: guardForm.email.trim(),
+        password: guardForm.password,
         designation: guardForm.designation.trim() || 'Security Guard',
         campus: guardForm.campus.trim() || null,
       });
       setGuards((prev: any[]) => [created, ...prev]);
-      setGuardForm({ name: '', email: '', designation: 'Security Guard', campus: '' });
+      setGuardForm({ name: '', email: '', password: '', designation: 'Security Guard', campus: '' });
       setIsGuardDialogOpen(false);
       toast({ title: 'Guard added', description: 'Guard roster updated successfully.' });
     } catch (error: any) {
@@ -1035,6 +1037,10 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
                     <div>
                       <Label htmlFor="guard-email">Email</Label>
                       <Input id="guard-email" value={guardForm.email} onChange={(e) => setGuardForm((prev) => ({ ...prev, email: e.target.value }))} />
+                    </div>
+                    <div>
+                      <Label htmlFor="guard-password">Password</Label>
+                      <Input id="guard-password" type="password" value={guardForm.password} onChange={(e) => setGuardForm((prev) => ({ ...prev, password: e.target.value }))} placeholder="Set the guard's initial password" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
