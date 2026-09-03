@@ -61,6 +61,9 @@ export default function SportsInventory() {
     const quantity = Number(form.quantity);
     const unitPrice = Number(form.unitPrice);
     try {
+      // `totalValue` is deliberately not sent: createInventorySchema/
+      // updateInventorySchema (backend) derive it from quantity x unitPrice
+      // and reject a caller-supplied one outright.
       await postApi('/sports/inventory', {
         itemName: form.itemName.trim(),
         category: form.category,
@@ -68,7 +71,6 @@ export default function SportsInventory() {
         quantity,
         availableQuantity: quantity,
         unitPrice,
-        totalValue: quantity * unitPrice,
         condition: form.condition,
         location: form.location.trim()
       });
@@ -92,7 +94,6 @@ export default function SportsInventory() {
         quantity: Number(item.quantity),
         availableQuantity: nextAvailable,
         unitPrice: Number(item.unitPrice),
-        totalValue: Number(item.totalValue),
         condition: item.condition,
         purchaseDate: item.purchaseDate || null,
         lastMaintenance: item.lastMaintenance || null,
