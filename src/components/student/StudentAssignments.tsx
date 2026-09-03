@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { UploadField } from '@/components/ui/upload-field';
 import { fetchApi, postApi, uploadApi } from '@/lib/apiService';
@@ -46,7 +45,6 @@ export default function StudentAssignments() {
   const [selectedSemester, setSelectedSemester] = useState<string>('');
   const [semesterOptions, setSemesterOptions] = useState<number[]>([]);
   const [submissionFiles, setSubmissionFiles] = useState<Record<string, File | null>>({});
-  const [submissionComments, setSubmissionComments] = useState<Record<string, string>>({});
   const [submittingId, setSubmittingId] = useState<string | null>(null);
 
   const loadAssignments = async (semester?: string) => {
@@ -150,10 +148,12 @@ export default function StudentAssignments() {
         return;
       }
 
-      await postApi(`/students/assignments/${assignment.id}/submit`, {
-        fileUrl,
-        comment: submissionComments[assignment.id] || ''
-      });
+      // `comment` is not sent: the Submission model has no column for it and
+      // the faculty grading view never displayed one, so it was collected and
+      // discarded. The input has been removed rather than left promising
+      // delivery "for the faculty"; adding real submission comments
+      // end-to-end is filed as a follow-up.
+      await postApi(`/students/assignments/${assignment.id}/submit`, { fileUrl });
 
       setAssignments((prev) => prev.map((item) => (
         item.id === assignment.id
@@ -328,16 +328,6 @@ export default function StudentAssignments() {
                           setSubmissionFiles((prev) => ({ ...prev, [assignment.id]: selectedFile }));
                         }}
                       />
-                      <div className="space-y-2">
-                        <Label>Comments (Optional)</Label>
-                        <Textarea
-                          placeholder="Add any comments for the faculty..."
-                          value={submissionComments[assignment.id] || ''}
-                          onChange={(event) => {
-                            setSubmissionComments((prev) => ({ ...prev, [assignment.id]: event.target.value }));
-                          }}
-                        />
-                      </div>
                       <Button
                         className="w-full"
                         onClick={() => handleSubmitAssignment(assignment)}

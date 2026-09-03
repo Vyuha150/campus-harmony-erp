@@ -79,10 +79,12 @@ export default function RegistrarQueries() {
     }
     try {
       setIsResponding(true);
+      // `respondedAt` is not sent: verificationDecisionSchema refuses it, and
+      // decideRequest() already stamps it server-side whenever a `response` is
+      // supplied. Sending it rejected every verification response.
       await putApi(`/registrar/verifications/${selectedRequest.id}`, {
         status: 'responded',
-        response,
-        respondedAt: new Date()
+        response
       });
       setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: 'responded' as const, respondedAt: new Date(), response } : r));
       toast({ title: 'Response Sent', description: `Verification response sent to ${selectedRequest.requesterOrg}.` });

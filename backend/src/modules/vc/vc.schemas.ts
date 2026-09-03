@@ -54,7 +54,12 @@ export const vcMeetingCreateSchema = z
     time: trimmed(20),
     venue: trimmed(200),
     agendaItems: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional(),
-    attendees: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional()
+    attendees: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional(),
+    // `documents` was missing while its two siblings were accepted, even
+    // though Meeting has the column and VCMeetings.tsx sends all three.
+    // `status` stays out: Meeting.status defaults to "upcoming", which is the
+    // only value that screen ever sent.
+    documents: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional()
   })
   .strict();
 

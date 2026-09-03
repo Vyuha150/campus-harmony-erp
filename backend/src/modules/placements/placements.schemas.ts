@@ -157,9 +157,20 @@ export const trainingUpdateSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update.' });
 
 /** POST /reports/generate. */
+/**
+ * POST /reports/generate.
+ *
+ * `period` and `notes` are real inputs PlacementTraining.tsx collects (a
+ * period selector and a notes textarea) and sent on two of its three report
+ * buttons — both rejected by a schema that accepted only `type`. Accepted
+ * here for the same reason financeReportGenerateSchema accepts
+ * startDate/endDate: they are what the screen actually sends.
+ */
 export const placementReportGenerateSchema = z
   .object({
-    type: optionalTrimmed(60)
+    type: optionalTrimmed(60),
+    period: optionalTrimmed(60),
+    notes: optionalTrimmed(4000)
   })
   .strict();
 

@@ -202,7 +202,7 @@ export default function VCMeetings() {
         date: new Date(newMeetingDate),
         time: newMeetingTime || '10:00 AM',
         venue: newMeetingVenue || 'TBD',
-        status: 'upcoming',
+        // `status` is not sent: Meeting.status already defaults to "upcoming".
         agendaItems: [],
         attendees: ['Vice Chancellor', 'Pro-VC', 'Registrar'],
         documents: [],

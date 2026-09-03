@@ -909,13 +909,21 @@ router.get('/reports/salary-bands', authenticate, async (req: Request, res: Resp
 
 router.post('/reports/generate', authenticate, validate({ body: placementReportGenerateSchema }), async (req: Request, res: Response) => {
   try {
-    const { type } = req.body;
-    const data: any = { reportType: type, generatedAt: new Date() };
+    const { type, period, notes } = req.body;
 
-    if (type === 'department_wise') {
-      const departments = await prisma.department.findMany();
-      data.departments = departments.map((d: any) => ({ name: d.name, placed: 0, total: 0 }));
-    }
+    // REMOVED: a `type === 'department_wise'` branch that listed every
+    // department with `placed: 0, total: 0` — hardcoded literals, not counts
+    // of anything. No caller sends that type (the three report buttons send
+    // training_attendance, internship_completion and a free-text
+    // performance type), so it was dead code whose only output was fabricated
+    // placement figures. Real per-department placement counts belong in a
+    // reporting implementation that reads placement records, not here.
+    const data: any = {
+      reportType: type,
+      ...(period !== undefined ? { period } : {}),
+      ...(notes !== undefined ? { notes } : {}),
+      generatedAt: new Date()
+    };
 
     res.json({ success: true, data });
   } catch (error: any) {

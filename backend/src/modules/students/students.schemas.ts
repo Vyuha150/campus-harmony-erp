@@ -29,13 +29,23 @@ export const semesterQuery = studentPage.extend({
 });
 
 /** Submitting an assignment. */
+/**
+ * POST /assignments/:id/submit.
+ *
+ * Was `{ content, attachments }` — neither of which the handler reads nor the
+ * `Submission` model has a column for — while omitting `fileUrl`, the one
+ * field the handler REQUIRES (`if (!fileUrl) return 400`) and the only
+ * content column on the model. The schema and the handler were describing two
+ * different endpoints, so every submission was rejected before reaching the
+ * check that would have accepted it.
+ *
+ * `marks`, `grade`, `feedback` and `status` stay out: they are the assessor's,
+ * not the submitter's. A student who can post `marks` grades their own work.
+ */
 export const submitAssignmentSchema = z
   .object({
-    content: z.string().trim().max(50_000).optional(),
-    attachments: z.array(z.string().trim().max(500)).max(20).optional()
+    fileUrl: z.string().trim().min(1).max(2000)
   })
-  // `marks`, `grade`, `feedback` and `status` are the assessor's, not the
-  // submitter's. A student who can post `marks` grades their own work.
   .strict();
 
 /** Requesting a revaluation. */
