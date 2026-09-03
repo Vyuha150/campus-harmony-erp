@@ -286,8 +286,17 @@ export const academicYearCreateSchema = z
   .strict();
 
 
-/** SystemNotificationRecord — create. */
-// Not accepted from the caller: sentBy (server-set), readCount (server-set), totalRecipients (server-set), status.
+/**
+ * SystemNotificationRecord — create.
+ *
+ * Not accepted from the caller: sentBy (server-set), readCount (server-set),
+ * totalRecipients (server-set).
+ *
+ * `status` IS accepted, for the same reason as alumniEventLegacyCreateSchema
+ * above: AdminNotifications.tsx has "Save Draft" and "Send" buttons, and the
+ * choice between them is passed as `sendNotification('draft' | 'sent')` —
+ * excluding it rejected both buttons rather than defaulting the value.
+ */
 export const systemNotificationCreateSchema = z
   .object({
     title: z.string().trim().max(4000),
@@ -295,6 +304,7 @@ export const systemNotificationCreateSchema = z
     type: z.string().trim().max(4000).optional(),
     targetRoles: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional(),
     targetDepartments: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).nullable().optional(),
+    status: z.enum(['draft', 'scheduled', 'sent']).optional(),
     sentDate: z.coerce.date().optional(),
     scheduledDate: z.coerce.date().nullable().optional()
   })

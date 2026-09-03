@@ -52,20 +52,20 @@ export default function AdminNotifications() {
     }
 
     const targetRoles = form.audience === 'all' ? ['all'] : [form.audience];
-    const totalRecipients = targetRoles.includes('all')
-      ? 0
-      : systemNotifications.length;
 
     try {
       setSubmitting(true);
+      // `totalRecipients` and `readCount` are not sent: both are server-set
+      // (the schema refuses them, and the columns default to 0). The value
+      // previously sent for totalRecipients was `systemNotifications.length`
+      // — the number of EXISTING notifications, which is unrelated to how
+      // many people this one reaches.
       const created = await postApi('/admin/notifications', {
         title: form.title.trim(),
         message: form.message.trim(),
         type: form.type,
         targetRoles,
-        status,
-        totalRecipients,
-        readCount: 0
+        status
       });
 
       setSystemNotifications((prev: any[]) => [normalizeNotification(created), ...prev]);

@@ -65,7 +65,9 @@ export default function SportsEvents() {
         organizer: form.organizer.trim(),
         participants: [],
         results: [],
-        status: 'planning'
+        // `status` is not sent: sportsEventCreateSchema refuses it, and
+        // SportsEvent.status already defaults to "planning" — the exact value
+        // this hardcoded. Sending it rejected every event creation.
       });
       setForm({
         name: '',
