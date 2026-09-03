@@ -113,11 +113,12 @@ export default function SportsAthletes() {
     }
   };
 
+  // `studentId`, `studentName`, `rollNumber` and `program` are deliberately
+  // NOT sent: updateAthleteSchema (entityUpdate.schemas.ts) excludes them —
+  // they come from the linked student record, and editing them here would
+  // let the roster disagree with the register. A `.strict()` schema rejected
+  // every update that included them, which every caller of this function did.
   const toAthletePayload = (item: any) => ({
-    studentId: item.studentId,
-    studentName: item.studentName,
-    rollNumber: item.rollNumber,
-    program: item.program,
     year: Number(item.year),
     email: item.email,
     phone: item.phone,
@@ -169,7 +170,6 @@ export default function SportsAthletes() {
     try {
       const updated = await putApi(`/sports/athletes/${athlete.id}`, {
         ...toAthletePayload(athlete),
-        program: editForm.program.trim() || athlete.program,
         year: Number(editForm.year),
         phone: editForm.phone.trim() || athlete.phone,
         status: editForm.status
@@ -395,7 +395,8 @@ export default function SportsAthletes() {
             <div className="grid gap-4 py-2">
               <div>
                 <Label>Program</Label>
-                <Input value={editForm.program} onChange={(e) => setEditForm((prev) => ({ ...prev, program: e.target.value }))} />
+                <Input value={editForm.program} disabled readOnly />
+                <p className="mt-1 text-xs text-muted-foreground">Comes from the student record, not editable here.</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
