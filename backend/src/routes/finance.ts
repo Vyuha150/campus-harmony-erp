@@ -230,9 +230,21 @@ router.put('/tasks/:id', authenticate, validate({ body: decideTaskSchema }), asy
       });
       return;
     }
+    // `note` is accepted by decideTaskSchema but was never written anywhere —
+    // FinanceDashboard.tsx doesn't send one today, so this was silent rather
+    // than a 400, but the same gap was live-breaking on the identical HOD and
+    // VC routes (both also ApprovalItem decisions) once their frontends sent
+    // one. Wired to decisionNote now for consistency, before this one grows
+    // a caller that needs it.
+    const note = req.body.note;
     const changed = await prisma.approvalItem.updateMany({
       where: { id, status: 'pending' },
-      data: { status, decidedBy: getTenantContext(req).userId, decidedAt: new Date() }
+      data: {
+        status,
+        decidedBy: getTenantContext(req).userId,
+        decidedAt: new Date(),
+        decisionNote: typeof note === 'string' ? note.slice(0, 500) : null
+      }
     });
     if (changed.count === 0) {
       res.status(404).json({
