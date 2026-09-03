@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.js';
 import { hashPassword } from '../lib/password.js';
-import { ValidationError, NotFoundError , sendError} from '../lib/errors.js';
+import { NotFoundError, sendError } from '../lib/errors.js';
 import { recordFromRequest } from '../lib/audit.js';
 import * as adminService from '../modules/admin/admin.service.js';
 import {
@@ -18,6 +18,7 @@ import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { entityId } from '../schemas/common.js';
 import { updateTenantEntity } from '../modules/common/entityUpdate.service.js';
+import { deleteTenantEntity } from '../modules/common/entityDelete.service.js';
 import {
   updateCourseSchema
 } from '../modules/common/entityUpdate.schemas.js';
@@ -25,6 +26,12 @@ import {
   academicYearCreateSchema,
   systemNotificationCreateSchema
 } from '../modules/common/legacyWrite.schemas.js';
+import {
+  adminUserCreateSchema,
+  adminUserUpdateSchema,
+  academicYearUpdateSchema,
+  adminCourseCreateSchema
+} from '../modules/admin/admin.schemas.js';
 
 const router = Router();
 const db: any = prisma;
@@ -107,14 +114,10 @@ router.get('/users', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/users', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/users', authenticate, validate({ body: adminUserCreateSchema }), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const ctx = getTenantContext(req);
-    const { name, email, password, role, departmentId, designation } = req.body ?? {};
-
-    if (!name || !email || !role) {
-      throw new ValidationError('name, email and role are required.');
-    }
+    const { name, email, password, role, departmentId, designation } = req.body;
 
     // Previously: `bcrypt.hash(password || 'password123', 10)` — omitting the
     // password silently created a real account with a password published in a
@@ -158,7 +161,7 @@ router.post('/users', authenticate, async (req: Request, res: Response, next: Ne
   }
 });
 
-router.put('/users/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.put('/users/:id', authenticate, validate({ body: adminUserUpdateSchema }), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const ctx = getTenantContext(req);
     const id = String(req.params.id);
@@ -407,7 +410,7 @@ router.post('/academic-years', authenticate, authorizeRoles('dean'),
   }
 });
 
-router.put('/academic-years/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/academic-years/:id', authenticate, validate({ body: academicYearUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const payload = req.body ?? {};
@@ -610,9 +613,36 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/courses', authenticate, authorizeRoles('hod', 'dean'), async (req: Request, res: Response) => {
+router.post('/courses', authenticate, authorizeRoles('hod', 'dean'), validate({ body: adminCourseCreateSchema }), async (req: Request, res: Response) => {
   try {
+    const context = getTenantContext(req);
     const { code, name, credits, semester, departmentId, facultyId } = req.body;
+
+    // departmentId is client-supplied — Course's institutionId is injected
+    // automatically on create (it's tenant-owned), but nothing stopped a
+    // course from being created with the caller's own institutionId and a
+    // DIFFERENT institution's departmentId, which is its own integrity break
+    // even though it isn't a read leak.
+    const department = await prisma.department.findFirst({
+      where: { id: departmentId, institutionId: context.institutionId },
+      select: { id: true }
+    });
+    if (!department) {
+      res.status(404).json({ success: false, message: 'Department not found' });
+      return;
+    }
+
+    if (facultyId) {
+      const faculty = await prisma.facultyProfile.findFirst({
+        where: { id: facultyId, institutionId: context.institutionId },
+        select: { id: true }
+      });
+      if (!faculty) {
+        res.status(404).json({ success: false, message: 'Faculty not found' });
+        return;
+      }
+    }
+
     const course = await prisma.course.create({
       data: { code, name, credits, semester, departmentId, ...(facultyId && { facultyId }) }
     });
@@ -640,14 +670,37 @@ router.put(
   })
 );
 
-router.delete('/courses/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
-    await prisma.course.delete({ where: { id } });
-    res.json({ success: true, message: 'Course deleted' });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * Was `prisma.course.delete({ where: { id } })` — no audit trail, no reason,
+ * and no check for what it takes with it. Most of Course's relations cascade
+ * (CourseClass, CourseSchedule, FacultyLessonPlan, Enrollment, Examination,
+ * AttendanceSession, FeedbackForm all `onDelete: Cascade`), so this one call
+ * could silently erase a semester's enrolments, attendance and exam records.
+ * Blocked instead where a real academic record already exists — a course
+ * that has never been taught can still go.
+ */
+router.delete(
+  '/courses/:id',
+  authenticate,
+  validate({
+    params: z.object({ id: entityId }),
+    body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteTenantEntity(getTenantContext(req), {
+      model: 'course',
+      entity: 'Course',
+      module: 'academics',
+      id: String(req.params.id),
+      reason: String(req.body.reason),
+      blockers: [
+        { model: 'enrollment', foreignKey: 'courseId', describe: 'enrolments' },
+        { model: 'courseClass', foreignKey: 'courseId', describe: 'class sections' }
+      ]
+    });
+
+    res.json({ success: true, data: result });
+  })
+);
 
 export default router;
