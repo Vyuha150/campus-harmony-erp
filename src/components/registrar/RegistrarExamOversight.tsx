@@ -62,16 +62,14 @@ export default function RegistrarExamOversight() {
   const handlePublish = async (id: string) => {
     try {
       setIsPublishing(true);
-      const exam = exams.find(e => e.id === id);
-      const { totalStudents } = getSafeCounts(exam);
-      await putApi(`/registrar/exams/${id}`, {
-        status: 'published',
-        resultsPublished: true,
-        marksEntered: totalStudents
-      });
+      // Only `status` is sent: updateExamSchema refuses `resultsPublished`
+      // (the service now sets it from this very transition) and `marksEntered`
+      // (forcing it to totalStudents on publish is the fabricated
+      // progress figure Phase 3a removed).
+      await putApi(`/registrar/exams/${id}`, { status: 'published' });
       setExams(prev => prev.map(e => {
         if (e.id !== id) return e;
-        return { ...e, status: 'published' as const, resultsPublished: true, marksEntered: totalStudents };
+        return { ...e, status: 'published' as const, resultsPublished: true };
       }));
       toast({ title: 'Results Published', description: 'Results have been published and students notified.' });
       setSelectedExam(null);

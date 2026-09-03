@@ -174,7 +174,7 @@ export async function listPurchaseOrders(context: TenantContext, page: PageReque
 export async function createPurchaseOrder(
   context: TenantContext,
   input: {
-    poNumber: string; department: string; vendorId: string;
+    department: string; vendorId: string;
     expectedDelivery: string; totalAmount: number; items: Json;
   }
 ) {
@@ -190,20 +190,28 @@ export async function createPurchaseOrder(
     );
   }
 
+  // Generated here, not accepted from the caller: `poNumber` is unique per
+  // institution, and counted within this institution only so two tenants
+  // cannot collide. Matches IDC-/VP-/VIG-/TKT- elsewhere in the codebase.
+  const poCount = await basePrisma.purchaseOrder.count({
+    where: { institutionId: context.institutionId }
+  });
+  const poNumber = `PO-${(poCount + 1).toString().padStart(5, '0')}`;
+
   return mutate(
     context,
     {
       action: 'CREATE',
       module: 'finance',
       resource: (r: unknown) => `PurchaseOrder:${(r as { id: string }).id}`,
-      details: `PO ${input.poNumber} for ${input.department}, ${input.totalAmount}`,
+      details: `PO ${poNumber} for ${input.department}, ${input.totalAmount}`,
       severity: 'warning'
     },
     async (tx) =>
       tx.purchaseOrder.create({
         data: {
           institutionId: context.institutionId,
-          poNumber: input.poNumber,
+          poNumber,
           department: input.department,
           vendorId: input.vendorId,
           expectedDelivery: new Date(input.expectedDelivery),

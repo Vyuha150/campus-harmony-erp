@@ -64,7 +64,13 @@ export const createJournalEntrySchema = z
 
 export const createPurchaseOrderSchema = z
   .object({
-    poNumber: text(1, 60),
+    // `poNumber` was REQUIRED here but no caller has ever sent one —
+    // Procurement.tsx (the only one) has no field for it, so every purchase
+    // order was rejected for a missing value the UI never collected. It is
+    // now generated server-side in `createPurchaseOrder`, matching how every
+    // other numbered document in this codebase works (IDC-, VP-, VIG-, TKT-),
+    // and is deliberately not accepted from the caller: it is unique per
+    // institution, so letting a request choose it invites collisions.
     department: text(2, 160),
     vendorId: text(1, 80),
     expectedDelivery: isoDate,

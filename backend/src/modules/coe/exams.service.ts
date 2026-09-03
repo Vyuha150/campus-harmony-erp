@@ -187,6 +187,17 @@ export async function updateExam(
           ...(input.totalStudents !== undefined ? { totalStudents: input.totalStudents } : {}),
           ...(input.coordinator !== undefined ? { coordinator: input.coordinator } : {}),
           ...(input.status !== undefined ? { status: input.status } : {}),
+          // `resultsPublished` follows FROM the status reaching 'published';
+          // it is not a separate claim a caller may assert (which is why the
+          // schema refuses it). Without this, publishing through
+          // RegistrarExamOversight.tsx moved the status but left the flag
+          // false, so the exam was published and simultaneously not.
+          //
+          // `marksEntered` is deliberately NOT touched here. Forcing it to
+          // totalStudents on publish is precisely the fabrication Phase 3a
+          // removed: it made a progress figure that always read complete at
+          // the end regardless of what was actually entered.
+          ...(input.status === 'published' ? { resultsPublished: true } : {}),
           ...(input.startDate !== undefined ? { startDate: new Date(input.startDate) } : {}),
           ...(input.endDate !== undefined ? { endDate: new Date(input.endDate) } : {})
         }

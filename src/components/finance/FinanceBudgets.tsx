@@ -105,20 +105,22 @@ export default function FinanceBudgets() {
     const budgetYear = window.prompt('Budget year:', '2025-26');
     if (!budgetYear) return;
     const allocatedAmount = Number(window.prompt('Allocated amount:', '1000000') || 0);
-    const spentAmount = Number(window.prompt('Spent amount:', '0') || 0);
-    if (allocatedAmount <= 0 || spentAmount < 0) {
-      toast({ title: 'Invalid input', description: 'Allocated amount must be > 0 and spent amount >= 0.', variant: 'destructive' });
+    if (allocatedAmount <= 0) {
+      toast({ title: 'Invalid input', description: 'Allocated amount must be greater than zero.', variant: 'destructive' });
       return;
     }
 
     try {
+      // The "Spent amount" prompt that used to sit here was removed along with
+      // `spentAmount`/`utilizationPercentage`: createBudgetSchema refuses both,
+      // and createBudget() hardcodes spentAmount to 0 on a new allocation and
+      // derives utilisation from it — so the value it collected could never
+      // have been stored. Adjusting spend is what "Adjust" (PUT) is for.
       await postApi<any>('/finance/budgets', {
         department,
         category,
         budgetYear,
         allocatedAmount,
-        spentAmount,
-        utilizationPercentage: allocatedAmount > 0 ? Number(((spentAmount / allocatedAmount) * 100).toFixed(1)) : 0,
       });
       await loadBudgetData();
       toast({ title: 'Allocation created', description: 'New budget allocation added.' });
@@ -136,13 +138,12 @@ export default function FinanceBudgets() {
     }
 
     try {
-      const available = Math.max(0, allocated - spent);
-      const utilization = allocated > 0 ? Number(((spent / allocated) * 100).toFixed(1)) : 0;
+      // `availableAmount` and `utilizationPercentage` are not sent: both are
+      // DERIVED, and updateBudget() recomputes them from allocated/spent.
+      // Sending them rejected every adjustment.
       await putApi<any>(`/finance/budgets/${budget.id}`, {
         allocatedAmount: allocated,
         spentAmount: spent,
-        availableAmount: available,
-        utilizationPercentage: utilization,
       });
       await loadBudgetData();
       toast({ title: 'Budget synced', description: `${budget.department} allocation synchronized.` });

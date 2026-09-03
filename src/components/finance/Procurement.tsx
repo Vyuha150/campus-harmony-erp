@@ -97,7 +97,8 @@ export default function Procurement() {
         vendorId: chosenVendor.id,
         expectedDelivery: expected,
         totalAmount,
-        status: 'pending',
+        // `status` is not sent: createPurchaseOrder() hardcodes 'pending',
+        // which is also the column default. `poNumber` is generated there too.
         items: [
           {
             id: `itm-${Date.now()}`,
