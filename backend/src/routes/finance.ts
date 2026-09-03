@@ -27,7 +27,10 @@ import {
   updatePayrollSchema,
   disbursePayrollSchema,
   financePage,
-  payrollQuery
+  payrollQuery,
+  decideTaskSchema,
+  feePaymentStatusUpdateSchema,
+  financeReportGenerateSchema
 } from '../modules/finance/legacy.schemas.js';
 
 const router = Router();
@@ -209,7 +212,7 @@ router.get('/tasks', authenticate, async (_req: Request, res: Response) => {
   }
 });
 
-router.put('/tasks/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/tasks/:id', authenticate, validate({ body: decideTaskSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const status = String(req.body.status || 'pending');
@@ -333,7 +336,7 @@ router.get('/fee-payments', authenticate, async (req: Request, res: Response) =>
   }
 });
 
-router.put('/fee-payments/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/fee-payments/:id', authenticate, validate({ body: feePaymentStatusUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const payload: any = {};
@@ -607,7 +610,7 @@ router.get('/reports', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/reports/generate', authenticate, async (req: Request, res: Response) => {
+router.post('/reports/generate', authenticate, validate({ body: financeReportGenerateSchema }), async (req: Request, res: Response) => {
   try {
     const { type, startDate, endDate } = req.body;
     const where: any = { status: 'paid' };
@@ -641,26 +644,34 @@ router.get('/reports/catalog', authenticate, async (_req: Request, res: Response
 
 router.get('/reports/summary', authenticate, async (_req: Request, res: Response) => {
   try {
-    const [paidCount, pendingCount, budgets, journalCount] = await Promise.all([
+    // WHAT THIS REPLACES. Four fields here were never measured: `journalEntry`
+    // counts ledger postings, not reports generated, but was relabelled and
+    // returned as `reportsGenerated`. `pendingCount` — fee records awaiting
+    // payment, an accounts-receivable figure — was returned as
+    // `auditObservations`, an unrelated financial-audit concept. From that
+    // same wrong number, `pendingAuditResolutions` invented a further 40%
+    // as "resolved". `lastAuditPeriod` was the literal string 'Q4 FY 2025-26'
+    // on every load, audited or not. There is no audit-observation, audit-
+    // period, or report-generation model anywhere in this schema — none of
+    // the four can be computed today, so each is null rather than a number
+    // borrowed from a different question. `complianceScore`, likewise
+    // repurposing budget utilization as compliance, is dropped rather than
+    // relabelled: utilization isn't a proxy for compliance either.
+    const [paidCount, pendingCount] = await Promise.all([
       prisma.feeRecord.count({ where: { status: 'paid' } }),
       prisma.feeRecord.count({ where: { status: 'pending' } }),
-      prisma.budgetAllocation.findMany(),
-      prisma.journalEntry.count(),
     ]);
-
-    const utilization = budgets.length > 0
-      ? budgets.reduce((sum: number, row: any) => sum + Number(row.utilizationPercentage || 0), 0) / budgets.length
-      : 0;
 
     res.json({
       success: true,
       data: {
-        reportsGenerated: journalCount,
-        auditObservations: pendingCount,
-        pendingAuditResolutions: Math.max(0, Math.round(pendingCount * 0.4)),
-        lastAuditPeriod: 'Q4 FY 2025-26',
-        complianceScore: `${Math.max(0, Math.min(100, Math.round(utilization)))}%`,
+        reportsGenerated: null,
+        auditObservations: null,
+        pendingAuditResolutions: null,
+        lastAuditPeriod: null,
+        complianceScore: null,
         paidCount,
+        pendingCount,
       }
     });
   } catch (error: any) {

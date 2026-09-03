@@ -168,3 +168,31 @@ export const payrollQuery = financePage.extend({
   month: z.string().trim().max(20).optional(),
   year: z.coerce.number().int().min(1900).max(2200).optional()
 });
+
+// ─── PUT /fee-payments/:id ────────────────────────────────────────────────────
+//
+// Not `updateFeePaymentSchema` above — that enum (pending/partial/paid/
+// overdue/waived) belongs to a different status vocabulary than this handler
+// actually checks (`successful`/`pending`/`failed`, matching the gateway
+// callback shape). Reusing the wrong one would accept a status the handler
+// silently does nothing with — the same "client typo becomes a no-op" defect
+// this schema exists to close, just moved to a different field.
+export const feePaymentStatusUpdateSchema = z
+  .object({
+    status: z.enum(['successful', 'pending', 'failed'])
+  })
+  .strict();
+
+// ─── POST /reports/generate ───────────────────────────────────────────────────
+
+export const financeReportGenerateSchema = z
+  .object({
+    type: text(1, 200),
+    startDate: isoDate.optional(),
+    endDate: isoDate.optional()
+  })
+  .strict()
+  .refine(
+    (v) => !v.startDate || !v.endDate || Date.parse(v.startDate) <= Date.parse(v.endDate),
+    { message: 'startDate must not be after endDate.', path: ['endDate'] }
+  );

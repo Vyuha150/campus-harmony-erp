@@ -463,7 +463,8 @@ describe('Phase 3c: every write route in the completed files is validated', () =
     // original 9 files (see the count below, which shrinks as each file joins
     // this list).
     'auth.ts',
-    'uploads.ts'
+    'uploads.ts',
+    'finance.ts'
   ];
 
   /**
@@ -547,7 +548,6 @@ router.post('/second', authenticate, validate({ body: secondSchema }), async (re
     const routesDirPath = routesDir();
     const outside: Record<string, number> = {
       'admin.ts': 4,
-      'finance.ts': 3,
       'registrar.ts': 5,
       'security.ts': 14
     };

@@ -11,12 +11,19 @@ export default function FinancialReports() {
   const [reports, setReports] = useState<any>([]);
   const [fiscalYear, setFiscalYear] = useState('2025-26');
   const { toast } = useToast();
+  // `null` for every field: there is no report-generation log, audit-
+  // observation record, or compliance-score model behind any of these yet.
+  // The backend used to fill them with unrelated counts (journal-entry count
+  // as "reports generated", pending fee records as "audit observations", a
+  // fixed 40% of that as "resolved", a literal audit-period string, and
+  // budget utilization relabelled as compliance) — all removed for the same
+  // reason: a number under the wrong label is worse than an honest blank.
   const [reportSummary, setReportSummary] = useState<any>({
-    reportsGenerated: 0,
-    auditObservations: 0,
-    pendingAuditResolutions: 0,
-    lastAuditPeriod: '-',
-    complianceScore: '0%',
+    reportsGenerated: null,
+    auditObservations: null,
+    pendingAuditResolutions: null,
+    lastAuditPeriod: null,
+    complianceScore: null,
   });
 
   useEffect(() => {
@@ -78,12 +85,12 @@ export default function FinancialReports() {
           </div>
         </div>
 
-        {/* Quick Stats */}
+        {/* Quick Stats — "N/A" where nothing has ever been recorded, rather than a number borrowed from an unrelated count. */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Reports Generated</p><p className="text-2xl font-bold text-foreground">{reportSummary.reportsGenerated}</p><p className="text-xs text-muted-foreground">This quarter</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Audit Observations</p><p className="text-2xl font-bold text-amber-600">{reportSummary.auditObservations}</p><p className="text-xs text-muted-foreground">{reportSummary.pendingAuditResolutions} pending resolution</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Last Audit</p><p className="text-2xl font-bold text-foreground">{reportSummary.lastAuditPeriod}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Compliance Score</p><p className="text-2xl font-bold text-green-600">{reportSummary.complianceScore}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Reports Generated</p><p className="text-2xl font-bold text-foreground">{reportSummary.reportsGenerated ?? 'N/A'}</p><p className="text-xs text-muted-foreground">Not yet tracked</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Audit Observations</p><p className="text-2xl font-bold text-foreground">{reportSummary.auditObservations ?? 'N/A'}</p><p className="text-xs text-muted-foreground">{reportSummary.pendingAuditResolutions == null ? 'Not yet tracked' : `${reportSummary.pendingAuditResolutions} pending resolution`}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Last Audit</p><p className="text-2xl font-bold text-foreground">{reportSummary.lastAuditPeriod ?? 'N/A'}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Compliance Score</p><p className="text-2xl font-bold text-foreground">{reportSummary.complianceScore ?? 'N/A'}</p></CardContent></Card>
         </div>
 
         {/* Report Categories */}
