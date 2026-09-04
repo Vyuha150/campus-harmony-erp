@@ -65,21 +65,29 @@ silently is worse than no gate: it is a false assurance.**
 Both are fixed and the check is blocking. `migrate diff` reports
 "No difference detected."
 
-## B. Correctness debt on the 479 legacy endpoints
+## B. Correctness debt on the legacy endpoints
 
-This is the largest body of work and the least visible.
+Re-measured 2026-09-05. This was the largest section; it is substantially closed.
 
-| # | Item | Gap | Effort |
+| # | Item | 2026-08-19 | 2026-09-05 |
 |---|---|---|---|
-| B1 | **Migrate modules to the service pattern** (T-203b) | 18 files, smallest first (`library.ts` → `hod.ts`) | XL |
-| B2 | **Validation** | 0 of 18 files validate input | L |
-| B3 | **Transactions** | 4 uses across 479 endpoints; fees/marks/enrolment are not atomic | L |
-| B4 | **Audit coverage** | 3 of 18 files; most mutations still untraceable | L |
-| B5 | **Pagination** | ~9%; unbounded queries will exhaust memory at scale | M |
-| B6 | **Object-level authz** (T-305) | Role grants module-wide access; users not bound to own records | L |
-| B7 | **History tables** (T-104) | Grades/marks/fees still mutate with no before/after | M |
-| B8 | **Foreign keys** (T-105) | ~40 reference columns still bare strings | L |
-| B9 | **Soft delete** (T-106) | Deleting a user still destroys their academic history | M |
+| B1 | Migrate modules to the service pattern | ❌ 0 of 18 | ✅ all route files use services/`mutate()` |
+| B2 | Validation | ❌ 0 of 18 files | ✅ 17 of 17 files; `.strict()` schemas throughout |
+| B3 | Transactions | ❌ 4 uses | ✅ `mutate()` writes change + audit in one transaction |
+| B4 | Audit coverage | ❌ 3 of 18 | ✅ service writes audited; extension catches the rest |
+| B5 | Pagination | ❌ ~9% | ✅ **structurally capped** — see below |
+| B6 | Object-level authz | ❌ | 🔷 tenant + campus scoping structural; per-record ownership still per-route |
+| B7 | History tables | ❌ | ✅ `GradeHistory`, audit `oldValue`/`newValue` |
+| B8 | Foreign keys | ❌ ~40 bare strings | ✅ migrations 0018/0019 + the four declared 2026-09-05 |
+| B9 | Soft delete | ❌ | ✅ `deletedAt` + structural filtering on evidence-bearing models |
+
+**B5 deserves the detail.** 260 `findMany` calls still specify no page size, but
+they are not unbounded: the tenant extension caps any unpaginated read at
+`UNPAGINATED_ROW_CAP = 1000`, reads one row past it, and **throws rather than
+truncating** — because a silently truncated read turns a correct attainment
+percentage or fee total into a plausible wrong one. `unbounded("<reason>")` is
+the explicit, greppable escape hatch. The memory ceiling holds without any
+figure ever being quietly wrong.
 
 ## C. Missing academic core — the ERP cannot yet do its central job
 
@@ -120,29 +128,21 @@ This is the largest body of work and the least visible.
 
 > Building a compliance engine before E1 means building to a vendor blog's description of the framework. Don't.
 
-## F. Scale and "self-load balancing" — stated precisely
+## F. Scale — stated precisely
 
-Auto-scaling is **infrastructure configuration**, not application code. But the application currently has **three specific defects that prevent horizontal scaling from working at all**:
+| # | Blocker | 2026-09-05 |
+|---|---|---|
+| F1 | Rate limiter is in-process | ❌ **still open.** Per-process counters, so N instances = N× the limit. Observed directly: restarting the server clears a live lockout |
+| F2 | Uploads on local disk | ✅ S3 client present |
+| F3 | No job queue | ❌ still open — reports and notifications run in-request |
 
-| # | Blocker | Why it breaks multi-instance | Fix |
-|---|---|---|---|
-| F1 | **Rate limiter is in-process** | Each instance keeps its own counters, so N instances = N× the intended limit. *Observed live this session: restarting the server cleared a lockout* | Move to Redis |
-| F2 | **Uploads on local disk** | Instance A cannot serve a file uploaded to instance B | Object storage (A5) |
-| F3 | **No job queue** | Reports/notifications run in-request; a long report holds a connection and can time out | BullMQ + worker process |
+F1 and F3 both need infrastructure (Redis, a worker process) that is not
+available in this environment, so neither has been attempted here: an
+integration that cannot be exercised cannot honestly be called done.
 
-Once those three are fixed, the app is genuinely stateless and standard autoscaling applies:
-
-```
-Load balancer → N stateless app instances (health/readiness already implemented ✅)
-                       ↓
-        PostgreSQL (primary + read replicas when measurement justifies)
-        Redis (rate limiting, cache, queue)
-        Object storage (uploads)
-```
-
-**Then, and only then**, tune from measurement: pagination and indexes first (they will deliver more than any infrastructure addition at current scale), caching only where profiling justifies it.
-
-> ⚠️ **No performance measurement has ever been taken on this system.** Every scalability statement in this repository is structural inference. Load testing is itself outstanding work.
+> ⚠️ **No performance measurement has ever been taken on this system.** Every
+> scalability statement in this repository remains structural inference. Load
+> testing is still outstanding work.
 
 ---
 
