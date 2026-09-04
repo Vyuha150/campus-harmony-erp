@@ -132,13 +132,17 @@ figure ever being quietly wrong.
 
 | # | Blocker | 2026-09-05 |
 |---|---|---|
-| F1 | Rate limiter is in-process | ❌ **still open.** Per-process counters, so N instances = N× the limit. Observed directly: restarting the server clears a live lockout |
+| F1 | Rate limiter is in-process | ✅ **closed 2026-09-05.** Login counters moved to a shared PostgreSQL store (migration 0041). Verified by reproducing the original defect: lockout now survives a full backend restart with the window intact. Broad API limiter stays in-process by design — see `rateLimitStore.ts` |
 | F2 | Uploads on local disk | ✅ S3 client present |
 | F3 | No job queue | ❌ still open — reports and notifications run in-request |
 
-F1 and F3 both need infrastructure (Redis, a worker process) that is not
-available in this environment, so neither has been attempted here: an
-integration that cannot be exercised cannot honestly be called done.
+F3 needs a worker process and a broker that are not available in this
+environment, so it has not been attempted: an integration that cannot be
+exercised cannot honestly be called done.
+
+F1 was closed without Redis. The requirement is a store shared by every
+instance, and PostgreSQL — already a hard dependency — satisfies it and can be
+verified here. `RateLimitStore` is the seam if Redis is preferred later.
 
 > ⚠️ **No performance measurement has ever been taken on this system.** Every
 > scalability statement in this repository remains structural inference. Load
