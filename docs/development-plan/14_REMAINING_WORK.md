@@ -41,11 +41,44 @@ discovered in a browser:
 |---|---|---|---|
 | A1 | Backups + tested restore | ❌ model only | ✅ `npm run backup` / `backup:verify`, exercised in CI |
 | A2 | CI pipeline | ❌ nothing enforced | ✅ 6 gates: types, tests, migrations, audit, container, build |
-| A3 | Dependency vulnerabilities | ❌ 53, 1 critical | 🔷 9, none critical — the rest need major-version bumps |
+| A3 | Dependency vulnerabilities | ❌ 53, 1 critical | 🔷 9, none critical — **each triaged below**; none reachable in this application |
 | A4 | Backend deployment target | ❌ none | 🔷 `backend/Dockerfile` + compose; **host still undecided** |
 | A5 | Object storage for uploads | ❌ local disk | ✅ S3 client present |
 
 **A4 is the one genuinely open item here, and it is a decision, not code.**
+
+### A3 — the nine remaining advisories, triaged 2026-09-05
+
+`npm audit fix` (non-forcing) took 53 to 9. Everything left reports
+"fix available via `npm audit fix --force`", and forcing it would **downgrade
+Prisma from 7.10.0 to 6.19.3 — a major version — and remove 104 packages**, to
+patch tooling that never runs in production. Each was checked for reachability
+instead:
+
+| Package | Path | Reachable here? |
+|---|---|---|
+| `mysql2` | `prisma` CLI | **No.** The Prisma CLI bundles a driver per provider; this deployment is PostgreSQL and never loads it |
+| `deepmerge-ts` | `prisma` → `@prisma/config` | **No.** CLI config loading, used for migrations. The runtime package is `@prisma/client` |
+| `esbuild` (backend) | `tsx`, `vitest` | **No.** The advisory is arbitrary file read *when running the esbuild development server*. `tsx` does not start one |
+| `esbuild` (frontend) | `vite`, `lovable-tagger` | **No.** Same advisory. Production serves the static `dist/` build; the Vite dev server is not deployed |
+| `react-router` SSR hydration | `react-router-dom` | **No.** `deserializeErrors()` is an SSR-hydration path; this is a client-only SPA with no SSR |
+| `react-router` open redirect | `react-router-dom` | **No, but check this if navigation changes.** See below |
+
+**The open redirect is the only one worth re-checking on any change.** It needs
+attacker-controlled input to reach `<Link to>` or `navigate()`. There are no
+dynamic `navigate()` targets at all, and only two dynamic `<Link to>`:
+`MODULE_LINKS` in `pages/Dashboard.tsx` (string literals), and the breadcrumb in
+`DashboardLayout.tsx`, which links only *ancestor prefixes* of the current path
+— the final segment, the only one an attacker controls, is rendered as
+`<BreadcrumbPage>` text rather than a link.
+
+**It becomes exploitable the moment anything passes user input to `navigate()`
+or `<Link to>`.** At that point take the `react-router-dom` 7.x upgrade rather
+than reasoning about it again.
+
+CI blocks on `critical` rather than `high` for this reason: every remaining item
+needs a breaking upgrade nobody can act on today, and a permanently red gate is
+one people learn to ignore.
 
 ### A6 — Migration history could not rebuild the database *(found and fixed 2026-09-05)*
 
