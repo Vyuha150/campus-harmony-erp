@@ -8,10 +8,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Award, Search, CheckCircle, Printer, Send, Package,
+  Search, CheckCircle, Send, Package,
   Eye, Download, Shield, FileText, GraduationCap
 } from 'lucide-react';
 import { fetchApi, putApi } from '@/lib/apiService';
+import { downloadCsv } from '@/lib/download';
 import { DegreeRecord } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
@@ -218,15 +219,21 @@ export default function RegistrarCertificates() {
                     </div>
                   ))}
                 </div>
+                {/* "Generate All Pending" and "Print Ready Certificates" were
+                    removed. Each fired a toast — "N certificates queued for
+                    generation", "All generated certificates sent to print
+                    queue" — with no request behind it; there is no bulk
+                    generation or print-queue endpoint in the registrar API, so
+                    nothing was queued or printed and the certificates' status
+                    never moved. "Export List" now produces a real file
+                    instead of claiming an Excel export that never happened. */}
                 <div className="flex gap-2">
-                  <Button className="gap-2" onClick={() => toast({ title: 'Bulk Generation', description: `${degrees.filter(d => d.status === 'eligible').length} certificates queued for generation.` })}>
-                    <Award className="h-4 w-4" /> Generate All Pending
-                  </Button>
-                  <Button variant="outline" className="gap-2" onClick={() => toast({ title: 'Exported', description: 'Graduand list exported as Excel.' })}>
+                  <Button variant="outline" className="gap-2" onClick={() => downloadCsv(
+                    'graduand-list.csv',
+                    ['student', 'roll_no', 'program', 'department', 'graduation_year', 'certificate_no', 'status'],
+                    (degrees as any[]).map((d) => [d.studentName, d.rollNo, d.program, d.department, d.graduationYear, d.certificateNo, d.status])
+                  )}>
                     <Download className="h-4 w-4" /> Export List
-                  </Button>
-                  <Button variant="outline" className="gap-2" onClick={() => toast({ title: 'Print Queue', description: 'All generated certificates sent to print queue.' })}>
-                    <Printer className="h-4 w-4" /> Print Ready Certificates
                   </Button>
                 </div>
               </CardContent>

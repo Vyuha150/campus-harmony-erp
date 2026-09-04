@@ -11,6 +11,7 @@ import {
   TrendingUp, Download, PieChart, Wallet, Receipt, Eye
 } from 'lucide-react';
 import { fetchApi } from '@/lib/apiService';
+import { downloadCsv } from '@/lib/download';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface DeptBudget { dept: string; allocated: number; spent: number; util: number; categories: { name: string; amount: number }[]; }
@@ -37,6 +38,26 @@ export default function VCFinance() {
   const revenueYtd = Number(financialOverview.totalRevenue || 0);
   const utilizationPct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
 
+  const handleExportSummary = () => {
+    downloadCsv(
+      'department-budgets.csv',
+      ['department', 'allocated_lakhs', 'spent_lakhs', 'utilisation_pct'],
+      deptBudgets.map((d) => [d.dept, d.allocated, d.spent, d.util])
+    );
+  };
+
+  const handleExportDept = (dept: DeptBudget) => {
+    downloadCsv(
+      `${dept.dept.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}-budget.csv`,
+      ['category', 'amount_lakhs'],
+      [
+        ...(dept.categories ?? []).map((c) => [c.name, c.amount]),
+        ['Total allocated', dept.allocated],
+        ['Total spent', dept.spent],
+      ]
+    );
+  };
+
   const chartData = financeSummary.map(row => ({
     name: row.department?.length > 12 ? row.department.slice(0, 12) + '…' : row.department,
     Budget: row.allocated || 0,
@@ -51,7 +72,10 @@ export default function VCFinance() {
             <h1 className="text-2xl font-bold text-foreground">Financial Overview</h1>
             <p className="text-muted-foreground">Institution-wide budget, revenue, and expenditure tracking</p>
           </div>
-          <Button variant="outline" className="gap-2" onClick={() => toast({ title: 'Exported', description: 'Financial summary report downloaded as PDF.' })}>
+          {/* Was a toast reading "Financial summary report downloaded as PDF"
+              with no file produced. Now a real download of the department
+              budget table rendered below. */}
+          <Button variant="outline" className="gap-2" onClick={handleExportSummary}>
             <Download className="h-4 w-4" /> Export Report
           </Button>
         </div>
@@ -229,7 +253,7 @@ export default function VCFinance() {
                   <p className="text-xs text-muted-foreground mt-1">This department has exceeded its allocated budget by ₹{(selectedDept?.spent || 0) - (selectedDept?.allocated || 0)}L. Review recommended.</p>
                 </div>
               )}
-              <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Exported', description: `${selectedDept?.dept} budget report exported.` })}>
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => selectedDept && handleExportDept(selectedDept)}>
                 <Download className="h-3 w-3" /> Export Department Report
               </Button>
             </div>

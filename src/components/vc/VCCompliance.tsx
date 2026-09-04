@@ -14,6 +14,7 @@ import {
   Download, Send, BarChart3, TrendingUp, Shield, Edit, Save
 } from 'lucide-react';
 import { fetchApi, putApi } from '@/lib/apiService';
+import { downloadCsv } from '@/lib/download';
 import { ComplianceReport, CriterionScore } from '@/types/vc';
 
 const frameworkColors: Record<string, string> = {
@@ -209,7 +210,20 @@ export default function VCCompliance() {
               }}>
                 <TrendingUp className="h-4 w-4" /> Gap Analysis
               </Button>
-              <Button variant="outline" className="gap-1" onClick={() => toast({ title: 'Report Generated', description: 'NIRF gap analysis report downloaded.' })}>
+              {/* Was a toast claiming the gap-analysis report had been
+                  downloaded; no file was produced. Now a real download of the
+                  same criteria the Gap Analysis button summarises. */}
+              <Button variant="outline" className="gap-1" onClick={() => {
+                const criteria = nirfReport?.criteria || [];
+                downloadCsv(
+                  'nirf-gap-analysis.csv',
+                  ['criterion', 'score', 'status', 'below_60'],
+                  criteria.map((c) => {
+                    const score = getNirfScore(c.id, c.score);
+                    return [c.name, score, c.status, score < 60 ? 'yes' : 'no'];
+                  })
+                );
+              }}>
                 <Download className="h-4 w-4" /> Download Report
               </Button>
             </div>

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { DepartmentFaculty } from '@/types/hod';
 import {
@@ -31,6 +32,7 @@ const availableRoles = [
 ];
 
 export default function HODFacultyManagement() {
+  const navigate = useNavigate();
   const [departmentFaculty, setDepartmentFaculty] = useState<any>([]);
   const [_apiLoading, _setApiLoading] = useState(true);
   useEffect(() => {
@@ -199,7 +201,12 @@ export default function HODFacultyManagement() {
             <Button variant="outline" onClick={() => { setRoleTarget(currentFaculty); setShowLeaveDialog(true); }}>
               <Clock className="mr-1 h-4 w-4" />Manage Leave
             </Button>
-            <Button variant="outline" onClick={() => toast({ title: 'Email Sent', description: `Message sent to ${currentFaculty.email}` })}>
+            {/* Was a toast reading "Email Sent — Message sent to <address>"
+                with no request behind it: nothing was sent and no message was
+                recorded. POST /hod/communication/messages is real, but needs a
+                subject and body this dialog does not collect, so this now
+                opens the screen that does. */}
+            <Button variant="outline" onClick={() => navigate('/hod/communication')}>
               <Send className="mr-1 h-4 w-4" />Send Message
             </Button>
           </div>

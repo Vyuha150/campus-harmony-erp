@@ -14,6 +14,7 @@ import {
   BookOpen, FileText, Mail, Phone, Calendar, MapPin, Download
 } from 'lucide-react';
 import { fetchApi } from '@/lib/apiService';
+import { downloadCsv } from '@/lib/download';
 
 interface SearchResult {
   type: string;
@@ -284,8 +285,12 @@ export default function VCGlobalAccess() {
               )}
 
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Exported', description: `Record for ${selectedRecord?.name} exported as PDF.` })}>
-                  <Download className="h-3 w-3" /> Export PDF
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => selectedRecord && downloadCsv(
+                  `record-${String(selectedRecord.name).replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.csv`,
+                  ['field', 'value'],
+                  Object.entries(selectedRecord).map(([k, v]) => [k, v === null || v === undefined ? '' : String(v)])
+                )}>
+                  <Download className="h-3 w-3" /> Export CSV
                 </Button>
               </div>
             </div>

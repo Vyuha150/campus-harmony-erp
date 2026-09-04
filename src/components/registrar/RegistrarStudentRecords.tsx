@@ -15,6 +15,7 @@ import {
   GraduationCap, Calendar, Mail, Phone, MapPin, AlertTriangle, Download
 } from 'lucide-react';
 import { fetchApi, putApi } from '@/lib/apiService';
+import { downloadCsv } from '@/lib/download';
 import { StudentRecord, RecordChangeRequest } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
@@ -238,12 +239,21 @@ export default function RegistrarStudentRecords() {
                 <div className="flex items-center gap-2 text-sm"><Users className="h-4 w-4 text-muted-foreground" /> Father: {selectedStudent?.fatherName}</div>
                 <div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-muted-foreground" /> DOB: {selectedStudent?.dob ? new Date(selectedStudent.dob).toLocaleDateString('en-IN') : 'N/A'}</div>
               </div>
+              {/* "Audit Trail" was removed: it reported "12 changes logged for
+                  this student record" — a hard-coded number, identical for
+                  every student, with no request behind it. Amendments here ARE
+                  audited server-side (registrarService.updateStudentRecord
+                  writes a warning-severity entry with before and after), but
+                  no endpoint exposes that history per student, so there was
+                  nothing to show. "Export Record" now writes a real file
+                  rather than claiming a PDF that was never produced. */}
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Exported', description: `Student record exported as PDF.` })}>
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => selectedStudent && downloadCsv(
+                  `student-${String(selectedStudent.rollNo || selectedStudent.id).replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.csv`,
+                  ['field', 'value'],
+                  Object.entries(selectedStudent).map(([k, v]) => [k, v === null || v === undefined ? '' : String(v)])
+                )}>
                   <Download className="h-3 w-3" /> Export Record
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Audit Log', description: `12 changes logged for this student record.` })}>
-                  <FileText className="h-3 w-3" /> Audit Trail
                 </Button>
               </div>
             </div>

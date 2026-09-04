@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { ClipboardList, CheckCircle, Clock, AlertTriangle, Send, Users, Calendar, FileText, Download, Plus, Pencil, Trash2 } from 'lucide-react';
 import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
+import { downloadCsv } from '@/lib/download';
 import { ExamProgress } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
@@ -198,7 +199,7 @@ export default function COEExamOversight() {
             <h1 className="text-2xl font-bold text-foreground">COE Exam Oversight</h1>
             <p className="text-muted-foreground">Monitor exam lifecycle and move completed exams to result submission.</p>
           </div>
-          <Button variant="outline" className="gap-2" onClick={() => toast({ title: 'Exported', description: 'Exam progress report downloaded.' })}>
+          <Button variant="outline" className="gap-2" onClick={() => downloadCsv('exam-progress.csv', ['exam', 'program', 'semester', 'total_students', 'marks_entered', 'results_published', 'status'], (exams as any[]).map((e) => [e.examName, e.program, e.semester, e.totalStudents, e.marksEntered, e.resultsPublished ? 'yes' : 'no', e.status]))}>
             <Download className="h-4 w-4" /> Export Report
           </Button>
         </div>
@@ -273,9 +274,12 @@ export default function COEExamOversight() {
                     <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => navigate('/coe/results')}>
                       <Send className="h-3 w-3" /> Submit Results
                     </Button>
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => toast({ title: 'Hall Tickets', description: `Hall tickets generated for ${exam.totalStudents} students.` })}>
-                      <FileText className="h-3 w-3" /> Hall Tickets
-                    </Button>
+                    {/* A "Hall Tickets" button sat here claiming "Hall tickets
+                        generated for N students". Nothing was generated: the
+                        only hall-ticket route in the API is the student-facing
+                        GET /students/examinations/hall-ticket, and no bulk
+                        issue operation exists. Removed rather than left
+                        reporting an issue that never happened. */}
                     <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-destructive" onClick={() => confirmDelete(exam)}>
                       <Trash2 className="h-3 w-3" /> Delete
                     </Button>

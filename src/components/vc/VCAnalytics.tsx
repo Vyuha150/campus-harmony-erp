@@ -12,6 +12,7 @@ import {
   BarChart3, Eye, FlaskConical, Download, TrendingUp, TrendingDown
 } from 'lucide-react';
 import { fetchApi } from '@/lib/apiService';
+import { downloadCsv } from '@/lib/download';
 import { DepartmentPerformance } from '@/types/vc';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -26,6 +27,22 @@ export default function VCAnalytics() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState<DepartmentPerformance | null>(null);
+
+  const handleExportAll = () => {
+    downloadCsv(
+      'department-analytics.csv',
+      ['department', 'pass_rate', 'placement_rate', 'research_output', 'student_satisfaction', 'faculty_count', 'student_count'],
+      (departmentPerformance as DepartmentPerformance[]).map((d) => [d.department, d.passRate, d.placementRate, d.researchOutput, d.studentSatisfaction, d.facultyCount, d.studentCount])
+    );
+  };
+
+  const handleExportDept = (d: DepartmentPerformance) => {
+    downloadCsv(
+      `${d.department.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}-analytics.csv`,
+      ['department', 'pass_rate', 'placement_rate', 'research_output', 'student_satisfaction', 'faculty_count', 'student_count'],
+      [[d.department, d.passRate, d.placementRate, d.researchOutput, d.studentSatisfaction, d.facultyCount, d.studentCount]]
+    );
+  };
   const [sortBy, setSortBy] = useState<string>('passRate');
 
   const filtered = departmentPerformance
@@ -54,7 +71,9 @@ export default function VCAnalytics() {
             <h1 className="text-2xl font-bold text-foreground">Analytics & Reports</h1>
             <p className="text-muted-foreground">Institution-wide performance analytics and department comparisons</p>
           </div>
-          <Button variant="outline" className="gap-2" onClick={() => toast({ title: 'Report Generated', description: 'Comprehensive analytics report exported as PDF.' })}>
+          {/* Was a toast claiming a PDF had been exported; no file was ever
+              produced. Now a real download of the department table below. */}
+          <Button variant="outline" className="gap-2" onClick={handleExportAll}>
             <Download className="h-4 w-4" /> Export Full Report
           </Button>
         </div>
@@ -202,7 +221,7 @@ export default function VCAnalytics() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Exported', description: `${selectedDept?.department} analytics report exported.` })}>
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => selectedDept && handleExportDept(selectedDept)}>
                 <Download className="h-3 w-3" /> Export Report
               </Button>
             </DialogFooter>

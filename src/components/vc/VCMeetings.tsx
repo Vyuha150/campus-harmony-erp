@@ -65,13 +65,22 @@ export default function VCMeetings() {
   const normalizeMeeting = (meeting: any) => ({
     ...meeting,
     date: toDate(meeting.date),
-    agendaItems: (Array.isArray(meeting.agendaItems) ? meeting.agendaItems : []).map((item: any) => ({
-      ...item,
-      actionItems: (Array.isArray(item.actionItems) ? item.actionItems : []).map((action: any) => ({
-        ...action,
-        deadline: toDate(action.deadline),
-      })),
-    })),
+    // `agendaItems` is typed AgendaItem[] but the API also returns plain
+    // strings (the seeded meetings hold ["Result analysis", "Curriculum
+    // changes"]). Spreading a string here produced a character-indexed object
+    // — {0:'R',1:'e',...} — with no title, presenter or status, which is why
+    // every screen reading item.title showed nothing. Strings are lifted into
+    // a real item instead.
+    agendaItems: (Array.isArray(meeting.agendaItems) ? meeting.agendaItems : []).map((item: any) => {
+      const base = typeof item === 'string' ? { id: item, title: item } : item;
+      return {
+        ...base,
+        actionItems: (Array.isArray(base?.actionItems) ? base.actionItems : []).map((action: any) => ({
+          ...action,
+          deadline: toDate(action.deadline),
+        })),
+      };
+    }),
     attendees: Array.isArray(meeting.attendees) ? meeting.attendees : [],
     documents: Array.isArray(meeting.documents) ? meeting.documents : [],
   });
@@ -402,9 +411,11 @@ export default function VCMeetings() {
                         <FileText className="h-4 w-4 text-muted-foreground" />
                         {doc}
                       </div>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => toast({ title: 'Opening', description: `${doc} opened in viewer.` })}>
-                        <Download className="h-3 w-3" /> Download
-                      </Button>
+                      {/* A "Download" button sat here toasting "<doc> opened in
+                          viewer". Nothing opened and nothing downloaded:
+                          Meeting.documents is a JSON array of plain names with
+                          no file or URL behind them, so there is no document
+                          to fetch. */}
                     </div>
                   ))}
                   {selectedMeeting?.documents.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No documents attached.</p>}
@@ -446,7 +457,39 @@ export default function VCMeetings() {
               <Button variant="outline" onClick={async () => {
                 if (!selectedMeeting) return;
                 try {
-                  await putApi(`/vc/meetings/${selectedMeeting.id}`, { minutes: `Minutes generated on ${new Date().toLocaleString('en-IN')}` });
+                  // Was `minutes: \`Minutes generated on ${new Date()...}\``
+                  // — a timestamp saved under the name "minutes" while the
+                  // toast reported "Draft minutes of meeting have been
+                  // generated and saved". Nothing about the meeting was
+                  // recorded. Composed from the agenda actually held: each
+                  // item, who presented it, whether it was discussed or
+                  // deferred, and the action items raised under it.
+                  const lines: string[] = [
+                    `${meetingTypeLabels[selectedMeeting.meetingType] || selectedMeeting.meetingType}: ${selectedMeeting.title}`,
+                    `Held ${new Date(selectedMeeting.date).toLocaleDateString('en-IN')} at ${selectedMeeting.time}, ${selectedMeeting.venue}`,
+                    `Present: ${(selectedMeeting.attendees || []).join(', ') || 'not recorded'}`,
+                    '',
+                  ];
+                  // `agendaItems` is typed AgendaItem[] but the API also
+                  // returns it as a plain string[] (the seeded meetings hold
+                  // ["Result analysis", "Curriculum changes"]), so both shapes
+                  // are handled — reading .title off a string produced a
+                  // minute line of "undefined (presented by undefined)".
+                  (selectedMeeting.agendaItems || []).forEach((raw: any, index: number) => {
+                    if (typeof raw === 'string') {
+                      lines.push(`${index + 1}. ${raw}`);
+                      return;
+                    }
+                    const presenter = raw?.presenter ? ` (presented by ${raw.presenter})` : '';
+                    const state = raw?.status ? ` - ${raw.status}` : '';
+                    lines.push(`${index + 1}. ${raw?.title ?? 'Untitled item'}${presenter}${state}`);
+                    (raw?.actionItems || []).forEach((action: any) => {
+                      lines.push(`   Action: ${action.task} - ${action.assignedTo}, due ${new Date(action.deadline).toLocaleDateString('en-IN')} (${action.status})`);
+                    });
+                  });
+                  if ((selectedMeeting.agendaItems || []).length === 0) lines.push('No agenda items recorded.');
+                  lines.push('', `Draft generated ${new Date().toLocaleString('en-IN')}.`);
+                  await putApi(`/vc/meetings/${selectedMeeting.id}`, { minutes: lines.join('\n') });
                   toast({ title: 'Minutes Generated', description: 'Draft minutes of meeting have been generated and saved.' });
                 } catch (error: any) {
                   toast({ title: 'Generation failed', description: error.message || 'Could not generate minutes.', variant: 'destructive' });
