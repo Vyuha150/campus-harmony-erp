@@ -9,9 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Search, Download, CheckCircle2, Clock,
-  Briefcase, MapPin, Eye, Edit, Upload, Trash2, Plus
+  Briefcase, MapPin, Eye, Upload, Plus
 } from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
+import { fetchApi, postApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 
 interface StudentProfile {
@@ -28,7 +28,8 @@ interface StudentProfile {
   section: string;
   batch: string;
   admissionYear: number;
-  resumeVerified: boolean;
+  /** null = not known. There is no resume-verification record in the schema. */
+  resumeVerified: boolean | null;
   status: 'eligible' | 'placed' | 'higher_studies' | 'entrepreneur' | 'not_interested';
   skills: string[];
   placedAt?: string;
@@ -86,10 +87,7 @@ export default function PlacementStudents() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState<StudentProfile | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<StudentDetail | null>(null);
   const [form, setForm] = useState<StudentFormState>({
     name: '',
@@ -152,7 +150,15 @@ export default function PlacementStudents() {
         section: String(student.section ?? ''),
         batch: String(student.batch ?? ''),
         admissionYear: Number(student.admissionYear ?? 0),
-        resumeVerified: Boolean(student.resumeVerified ?? true),
+        // NOT `Boolean(x ?? true)`. GET /placements/students deliberately
+        // returns `resumeVerified: null` — "there is no verification record
+        // in the schema, so the honest answer is that we do not know" — and
+        // defaulting that to true re-created, client-side, exactly the
+        // fabrication the backend had removed: every student displayed as
+        // resume-verified when nothing had verified anything.
+        resumeVerified: student.resumeVerified === null || student.resumeVerified === undefined
+          ? null
+          : Boolean(student.resumeVerified),
         status: status as StudentProfile['status'],
         skills: Array.isArray(student.skills) ? student.skills.map((skill: any) => String(skill)) : [],
         placedAt: student.placedAt ? String(student.placedAt) : undefined,
@@ -172,33 +178,6 @@ export default function PlacementStudents() {
       toast({ title: 'Unable to load students', description: error?.message || 'Please retry', variant: 'destructive' });
     });
   }, []);
-
-  const handleEditStudent = async (student: StudentProfile) => {
-    setSelectedStudent(student);
-    setForm({
-      name: student.name,
-      email: student.email,
-      rollNumber: student.rollNo,
-      program: student.program,
-      branch: student.branch,
-      semester: String(student.semester || 1),
-      section: student.section || 'A',
-      batch: student.batch || `${new Date().getFullYear()}`,
-      admissionYear: String(student.admissionYear || new Date().getFullYear()),
-      cgpa: String(student.cgpa || 0),
-    });
-    setEditOpen(true);
-  };
-
-  const handleVerifyResume = async (student: StudentProfile) => {
-    try {
-      await putApi(`/placements/students/${student.id}`, { cgpa: student.cgpa });
-      setStudents((prev) => prev.map((s) => (s.id === student.id ? { ...s, resumeVerified: true } : s)));
-      toast({ title: 'Resume verified', description: `${student.name} marked as resume verified.` });
-    } catch (error: any) {
-      toast({ title: 'Verification failed', description: error?.message || 'Unable to verify resume.', variant: 'destructive' });
-    }
-  };
 
   const handleViewStudent = async (student: StudentProfile) => {
     try {
@@ -241,7 +220,6 @@ export default function PlacementStudents() {
   };
 
   const handleOpenCreate = () => {
-    setSelectedStudent(null);
     resetForm();
     setCreateOpen(true);
   };
@@ -277,55 +255,6 @@ export default function PlacementStudents() {
     }
   };
 
-  const handleSaveEdit = async () => {
-    if (!selectedStudent) return;
-    if (!form.name.trim() || !form.email.trim() || !form.branch.trim()) {
-      toast({ title: 'Missing fields', description: 'Name, email, and branch are required.', variant: 'destructive' });
-      return;
-    }
-
-    try {
-      setSaving(true);
-      await putApi(`/placements/students/${selectedStudent.id}`, {
-        name: form.name.trim(),
-        email: form.email.trim().toLowerCase(),
-        program: form.program.trim(),
-        branch: form.branch.trim(),
-        semester: Number(form.semester || 1),
-        section: form.section.trim() || 'A',
-        batch: form.batch.trim(),
-        admissionYear: Number(form.admissionYear || new Date().getFullYear()),
-        cgpa: Number(form.cgpa || 0),
-      });
-      await loadStudents();
-      setEditOpen(false);
-      setSelectedStudent(null);
-      toast({ title: 'Student updated', description: `${form.name.trim()} profile updated.` });
-    } catch (error: any) {
-      toast({ title: 'Update failed', description: error?.message || 'Unable to update student.', variant: 'destructive' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeleteStudent = async () => {
-    if (!selectedStudent) return;
-
-    try {
-      setSaving(true);
-      await deleteApi(`/placements/students/${selectedStudent.id}`);
-      await loadStudents();
-      setDeleteOpen(false);
-      const deletedName = selectedStudent.name;
-      setSelectedStudent(null);
-      toast({ title: 'Student deleted', description: `${deletedName} has been removed.` });
-    } catch (error: any) {
-      toast({ title: 'Delete failed', description: error?.message || 'Unable to delete student.', variant: 'destructive' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleExport = () => {
     const rows = filtered.map((s) => [s.name, s.rollNo, s.program, s.branch, s.cgpa, s.status]);
     const csv = ['name,rollNo,program,branch,cgpa,status', ...rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))].join('\n');
@@ -350,7 +279,13 @@ export default function PlacementStudents() {
   const placed = students.filter(s => s.status === 'placed').length;
   const eligible = students.filter(s => s.status === 'eligible').length;
   const higherStudies = students.filter(s => s.status === 'higher_studies').length;
-  const resumePending = students.filter(s => !s.resumeVerified).length;
+  // Only students we actually know about can be counted as pending; with no
+  // verification record in the schema that is currently none of them, so this
+  // reads "—" rather than a confident 0.
+  const resumeKnown = students.filter(s => s.resumeVerified !== null);
+  const resumePending = resumeKnown.length > 0
+    ? String(resumeKnown.filter(s => !s.resumeVerified).length)
+    : '—';
 
   return (
     <DashboardLayout>
@@ -417,7 +352,9 @@ export default function PlacementStudents() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold text-foreground">{s.name}</h3>
                         {statusBadge(s.status)}
-                        {s.resumeVerified ? (
+                        {s.resumeVerified === null ? (
+                          <Badge variant="outline" className="text-muted-foreground"><Clock className="mr-1 h-3 w-3" />Resume Not Tracked</Badge>
+                        ) : s.resumeVerified ? (
                           <Badge variant="outline" className="text-green-600 border-green-300"><CheckCircle2 className="mr-1 h-3 w-3" />Resume Verified</Badge>
                         ) : (
                           <Badge variant="outline" className="text-amber-600 border-amber-300"><Clock className="mr-1 h-3 w-3" />Resume Pending</Badge>
@@ -447,10 +384,17 @@ export default function PlacementStudents() {
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    {/* Edit, Delete and "Verify Resume" were removed: all three
+                        called PUT/DELETE /placements/students/:id, which refuse
+                        by design with 403. Programme, semester and CGPA belong
+                        to the registrar and to published results, and deleting
+                        a student account from a recruitment screen would cascade
+                        away their enrolments, results, fees and library history.
+                        "Verify Resume" additionally wrote the CGPA back
+                        unchanged, which would not have meant "verified" even if
+                        the route had allowed it. To take a student out of a
+                        drive, withdraw their application. */}
                     <Button variant="ghost" size="sm" onClick={() => handleViewStudent(s)}><Eye className="mr-1 h-3 w-3" />View</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleEditStudent(s)}><Edit className="mr-1 h-3 w-3" />Edit</Button>
-                    <Button variant="outline" size="sm" onClick={() => { setSelectedStudent(s); setDeleteOpen(true); }}><Trash2 className="mr-1 h-3 w-3" />Delete</Button>
-                    {!s.resumeVerified && <Button size="sm" onClick={() => handleVerifyResume(s)}><CheckCircle2 className="mr-1 h-3 w-3" />Verify Resume</Button>}
                   </div>
                 </div>
               </CardContent>
@@ -486,31 +430,6 @@ export default function PlacementStudents() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={saving}>Cancel</Button>
               <Button onClick={handleCreateStudent} disabled={saving}>{saving ? 'Saving...' : 'Create Student'}</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Edit Student Profile</DialogTitle>
-              <DialogDescription>Update student account and placement details.</DialogDescription>
-            </DialogHeader>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div><Label>Name</Label><Input value={form.name} onChange={(e) => setFormField('name', e.target.value)} /></div>
-              <div><Label>Email</Label><Input value={form.email} onChange={(e) => setFormField('email', e.target.value)} /></div>
-              <div><Label>Roll Number</Label><Input value={form.rollNumber} disabled /></div>
-              <div><Label>Program</Label><Input value={form.program} onChange={(e) => setFormField('program', e.target.value)} /></div>
-              <div><Label>Branch</Label><Input value={form.branch} onChange={(e) => setFormField('branch', e.target.value)} /></div>
-              <div><Label>Semester</Label><Input type="number" value={form.semester} onChange={(e) => setFormField('semester', e.target.value)} /></div>
-              <div><Label>Section</Label><Input value={form.section} onChange={(e) => setFormField('section', e.target.value)} /></div>
-              <div><Label>Batch</Label><Input value={form.batch} onChange={(e) => setFormField('batch', e.target.value)} /></div>
-              <div><Label>Admission Year</Label><Input type="number" value={form.admissionYear} onChange={(e) => setFormField('admissionYear', e.target.value)} /></div>
-              <div><Label>CGPA</Label><Input type="number" step="0.01" value={form.cgpa} onChange={(e) => setFormField('cgpa', e.target.value)} /></div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>Cancel</Button>
-              <Button onClick={handleSaveEdit} disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -567,20 +486,6 @@ export default function PlacementStudents() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete Student</DialogTitle>
-              <DialogDescription>
-                This will remove {selectedStudent?.name || 'this student'} and their placement profile.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={saving}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDeleteStudent} disabled={saving}>{saving ? 'Deleting...' : 'Delete'}</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </DashboardLayout>
   );
