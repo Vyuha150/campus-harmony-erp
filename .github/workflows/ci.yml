@@ -54,12 +54,17 @@ jobs:
         working-directory: backend
         run: npx tsc --noEmit
 
-      # Frontend still has known errors (22 at last count). Reported, not
-      # blocking, so the gate can be enabled without stalling all work — see
-      # docs/development-plan/07_FRONTEND_IMPLEMENTATION_PLAN.md F-02.
-      - name: Typecheck frontend (non-blocking)
-        continue-on-error: true
-        run: npx tsc --noEmit -p tsconfig.app.json
+      # Now BLOCKING. It was non-blocking while ~22 known errors were
+      # outstanding; those are cleared and the project sits at zero.
+      #
+      # Note the explicit `-p tsconfig.app.json`. The root tsconfig.json holds
+      # `"files": []` and only project references, so a bare `tsc --noEmit`
+      # compiles NOTHING and exits 0 no matter what is broken — and `vite build`
+      # transpiles with esbuild without typechecking either. A bare invocation
+      # here would be a gate that can never fail. `npm run typecheck` wraps the
+      # correct command.
+      - name: Typecheck frontend
+        run: npm run typecheck
 
   # ── Gate 2: tests ───────────────────────────────────────────────────────────
   test:
@@ -139,18 +144,29 @@ jobs:
       # `migrate diff --exit-code` returns 2 when the schema and the migration
       # history disagree — i.e. someone edited schema.prisma without generating
       # a migration.
+      # This gate NEVER RAN. `--shadow-database-url` is not an option on
+      # `prisma migrate diff` in this Prisma version, so the command exited on a
+      # usage error every time — and `continue-on-error: true` swallowed it, so
+      # the step reported success while checking nothing. The shadow database
+      # comes from prisma.config.ts, which already reads SHADOW_DATABASE_URL.
+      #
+      # Once it actually ran it immediately found real drift: four tables whose
+      # foreign keys and indexes exist in the migrations but were never declared
+      # in schema.prisma, so the next `migrate dev` would have generated a
+      # migration DROPPING them. Now blocking.
+      - name: Create shadow database for the drift check
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres             -c "CREATE DATABASE campus_harmony_ci_shadow;"
+
       - name: Assert schema matches migration history
         working-directory: backend
+        env:
+          SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campus_harmony_ci_shadow
         run: |
-          npx prisma migrate diff \
-            --from-migrations prisma/migrations \
-            --to-schema prisma/schema.prisma \
-            --shadow-database-url "$DATABASE_URL" \
-            --exit-code && echo "Schema and migrations are in sync." || {
+          npx prisma migrate diff             --from-migrations prisma/migrations             --to-schema prisma/schema.prisma             --exit-code && echo "Schema and migrations are in sync." || {
               echo "::error::schema.prisma has changes with no corresponding migration."
               exit 1
             }
-        continue-on-error: true
 
       - name: Seed (proves the seed still runs against a fresh schema)
         working-directory: backend
@@ -181,15 +197,22 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      # Blocks on CRITICAL only for now. 53 vulnerabilities are open (A3); once
-      # triaged, tighten this to --audit-level=high.
+      # The 53 vulnerabilities that justified a critical-only gate are down to
+      # 5 backend / 4 frontend, none critical, after `npm audit fix` (the
+      # non-forcing form — only semver-compatible upgrades, with typecheck,
+      # tests and build verified after). What remains needs major-version bumps
+      # (`--force`), which is a deliberate upgrade, not a CI action.
+      #
+      # Still blocking on critical rather than high: tightening to `high` today
+      # would fail the build on transitive advisories nobody can act on without
+      # that breaking upgrade, and a permanently red gate is a gate people learn
+      # to ignore. Raise this to `high` with the upgrade, not before it.
       - name: Audit backend (blocks on critical)
         working-directory: backend
         run: npm audit --audit-level=critical
 
-      - name: Audit frontend (reported)
-        continue-on-error: true
-        run: npm audit --audit-level=high
+      - name: Audit frontend (blocks on critical)
+        run: npm audit --audit-level=critical
 
       # Guards against the legacy JWT fallback being reintroduced. It is in git
       # history, so it must never reappear as working code.

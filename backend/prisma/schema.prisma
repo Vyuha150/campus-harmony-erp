@@ -66,110 +66,110 @@ model Institution {
   academicYears AcademicYear[]
 
   // ── Back-relations added in 0018 ──────────────────────────────────────
-  batches                 Batch[]
-  sections                Section[]
-  studentProfiles         StudentProfile[]
-  facultyProfiles         FacultyProfile[]
-  courses                 Course[]
-  feeRecords              FeeRecord[]
-  libraryBooks            LibraryBook[]
-  libraryLoans            LibraryLoan[]
-  libraryPolicies         LibraryPolicy[]
-  feeStructures           FeeStructure[]
-  payments                Payment[]
-  receipts                Receipt[]
-  idempotencyKeys         IdempotencyKey[]
-  notificationTemplates   NotificationTemplate[]
-  notificationPolicies    NotificationPolicy[]
-  notificationDeliveries  NotificationDelivery[]
-  examSessions            ExamSession[]
-  examSchedules           ExamSchedule[]
-  examRegistrations       ExamRegistration[]
-  hallTickets             HallTicket[]
-  revaluationRequests     RevaluationRequest[]
-  curriculumSchemes       CurriculumScheme[]
-  courseBaskets           CourseBasket[]
-  schemeCourses           SchemeCourse[]
-  coursePrerequisites     CoursePrerequisite[]
-  programmeOutcomes       ProgrammeOutcome[]
-  courseOutcomes          CourseOutcome[]
-  coPoMappings            CoPoMapping[]
-  gradeScales             GradeScale[]
-  courseResults           CourseResult[]
-  semesterResults         SemesterResult[]
-  gradeHistories          GradeHistory[]
-  fileMetadatas           FileMetadata[]
-  admissionCycles         AdmissionCycle[]
-  admissionApplications   AdmissionApplication[]
-  admissionOffers         AdmissionOffer[]
-  governanceCommittees    GovernanceCommittee[]
-  committeeMeetings       CommitteeMeeting[]
-  institutionalPolicies   InstitutionalPolicy[]
-  importJobs              ImportJob[]
-  assessments             Assessment[]
-  assessmentCoMarks       AssessmentCoMark[]
-  indirectAttainments     IndirectAttainment[]
-  obeAttainmentPolicies   ObeAttainmentPolicy[]
-  approvalItems           ApprovalItem[]
-  workflowDefinitions     WorkflowDefinition[]
-  workflowInstances       WorkflowInstance[]
-  examProgress            ExamProgress[]
-  alumniEvents            AlumniEvent[]
-  alumniJobPostings       AlumniJobPosting[]
-  mentorshipPrograms      MentorshipProgram[]
+  batches                    Batch[]
+  sections                   Section[]
+  studentProfiles            StudentProfile[]
+  facultyProfiles            FacultyProfile[]
+  courses                    Course[]
+  feeRecords                 FeeRecord[]
+  libraryBooks               LibraryBook[]
+  libraryLoans               LibraryLoan[]
+  libraryPolicies            LibraryPolicy[]
+  feeStructures              FeeStructure[]
+  payments                   Payment[]
+  receipts                   Receipt[]
+  idempotencyKeys            IdempotencyKey[]
+  notificationTemplates      NotificationTemplate[]
+  notificationPolicies       NotificationPolicy[]
+  notificationDeliveries     NotificationDelivery[]
+  examSessions               ExamSession[]
+  examSchedules              ExamSchedule[]
+  examRegistrations          ExamRegistration[]
+  hallTickets                HallTicket[]
+  revaluationRequests        RevaluationRequest[]
+  curriculumSchemes          CurriculumScheme[]
+  courseBaskets              CourseBasket[]
+  schemeCourses              SchemeCourse[]
+  coursePrerequisites        CoursePrerequisite[]
+  programmeOutcomes          ProgrammeOutcome[]
+  courseOutcomes             CourseOutcome[]
+  coPoMappings               CoPoMapping[]
+  gradeScales                GradeScale[]
+  courseResults              CourseResult[]
+  semesterResults            SemesterResult[]
+  gradeHistories             GradeHistory[]
+  fileMetadatas              FileMetadata[]
+  admissionCycles            AdmissionCycle[]
+  admissionApplications      AdmissionApplication[]
+  admissionOffers            AdmissionOffer[]
+  governanceCommittees       GovernanceCommittee[]
+  committeeMeetings          CommitteeMeeting[]
+  institutionalPolicies      InstitutionalPolicy[]
+  importJobs                 ImportJob[]
+  assessments                Assessment[]
+  assessmentCoMarks          AssessmentCoMark[]
+  indirectAttainments        IndirectAttainment[]
+  obeAttainmentPolicies      ObeAttainmentPolicy[]
+  approvalItems              ApprovalItem[]
+  workflowDefinitions        WorkflowDefinition[]
+  workflowInstances          WorkflowInstance[]
+  examProgress               ExamProgress[]
+  alumniEvents               AlumniEvent[]
+  alumniJobPostings          AlumniJobPosting[]
+  mentorshipPrograms         MentorshipProgram[]
   alumniCommunicationRecords AlumniCommunicationRecord[]
-  progressionSurveys      ProgressionSurvey[]
-  institutionKPIs         InstitutionKPI[]
-  complianceReports       ComplianceReport[]
-  policyScenarios         PolicyScenario[]
-  companies               Company[]
-  facilities              Facility[]
-  teams                   Team[]
-  hostels                 Hostel[]
-  interDeptEvents         InterDeptEvent[]
-  degreeRecords           DegreeRecord[]
-  trainingSessions        TrainingSession[]
-  placementMessages       PlacementMessage[]
-  sportsEvents            SportsEvent[]
-  aqarRecords             AQARRecord[]
-  iqacActionItems         IQACActionItem[]
-  qualityDocuments        QualityDocument[]
-  iqacMeetings            IQACMeeting[]
-  systemNotificationRecords SystemNotificationRecord[]
-  journalEntries          JournalEntry[]
-  antiRaggingAffidavits   AntiRaggingAffidavit[]
-  qualityMetrics          QualityMetric[]
-  transferRequests        TransferRequest[]
-  vacancies               Vacancy[]
-  accreditationChecklists AccreditationChecklist[]
-  incidentReports         IncidentReport[]
-  sportsAthletes          SportsAthlete[]
-  sportsTeams             SportsTeam[]
-  sportsAttendance        SportsAttendance[]
-  sportsFacilities        SportsFacility[]
-  sportsInventoryItems    SportsInventoryItem[]
-  meetings                Meeting[]
-  broadcastMessages       BroadcastMessage[]
-  grievanceCases          GrievanceCase[]
-  complianceItems         ComplianceItem[]
-  vendors                 Vendor[]
-  purchaseOrders          PurchaseOrder[]
-  budgetAllocations       BudgetAllocation[]
-  payrollRecords          PayrollRecord[]
-  certificateRequests     CertificateRequest[]
-  verificationRequests    VerificationRequest[]
-  recordChangeRequests    RecordChangeRequest[]
-  promotionRequests       PromotionRequest[]
-  retirementRequests      RetirementRequest[]
-  adminDocuments          AdminDocument[]
-  gatePasses              GatePass[]
-  visitorPasses           VisitorPass[]
-  patrolLogs              PatrolLog[]
-  idCardRequests          IDCardRequest[]
-  vehiclePasses           VehiclePass[]
-  vigilanceCases          VigilanceCase[]
-  supportTickets          SupportTicket[]
-  hostelAccessLogs        HostelAccessLog[]
+  progressionSurveys         ProgressionSurvey[]
+  institutionKPIs            InstitutionKPI[]
+  complianceReports          ComplianceReport[]
+  policyScenarios            PolicyScenario[]
+  companies                  Company[]
+  facilities                 Facility[]
+  teams                      Team[]
+  hostels                    Hostel[]
+  interDeptEvents            InterDeptEvent[]
+  degreeRecords              DegreeRecord[]
+  trainingSessions           TrainingSession[]
+  placementMessages          PlacementMessage[]
+  sportsEvents               SportsEvent[]
+  aqarRecords                AQARRecord[]
+  iqacActionItems            IQACActionItem[]
+  qualityDocuments           QualityDocument[]
+  iqacMeetings               IQACMeeting[]
+  systemNotificationRecords  SystemNotificationRecord[]
+  journalEntries             JournalEntry[]
+  antiRaggingAffidavits      AntiRaggingAffidavit[]
+  qualityMetrics             QualityMetric[]
+  transferRequests           TransferRequest[]
+  vacancies                  Vacancy[]
+  accreditationChecklists    AccreditationChecklist[]
+  incidentReports            IncidentReport[]
+  sportsAthletes             SportsAthlete[]
+  sportsTeams                SportsTeam[]
+  sportsAttendance           SportsAttendance[]
+  sportsFacilities           SportsFacility[]
+  sportsInventoryItems       SportsInventoryItem[]
+  meetings                   Meeting[]
+  broadcastMessages          BroadcastMessage[]
+  grievanceCases             GrievanceCase[]
+  complianceItems            ComplianceItem[]
+  vendors                    Vendor[]
+  purchaseOrders             PurchaseOrder[]
+  budgetAllocations          BudgetAllocation[]
+  payrollRecords             PayrollRecord[]
+  certificateRequests        CertificateRequest[]
+  verificationRequests       VerificationRequest[]
+  recordChangeRequests       RecordChangeRequest[]
+  promotionRequests          PromotionRequest[]
+  retirementRequests         RetirementRequest[]
+  adminDocuments             AdminDocument[]
+  gatePasses                 GatePass[]
+  visitorPasses              VisitorPass[]
+  patrolLogs                 PatrolLog[]
+  idCardRequests             IDCardRequest[]
+  vehiclePasses              VehiclePass[]
+  vigilanceCases             VigilanceCase[]
+  supportTickets             SupportTicket[]
+  hostelAccessLogs           HostelAccessLog[]
 
   @@index([isActive])
 }
@@ -557,8 +557,9 @@ model StudentProfile {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
-  deletedBy String?
+  deletedAt         DateTime?          @db.Timestamptz(3)
+  deletedBy         String?
+  assessmentCoMarks AssessmentCoMark[]
 
   @@unique([institutionId, rollNumber])
   @@index([institutionId])
@@ -993,7 +994,7 @@ model ResearchProject {
 model Company {
   id              String           @id @default(uuid())
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
-  institutionId String
+  institutionId   String
   name            String           @unique
   industry        String
   email           String
@@ -1121,17 +1122,17 @@ model QualityMetric {
 }
 
 model InstitutionKPI {
-  id       String @id @default(uuid())
+  id            String @id @default(uuid())
   /// TENANT KEY, added in 0037. No relation to derive an owner from at all —
   /// this table was fully global, and `GET /dashboard` fabricated three KPI
   /// rows the first time it was empty with nothing to scope that check by.
   institutionId String
-  category String
-  label    String
-  value    String
-  target   String
-  trend    String
-  status   String
+  category      String
+  label         String
+  value         String
+  target        String
+  trend         String
+  status        String
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -1164,13 +1165,13 @@ model Donation {
 
 // Sports
 model Facility {
-  id       String @id @default(uuid())
+  id            String @id @default(uuid())
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
-  name     String
-  type     String
-  capacity Int
-  status   String @default("available")
+  name          String
+  type          String
+  capacity      Int
+  status        String @default("available")
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -1178,13 +1179,13 @@ model Facility {
 }
 
 model Team {
-  id          String @id @default(uuid())
+  id            String @id @default(uuid())
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
-  sport       String
-  gender      String
-  matchesWon  Int    @default(0)
-  matchesLost Int    @default(0)
+  sport         String
+  gender        String
+  matchesWon    Int    @default(0)
+  matchesLost   Int    @default(0)
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -1232,6 +1233,8 @@ model IncidentReport {
   deletedBy String?
 
   @@index([institutionId])
+  /// Declared to match migration 0035 (soft delete).
+  @@index([deletedAt])
 }
 
 // Phase 1 Additional Models //
@@ -1271,7 +1274,12 @@ model LibraryBook {
   currentLoanId String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  /// `@default(now())` declared to match migration 0012, which added a
+  /// DEFAULT CURRENT_TIMESTAMP. `@updatedAt` alone sets the value from
+  /// Prisma but emits no database default, so rows inserted by raw SQL or
+  /// a seed would violate NOT NULL. Keeping it is safer than generating a
+  /// migration that drops it.
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
 
   loans LibraryLoan[]
 
@@ -1375,14 +1383,14 @@ model LibraryPolicy {
 
 // Hostel
 model Hostel {
-  id          String             @id @default(uuid())
+  id            String             @id @default(uuid())
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
-  name        String
-  block       String
-  wardenName  String
-  wardenPhone String
-  allocations HostelAllocation[]
+  name          String
+  block         String
+  wardenName    String
+  wardenPhone   String
+  allocations   HostelAllocation[]
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -1704,17 +1712,17 @@ model DisciplinaryCase {
 
 // Dean — Inter-Departmental Events
 model InterDeptEvent {
-  id           String   @id @default(uuid())
+  id            String   @id @default(uuid())
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
-  title        String
-  type         String
-  date         DateTime @db.Timestamptz(3)
-  departments  Json
-  coordinator  String
-  budget       Float    @default(0)
-  participants Int      @default(0)
-  status       String   @default("planned")
+  title         String
+  type          String
+  date          DateTime @db.Timestamptz(3)
+  departments   Json
+  coordinator   String
+  budget        Float    @default(0)
+  participants  Int      @default(0)
+  status        String   @default("planned")
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -1768,16 +1776,16 @@ model BroadcastMessage {
 
 // VC — Compliance Reports
 model ComplianceReport {
-  id          String   @id @default(uuid())
+  id            String   @id @default(uuid())
   /// TENANT KEY, added in 0037. No relation to derive an owner from either.
   institutionId String
-  framework   String
-  title       String
-  status      String   @default("draft")
-  score       Float?
-  maxScore    Float    @default(100)
-  lastUpdated DateTime @default(now()) @db.Timestamptz(3)
-  criteria    Json?
+  framework     String
+  title         String
+  status        String   @default("draft")
+  score         Float?
+  maxScore      Float    @default(100)
+  lastUpdated   DateTime @default(now()) @db.Timestamptz(3)
+  criteria      Json?
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -1833,7 +1841,7 @@ model TransferRequest {
 model DegreeRecord {
   id                String    @id @default(uuid())
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
-  institutionId String
+  institutionId     String
   studentName       String
   rollNo            String
   program           String
@@ -2147,7 +2155,7 @@ model BudgetAllocation {
 model TrainingSession {
   id              String   @id @default(uuid())
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
-  institutionId String
+  institutionId   String
   title           String
   type            String
   instructor      String
@@ -2184,15 +2192,15 @@ model JobOffer {
 
 // Placement — Communication
 model PlacementMessage {
-  id          String   @id @default(uuid())
+  id            String   @id @default(uuid())
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
-  title       String
-  content     String
-  type        String   @default("announcement")
-  sentBy      String
-  sentAt      DateTime @default(now()) @db.Timestamptz(3)
-  targetGroup String?
+  title         String
+  content       String
+  type          String   @default("announcement")
+  sentBy        String
+  sentAt        DateTime @default(now()) @db.Timestamptz(3)
+  targetGroup   String?
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -2300,19 +2308,19 @@ model SportsInventoryItem {
 
 // Sports — Events
 model SportsEvent {
-  id           String   @id @default(uuid())
+  id            String   @id @default(uuid())
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
-  name         String
-  type         String
-  sports       Json?
-  startDate    DateTime @db.Timestamptz(3)
-  endDate      DateTime @db.Timestamptz(3)
-  venue        String
-  organizer    String
-  participants Json?
-  results      Json?
-  status       String   @default("planning")
+  name          String
+  type          String
+  sports        Json?
+  startDate     DateTime @db.Timestamptz(3)
+  endDate       DateTime @db.Timestamptz(3)
+  venue         String
+  organizer     String
+  participants  Json?
+  results       Json?
+  status        String   @default("planning")
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -2391,24 +2399,24 @@ model AlumniEvent {
 
 // Alumni — Mentorship Programs
 model MentorshipProgram {
-  id          String    @id @default(uuid())
+  id            String    @id @default(uuid())
   /// TENANT KEY, added in 0036. Missed by 0028 because nothing in alumni.ts
   /// writes this model through a raw `update({ where: { id }, data: req.body
   /// })` handler — but every GET here had no institutionId filter either, so
   /// every institution's mentorship programs were visible to every alumni
   /// officer regardless of which university they belonged to.
   institutionId String
-  title       String
-  description String
-  type        String
-  duration    String
-  maxMentees  Int
-  startDate   DateTime  @db.Timestamptz(3)
-  endDate     DateTime? @db.Timestamptz(3)
-  status      String    @default("active")
-  mentors     Json?
-  mentees     Json?
-  matches     Json?
+  title         String
+  description   String
+  type          String
+  duration      String
+  maxMentees    Int
+  startDate     DateTime  @db.Timestamptz(3)
+  endDate       DateTime? @db.Timestamptz(3)
+  status        String    @default("active")
+  mentors       Json?
+  mentees       Json?
+  matches       Json?
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -2489,7 +2497,7 @@ model ProgressionSurvey {
 model IQACActionItem {
   id                   String    @id @default(uuid())
   /// TENANT KEY, added in 0039. No relation to derive an owner from.
-  institutionId String
+  institutionId        String
   title                String
   description          String
   category             String
@@ -2513,7 +2521,7 @@ model IQACActionItem {
 model QualityDocument {
   id             String    @id @default(uuid())
   /// TENANT KEY, added in 0039. No relation to derive an owner from.
-  institutionId String
+  institutionId  String
   title          String
   criteriaNumber Int
   documentType   String
@@ -2536,7 +2544,7 @@ model QualityDocument {
 model IQACMeeting {
   id              String    @id @default(uuid())
   /// TENANT KEY, added in 0039. No relation to derive an owner from.
-  institutionId String
+  institutionId   String
   title           String
   date            DateTime  @db.Timestamptz(3)
   venue           String
@@ -2559,7 +2567,7 @@ model IQACMeeting {
 model AQARRecord {
   id                  String    @id @default(uuid())
   /// TENANT KEY, added in 0039. No relation to derive an owner from.
-  institutionId String
+  institutionId       String
   academicYear        String
   institutionDetails  Json?
   criteria            Json?
@@ -2806,6 +2814,10 @@ model VigilanceCase {
   deletedBy String?
 
   @@index([institutionId])
+  /// Declared to match migration 0035. Soft-delete filtering reads this
+  /// column on every query, so the index matters and must not be dropped by
+  /// a future migrate dev reconciling schema against database.
+  @@index([deletedAt])
 }
 
 // Security — Support Tickets
@@ -3757,12 +3769,15 @@ model CourseOutcome {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  schemeCourse SchemeCourse  @relation(fields: [schemeCourseId], references: [id], onDelete: Cascade)
-  mappings     CoPoMapping[]
+  schemeCourse        SchemeCourse         @relation(fields: [schemeCourseId], references: [id], onDelete: Cascade)
+  mappings            CoPoMapping[]
+  indirectAttainments IndirectAttainment[]
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
-  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  institution        Institution         @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  assessmentOutcomes AssessmentOutcome[]
+  assessmentCoMarks  AssessmentCoMark[]
 
   @@unique([schemeCourseId, code])
   @@index([institutionId])
@@ -4798,6 +4813,11 @@ model AssessmentOutcome {
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 
+  /// Declared to match migration 0015, which creates this constraint with
+  /// ON DELETE CASCADE. The schema did not describe it, so the next
+  /// `migrate dev` would have DROPPED a foreign key the database relies on.
+  courseOutcome CourseOutcome @relation(fields: [courseOutcomeId], references: [id], onDelete: Cascade)
+
   @@unique([assessmentId, courseOutcomeId])
   @@index([courseOutcomeId])
 }
@@ -4828,11 +4848,22 @@ model AssessmentCoMark {
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 
+  /// Declared to match migration 0015, which creates this constraint with
+  /// ON DELETE CASCADE. The schema did not describe it, so the next
+  /// `migrate dev` would have DROPPED a foreign key the database relies on.
+  courseOutcome  CourseOutcome  @relation(fields: [courseOutcomeId], references: [id], onDelete: Cascade)
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
-  @@unique([assessmentId, studentProfileId, courseOutcomeId])
+  /// `map` pins the name PostgreSQL actually gave this index. Migration
+  /// 0015 asked for "..._courseOutcomeId_key", which exceeds the 63-character
+  /// identifier limit and was truncated to "..._courseOutcomeId_". Prisma
+  /// truncates differently ("..._courseOutcom_key"), so without this the two
+  /// disagree forever and every drift check reports a phantom rename.
+  @@unique([assessmentId, studentProfileId, courseOutcomeId], map: "AssessmentCoMark_assessmentId_studentProfileId_courseOutcomeId_")
   @@index([institutionId])
   @@index([studentProfileId])
   @@index([courseOutcomeId])
@@ -4863,7 +4894,11 @@ model IndirectAttainment {
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
-  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  /// Declared to match migration 0015, which creates this constraint with
+  /// ON DELETE CASCADE. The schema did not describe it, so the next
+  /// `migrate dev` would have DROPPED a foreign key the database relies on.
+  courseOutcome CourseOutcome @relation(fields: [courseOutcomeId], references: [id], onDelete: Cascade)
 
   @@unique([courseOutcomeId, academicYear, source])
   @@index([institutionId])
@@ -5035,6 +5070,8 @@ model WorkflowInstance {
   approvalItems ApprovalItem[]
 
   @@index([institutionId])
+  /// Declared to match migration 0032.
+  @@index([escalatedAt])
   @@index([status])
   @@index([entityType, entityId])
   @@index([institutionId, status])
