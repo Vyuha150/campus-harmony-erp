@@ -334,10 +334,16 @@ export default function VCMeetings() {
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{selectedMeeting?.title}</DialogTitle>
+              {/* The status Badge used to sit INSIDE DialogDescription.
+                  DialogDescription renders Radix's <p> and Badge renders a
+                  <div>, so this was a <div> inside a <p> — invalid HTML that
+                  React warns about on every open, and which the browser fixes
+                  by silently closing the paragraph early. Moved out to a
+                  sibling. */}
               <DialogDescription>
                 {selectedMeeting && meetingTypeLabels[selectedMeeting.meetingType]} • {selectedMeeting?.date.toLocaleDateString('en-IN')} at {selectedMeeting?.time}
-                <Badge className={`ml-2 text-[10px] ${statusColors[selectedMeeting?.status || 'upcoming']}`}>{selectedMeeting?.status?.replace('_', ' ')}</Badge>
               </DialogDescription>
+              <Badge className={`w-fit text-[10px] ${statusColors[selectedMeeting?.status || 'upcoming']}`}>{selectedMeeting?.status?.replace('_', ' ')}</Badge>
             </DialogHeader>
 
             <Tabs defaultValue="agenda">
@@ -356,9 +362,19 @@ export default function VCMeetings() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-mono text-muted-foreground">{idx + 1}.</span>
                           <p className="text-sm font-medium">{item.title}</p>
-                          <Badge variant={item.status === 'discussed' ? 'default' : item.status === 'deferred' ? 'destructive' : 'outline'} className="text-[10px]">{item.status}</Badge>
+                          {item.status && (
+                            <Badge variant={item.status === 'discussed' ? 'default' : item.status === 'deferred' ? 'destructive' : 'outline'} className="text-[10px]">{item.status}</Badge>
+                          )}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">Presenter: {item.presenter} • Duration: {item.duration}</p>
+                        {/* Agenda items that arrive as plain strings carry no
+                            presenter, duration or status, so these labels
+                            rendered as a bare "Presenter: • Duration:". Shown
+                            only when there is something to show. */}
+                        {(item.presenter || item.duration) && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {[item.presenter && `Presenter: ${item.presenter}`, item.duration && `Duration: ${item.duration}`].filter(Boolean).join(' • ')}
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-1">
                         {item.status === 'pending' && (

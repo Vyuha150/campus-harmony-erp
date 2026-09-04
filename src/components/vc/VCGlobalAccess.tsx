@@ -233,10 +233,13 @@ export default function VCGlobalAccess() {
                 {selectedRecord && (() => { const Icon = typeIcons[selectedRecord.type] || FileText; return <Icon className="h-5 w-5 text-primary" />; })()}
                 {selectedRecord?.name}
               </DialogTitle>
+              {/* Badge renders a <div> and DialogDescription renders Radix's
+                  <p>, so the badge was a <div> inside a <p> — invalid HTML.
+                  Moved out to a sibling. */}
               <DialogDescription>
-                <Badge variant="outline" className="mr-2">{selectedRecord?.type}</Badge>
                 {selectedRecord?.id} {selectedRecord?.department && `• ${selectedRecord.department}`}
               </DialogDescription>
+              <Badge variant="outline" className="w-fit">{selectedRecord?.type}</Badge>
             </DialogHeader>
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">{selectedRecord?.details}</p>
