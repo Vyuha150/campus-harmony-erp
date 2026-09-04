@@ -98,7 +98,14 @@ export default function FacultyDashboard() {
             Welcome back, {displayName}
           </h1>
           <p className="text-muted-foreground">
-            {facultyProfile.designation} • {facultyProfile.department} • {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            {/* designation and department can both be null now that
+                GET /faculty/profile stopped substituting one for the other —
+                this line used to read "Professor • Professor". */}
+            {[
+              facultyProfile.designation,
+              facultyProfile.department,
+              new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+            ].filter(Boolean).join(' • ')}
           </p>
         </div>
         <div className="w-[220px]">

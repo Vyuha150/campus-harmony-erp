@@ -98,13 +98,20 @@ export default function FacultyProfile() {
               <div className="flex-1 space-y-4">
                 <div>
                   <h2 className="text-xl font-bold text-foreground">{facultyProfile.name}</h2>
-                  <p className="text-muted-foreground">{facultyProfile.designation} • {facultyProfile.department}</p>
+                  {/* Both can be null now that GET /faculty/profile stopped
+                      inventing them — it used to send the designation as the
+                      department, so this line read "Professor • Professor". */}
+                  <p className="text-muted-foreground">
+                    {[facultyProfile.designation, facultyProfile.department].filter(Boolean).join(' • ') || 'Designation not recorded'}
+                  </p>
                   <Badge className="mt-1">{facultyProfile.employeeId}</Badge>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {[
                     { icon: Mail, label: 'Email', value: facultyProfile.email },
-                    { icon: Phone, label: 'Phone', value: facultyProfile.phone },
+                    // No phone column exists on User or FacultyProfile, so this
+                    // is always null; it previously displayed the avatar URL.
+                    { icon: Phone, label: 'Phone', value: facultyProfile.phone || 'Not recorded' },
                     { icon: Calendar, label: 'Joined', value: new Date(facultyProfile.dateOfJoining).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) },
                     { icon: GraduationCap, label: 'Qualification', value: facultyProfile.qualification },
                     { icon: Award, label: 'Specialization', value: facultyProfile.specialization },
@@ -127,7 +134,9 @@ export default function FacultyProfile() {
         {/* Academic & Research Summary */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: 'h-Index', value: facultyProfile.hIndex, icon: TrendingUp, color: 'text-primary' },
+            // The API used to return the publication count under this name.
+            // There is no citation data to compute a real h-index from.
+            { label: 'h-Index', value: facultyProfile.hIndex ?? 'Not tracked', icon: TrendingUp, color: 'text-primary' },
             { label: 'Publications', value: facultyProfile.totalPublications, icon: FileText, color: 'text-blue-600' },
             { label: 'Projects', value: facultyProfile.totalProjects, icon: Briefcase, color: 'text-amber-600' },
             { label: 'Weekly Teaching', value: `${facultyProfile.weeklyHours}h`, icon: Clock, color: 'text-green-600' },

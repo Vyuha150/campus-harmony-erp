@@ -191,9 +191,10 @@ export interface FacultyProfile {
   id: string;
   name: string;
   email: string;
-  phone: string;
-  designation: string;
-  department: string;
+  /** null: no phone column exists on User or FacultyProfile. */
+  phone: string | null;
+  designation: string | null;
+  department: string | null;
   employeeId: string;
   dateOfJoining: string;
   qualification: string;
@@ -203,7 +204,8 @@ export interface FacultyProfile {
   // Academic
   totalPublications: number;
   totalProjects: number;
-  hIndex: number;
+  /** null: no citation data exists, so a real h-index cannot be computed. */
+  hIndex: number | null;
   // Teaching
   coursesThisSemester: number;
   weeklyHours: number;

@@ -229,7 +229,7 @@ router.get('/profile', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ where: { id: userId }, include: { department: true } });
     const leaves = await prisma.leaveRequest.findMany({ where: { facultyProfileId: profile.id } });
     const courses = await prisma.course.findMany({ where: { facultyId: profile.id }, include: { enrollments: true } });
     const totalStudents = courses.reduce((sum: number, course: any) => sum + course.enrollments.length, 0);
@@ -243,22 +243,45 @@ router.get('/profile', authenticate, async (req: Request, res: Response) => {
         ...profile,
         name: user?.name,
         email: user?.email,
-        phone: user?.avatar || '',
-        department: user?.designation || 'Computer Science',
-        designation: user?.designation || 'Assistant Professor',
+        // `phone` was `user?.avatar` — the avatar URL served as the faculty
+        // member's phone number on their profile screen. Neither User nor
+        // FacultyProfile has a phone column at all, so the honest value is
+        // null; the screen renders it as unknown rather than showing an
+        // image path.
+        phone: null,
+        // `department` was `user?.designation`, so the profile read
+        // "Professor • Professor". It is a real relation, joined above.
+        // The 'Computer Science' fallback went with it: naming a department
+        // the record does not have is a guess, not a default.
+        department: user?.department?.name ?? null,
+        designation: user?.designation ?? null,
         dateOfJoining: user?.createdAt,
         coursesThisSemester: courses.length,
         totalStudents,
         totalPublications: publications,
         totalProjects: projects,
         weeklyHours,
-        hIndex: publications,
+        // `hIndex` was the publication count. The h-index is not a count of
+        // publications — it is the largest h for which h papers have h
+        // citations each — and no citation data exists in this schema, so it
+        // cannot be computed. Reported as unknown rather than as a different
+        // number wearing its name.
+        hIndex: null,
         leaves,
-        leaveBalance: [
-          { type: 'Casual Leave', total: 12, used: leaves.filter((l: any) => l.type === 'casual' && l.status === 'approved').length, remaining: 12 - leaves.filter((l: any) => l.type === 'casual' && l.status === 'approved').length },
-          { type: 'Earned Leave', total: 15, used: leaves.filter((l: any) => l.type === 'earned' && l.status === 'approved').length, remaining: 15 },
-          { type: 'Medical Leave', total: 10, used: leaves.filter((l: any) => l.type === 'medical' && l.status === 'approved').length, remaining: 10 },
-        ]
+        // `remaining` was `15` and `10` — the entitlement, ignoring `used`
+        // entirely, so earned and medical leave always displayed as fully
+        // available no matter how much had been approved. Only casual leave
+        // subtracted. Computed the same way for all three now.
+        leaveBalance: (
+          [
+            { type: 'Casual Leave', kind: 'casual', total: 12 },
+            { type: 'Earned Leave', kind: 'earned', total: 15 },
+            { type: 'Medical Leave', kind: 'medical', total: 10 },
+          ] as const
+        ).map(({ type, kind, total }) => {
+          const used = leaves.filter((l: any) => l.type === kind && l.status === 'approved').length;
+          return { type, total, used, remaining: Math.max(0, total - used) };
+        })
       }
     });
   } catch (error: any) {
