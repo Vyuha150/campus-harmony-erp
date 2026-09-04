@@ -6,80 +6,86 @@
  * sharing a known default password, unlimited credential stuffing was possible
  * and completely invisible.
  *
- * Implemented with an in-process fixed-window counter — no new dependency, and
- * adequate for a single-instance deployment. NOTE: this state is per-process,
- * so a multi-instance deployment must move it to a shared store (Redis). That
- * is recorded as a follow-up in the development plan rather than pre-built,
- * since the current deployment topology is single-instance.
+ * WHERE THE COUNTERS LIVE, AND WHY IT MATTERS
+ *
+ * They used to live in a `Map` in this module. That made the login throttle
+ * per-process, with two failures observed rather than theorised: restarting
+ * the backend cleared a live lockout (seen during this project's own testing),
+ * and N instances behind a load balancer would each allow the full quota,
+ * multiplying the limit by N.
+ *
+ * The login limiter now counts in a store shared by every instance
+ * (`rateLimitStore.ts`). The broad per-IP API limiter deliberately stays
+ * in-process: it fires on every request, and a database round trip per request
+ * to protect against flooding costs most exactly when the traffic it exists to
+ * survive arrives. Per-instance counting is a fair approximation for flood
+ * control; it is not one for credential stuffing, where the cap per account is
+ * the entire point.
  */
 
 import type { Request, Response, NextFunction } from 'express';
 import { config } from '../config/env.js';
 import { logger } from '../lib/logger.js';
-
-interface WindowState {
-  count: number;
-  resetAt: number;
-}
+import {
+  InProcessRateLimitStore,
+  ResilientRateLimitStore,
+  type RateLimitStore
+} from './rateLimitStore.js';
 
 function createLimiter(options: {
   windowMs: number;
   max: number;
   name: string;
+  store: RateLimitStore;
   keyOf?: (req: Request) => string;
 }) {
-  const buckets = new Map<string, WindowState>();
-
-  // Bound memory: drop expired buckets periodically. `unref` so this timer
-  // never keeps the process alive during shutdown.
-  const sweep = setInterval(() => {
-    const now = Date.now();
-    for (const [key, state] of buckets) {
-      if (state.resetAt <= now) buckets.delete(key);
-    }
-  }, options.windowMs).unref?.();
-  void sweep;
-
   return function rateLimit(req: Request, res: Response, next: NextFunction): void {
-    const key = options.keyOf ? options.keyOf(req) : req.ip ?? 'unknown';
-    const now = Date.now();
+    const key = `${options.name}:${options.keyOf ? options.keyOf(req) : req.ip ?? 'unknown'}`;
 
-    let state = buckets.get(key);
-    if (!state || state.resetAt <= now) {
-      state = { count: 0, resetAt: now + options.windowMs };
-      buckets.set(key, state);
-    }
+    void options.store
+      .hit(key, options.windowMs)
+      .then((state) => {
+        const now = Date.now();
+        const retryAfterSeconds = Math.max(0, Math.ceil((state.resetAt - now) / 1000));
 
-    state.count += 1;
+        res.setHeader('RateLimit-Limit', String(options.max));
+        res.setHeader('RateLimit-Remaining', String(Math.max(0, options.max - state.count)));
+        res.setHeader('RateLimit-Reset', String(retryAfterSeconds));
 
-    const remaining = Math.max(0, options.max - state.count);
-    res.setHeader('RateLimit-Limit', String(options.max));
-    res.setHeader('RateLimit-Remaining', String(remaining));
-    res.setHeader('RateLimit-Reset', String(Math.ceil((state.resetAt - now) / 1000)));
+        if (state.count > options.max) {
+          res.setHeader('Retry-After', String(retryAfterSeconds));
 
-    if (state.count > options.max) {
-      const retryAfterSeconds = Math.ceil((state.resetAt - now) / 1000);
-      res.setHeader('Retry-After', String(retryAfterSeconds));
+          logger.warn('Rate limit exceeded', {
+            limiter: options.name,
+            key,
+            count: state.count,
+            max: options.max,
+            path: req.path
+          });
 
-      logger.warn('Rate limit exceeded', {
-        limiter: options.name,
-        key,
-        count: state.count,
-        max: options.max,
-        path: req.path
-      });
-
-      res.status(429).json({
-        success: false,
-        error: {
-          code: 'RATE_LIMIT_EXCEEDED',
-          message: `Too many requests. Please try again in ${retryAfterSeconds} seconds.`
+          res.status(429).json({
+            success: false,
+            error: {
+              code: 'RATE_LIMIT_EXCEEDED',
+              message: `Too many requests. Please try again in ${retryAfterSeconds} seconds.`
+            }
+          });
+          return;
         }
-      });
-      return;
-    }
 
-    next();
+        next();
+      })
+      .catch((error: unknown) => {
+        // The store already degrades to in-process counting on failure, so
+        // reaching here means something unexpected. Fail OPEN: refusing every
+        // request because the limiter is broken turns a limiter fault into a
+        // total outage, and the event is logged loudly either way.
+        logger.error('Rate limiter failed — allowing the request', {
+          limiter: options.name,
+          error: (error as Error).message
+        });
+        next();
+      });
   };
 }
 
@@ -87,20 +93,28 @@ function createLimiter(options: {
  * Login throttle. Keyed on IP **and** submitted email so that one attacker
  * cannot lock out a legitimate user by exhausting that user's quota from a
  * different address, while still capping per-account guessing.
+ *
+ * Uses the SHARED store: this is the limiter whose whole value depends on the
+ * count being global rather than per-process.
  */
 export const loginRateLimiter = createLimiter({
   name: 'login',
   windowMs: config.rateLimit.loginWindowMs,
   max: config.rateLimit.loginMaxAttempts,
+  store: new ResilientRateLimitStore(),
   keyOf: (req) => {
     const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : 'unknown';
     return `${req.ip ?? 'unknown'}:${email}`;
   }
 });
 
-/** Broad API throttle applied to all routes. */
+/**
+ * Broad API throttle applied to all routes. In-process on purpose — see the
+ * file header.
+ */
 export const apiRateLimiter = createLimiter({
   name: 'api',
   windowMs: config.rateLimit.apiWindowMs,
-  max: config.rateLimit.apiMaxRequests
+  max: config.rateLimit.apiMaxRequests,
+  store: new InProcessRateLimitStore()
 });

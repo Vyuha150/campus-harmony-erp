@@ -5102,3 +5102,21 @@ model WorkflowTransition {
   @@index([instanceId])
   @@index([occurredAt])
 }
+
+/// Rate-limit counters, shared by every application instance.
+///
+/// Deliberately NOT tenant-scoped: the login throttle counts attempts against
+/// an IP and a submitted email BEFORE anyone is authenticated, so there is no
+/// institution to attribute them to yet. It is also not something one tenant
+/// should be able to read about another. It carries no personal data beyond
+/// the key itself, which is why it is safe to prune wholesale.
+model RateLimitWindow {
+  /// "<limiter>:<ip>:<email>" — opaque to the database.
+  key     String   @id
+  count   Int
+  /// When this window expires. Set by whichever instance opens the window so
+  /// that every instance agrees on the end, rather than each extending it.
+  resetAt DateTime @db.Timestamptz(3)
+
+  @@index([resetAt])
+}
