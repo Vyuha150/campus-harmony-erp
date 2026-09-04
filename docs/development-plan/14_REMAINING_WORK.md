@@ -1,41 +1,69 @@
 # 14 — Remaining Work to a Production ERP
 
-**As of 2026-08-19.** Measured from the repository, not estimated from memory.
+**Originally written 2026-08-19. Re-measured 2026-09-05.** Measured from the
+repository, not estimated from memory.
 
 ---
 
 ## Where the system actually stands
 
-| Measure | Value |
-|---|---|
-| Database models | 120 |
-| Migrations | 4 (baseline · tenancy · governance · admissions) |
-| Endpoints on the **new** service-layer pattern | **11** (admissions) |
-| Endpoints still on the **legacy** pattern | **479** |
-| Legacy files with request validation | **0 of 18** |
-| Legacy files emitting audit records | 3 of 18 |
-| `$transaction` uses in legacy routes | **4** |
-| Legacy endpoints with pagination | 42 (~9%) |
-| Tests | 66 passing |
-| Typecheck | 0 errors |
+| Measure | 2026-08-19 | 2026-09-05 |
+|---|---|---|
+| Database models | 120 | **159** |
+| Migrations | 4 | **40** |
+| Endpoints | 490 | **551** |
+| Route files with request validation | 0 of 18 | **17 of 17** |
+| Backend tests | 66 | **609** (25 files) |
+| Backend typecheck | 0 errors | 0 errors |
+| Frontend typecheck | not run | **0 errors, now blocking in CI** |
+| Dependency vulnerabilities | 53 (1 critical) | **9 (0 critical)** |
 
-**Read that table honestly:** the *foundation* is now correct and one module demonstrates the target architecture end-to-end. But **479 of 490 endpoints still run on the old pattern** — no validation, no transactions, no audit, no pagination.
+The 2026-08-19 table said 479 of 490 endpoints ran on the legacy pattern with
+no validation, transactions, audit or pagination. **Section B is substantially
+closed**: every route file validates its request bodies, writes go through
+`mutate()` with an audit record in the same transaction, and the tenant
+extension scopes queries structurally.
 
-The system is no longer *dangerous*. It is not yet *complete*.
+Two guards now make the frontend/backend contract testable rather than
+discovered in a browser:
+
+- `payloadContract.test.ts` — every `postApi`/`putApi` payload key must be
+  accepted by that route's `.strict()` schema. Roughly 25 features were broken
+  by a single refused field before this existed.
+- `routeExistence.test.ts` — every frontend API call must resolve to a
+  registered backend route.
 
 ---
 
 ## A. Blocking production — nothing ships without these
 
-| # | Item | Status | Effort |
+| # | Item | 2026-08-19 | 2026-09-05 |
 |---|---|---|---|
-| A1 | **Backups + tested restore** (T-109) | ❌ `BackupRecord` is still a model with no implementation | M |
-| A2 | **CI pipeline** (T-020) | ❌ Nothing enforces typecheck/tests/audit | M |
-| A3 | **Dependency vulnerabilities** (T-018) | ❌ 53 open, 1 critical | M |
-| A4 | **Backend deployment target** | ❌ No Dockerfile, no host defined | M |
-| A5 | **Object storage for uploads** (T-209) | ❌ Local disk — lost on redeploy, breaks multi-instance | M |
+| A1 | Backups + tested restore | ❌ model only | ✅ `npm run backup` / `backup:verify`, exercised in CI |
+| A2 | CI pipeline | ❌ nothing enforced | ✅ 6 gates: types, tests, migrations, audit, container, build |
+| A3 | Dependency vulnerabilities | ❌ 53, 1 critical | 🔷 9, none critical — the rest need major-version bumps |
+| A4 | Backend deployment target | ❌ none | 🔷 `backend/Dockerfile` + compose; **host still undecided** |
+| A5 | Object storage for uploads | ❌ local disk | ✅ S3 client present |
 
-> A backup that has never been restored is not a backup. A1 is the single most important item on this page.
+**A4 is the one genuinely open item here, and it is a decision, not code.**
+
+### A6 — Migration history could not rebuild the database *(found and fixed 2026-09-05)*
+
+`prisma migrate deploy` against an empty database failed outright. Migrations
+0026–0040 were named without the timestamp prefix every earlier migration used,
+and Prisma orders lexicographically — so `0026` sorted before the baseline that
+creates the tables it alters, and the replay died on
+`relation "ApprovalItem" does not exist`. A fresh deploy and any
+restore-from-migrations were both broken.
+
+It survived because the only database in use was built with `db push`, and the
+CI gate meant to catch it passed `--shadow-database-url`, which this Prisma
+version does not accept — so the step errored on every run and
+`continue-on-error: true` reported success anyway. **A gate that always fails
+silently is worse than no gate: it is a false assurance.**
+
+Both are fixed and the check is blocking. `migrate diff` reports
+"No difference detected."
 
 ## B. Correctness debt on the 479 legacy endpoints
 
