@@ -109,6 +109,14 @@ export interface TenantContext {
   campusId: string | null;
   scopeLevel: ScopeLevel;
   userId: string;
+  /**
+   * The principal's name, carried so audit entries can record WHO acted.
+   * `SystemAuditLog.userName` was written as the literal 'unknown' on every
+   * row because nothing ever supplied it — the id and role were right, but an
+   * audit trail that cannot name the actor without a second lookup is doing
+   * half its job. Resolved from the same row the middleware already reads.
+   */
+  userName: string;
   role: string;
 }
 

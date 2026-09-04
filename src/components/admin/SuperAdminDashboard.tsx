@@ -1,4 +1,5 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { parseAuditDetails } from '@/lib/auditDetails';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -161,7 +162,12 @@ export default function SuperAdminDashboard() {
                 <div key={log.id} className="flex items-start gap-2">
                   <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${log.severity === 'critical' ? 'bg-destructive' : log.severity === 'warning' ? 'bg-amber-500' : 'bg-green-500'}`} />
                   <div>
-                    <p className="text-xs text-foreground">{log.details}</p>
+                    {/* `details` is a composed string ending in a JSON diff
+                        (see composeDetails in backend/src/lib/audit.ts), so
+                        rendering it whole put escaped JSON on the dashboard.
+                        The summary is the part a reader needs here; the diff
+                        stays available on the Audit Logs screen. */}
+                    <p className="text-xs text-foreground">{parseAuditDetails(log.details).summary}</p>
                     <p className="text-xs text-muted-foreground">{log.userName} • {log.timestamp.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
                   </div>
                 </div>

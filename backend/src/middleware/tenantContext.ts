@@ -51,7 +51,7 @@ export async function resolveTenantContext(
     // by primary key from the authenticated token.
     const record = await basePrisma.user.findUnique({
       where: { id: user.id },
-      select: { id: true, role: true, institutionId: true, campusId: true }
+      select: { id: true, name: true, role: true, institutionId: true, campusId: true }
     });
 
     if (!record) {
@@ -81,6 +81,7 @@ export async function resolveTenantContext(
       campusId: record.campusId,
       scopeLevel: scopeLevelForRole(role),
       userId: record.id,
+      userName: record.name,
       role
     };
 

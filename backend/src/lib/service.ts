@@ -93,6 +93,7 @@ export async function mutate<T>(
 
       await recordInTransaction(tx as never, {
         userId: context.userId,
+        userName: context.userName,
         role: context.role,
         action: audit.action,
         module: audit.module,

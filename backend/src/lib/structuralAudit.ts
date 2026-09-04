@@ -182,7 +182,10 @@ export async function recordStructuralWrite(
     await client.systemAuditLog.create({
       data: {
         userId: context.userId,
-        userName: 'unknown',
+        // Was the literal 'unknown' on every structural row. The context
+        // carries the name now, resolved from the same user lookup the tenant
+        // middleware already performs.
+        userName: context.userName,
         role: context.role,
         action,
         // These entries cannot name a functional module: the extension sees a

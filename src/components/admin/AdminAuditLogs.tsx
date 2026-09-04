@@ -1,4 +1,5 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { parseAuditDetails } from '@/lib/auditDetails';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -189,7 +190,20 @@ export default function AdminAuditLogs() {
                           </div>
                         </TableCell>
                         <TableCell><Badge variant="outline">{log.module}</Badge></TableCell>
-                        <TableCell className="max-w-[250px] text-sm text-muted-foreground truncate">{log.details}</TableCell>
+                        {/* Summary and stated reason, not the raw JSON diff
+                            appended by composeDetails — the full string is
+                            still what the search box matches on. */}
+                        <TableCell className="max-w-[250px] text-sm text-muted-foreground">
+                          {(() => {
+                            const d = parseAuditDetails(log.details);
+                            return (
+                              <>
+                                <span className="block truncate">{d.summary}</span>
+                                {d.reason && <span className="block truncate text-xs italic">Reason: {d.reason}</span>}
+                              </>
+                            );
+                          })()}
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground font-mono">{log.ipAddress}</TableCell>
                         <TableCell><Badge variant={getSeverityVariant(log.severity)} className="capitalize">{log.severity}</Badge></TableCell>
                       </TableRow>

@@ -21,6 +21,7 @@ function ctx(overrides: Partial<TenantContext> = {}): TenantContext {
     campusId: 'campus-1',
     scopeLevel: 'CAMPUS',
     userId: 'user-reader',
+    userName: 'Test User',
     role: 'faculty',
     ...overrides
   };
