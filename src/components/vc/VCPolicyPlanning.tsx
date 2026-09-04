@@ -13,7 +13,7 @@ import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import {
   TrendingUp, TrendingDown, Lightbulb, Calculator, BarChart3,
-  ArrowRight, Settings, Play, Info, Download, Save
+  ArrowRight, Settings, Play, Info, Download
 } from 'lucide-react';
 import { deleteApi, fetchApi, postApi, promptForDeleteReason } from '@/lib/apiService';
 import { PolicyScenario } from '@/types/vc';
@@ -62,6 +62,31 @@ export default function VCPolicyPlanning() {
 
   const handleRunSimulation = (scenario: PolicyScenario) => {
     setSelectedScenario(scenario);
+  };
+
+  /** Real download of the projection breakdown currently on screen. */
+  const handleExportProjection = () => {
+    const rows: Array<[string, number, number]> = [
+      ['Tuition Fees', baseTuition, projectedTuition],
+      ['Research Grants', baseGrants, projectedGrants],
+      ['Government Grants', 2500, 2500],
+      ['Self-Financed Courses', 1800, 1800],
+      ['Other Income', 1100, 1100],
+    ];
+    const csv = [
+      'source,current_lakhs,projected_lakhs',
+      ...rows.map(([source, current, projected]) => `"${source}",${current},${projected}`),
+      `"Total Revenue",15900,${projectedRevenue}`,
+      `"Total Expenditure",14800,${projectedExpenditure}`,
+      `"Surplus",${15900 - 14800},${projectedSurplus}`,
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'financial-projection.csv';
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCreateScenario = async () => {
@@ -161,7 +186,17 @@ export default function VCPolicyPlanning() {
           <TabsContent value="enrollment" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-primary" /> Enrollment Trends & Projections</CardTitle>
+                <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-primary" /> Enrollment Trends &amp; Projections</CardTitle>
+                {/* Every figure in this tab is a hard-coded constant, not a
+                    reading from the API. The 2024-25 and 2025-26 totals in
+                    particular were presented as this institution's actual past
+                    enrolment. Saying so beats letting a VC plan against
+                    invented history; wiring real counts is filed separately. */}
+                <CardDescription className="text-amber-600">
+                  Illustrative planning figures — not this institution's data. Enrolment,
+                  demand and intake numbers here are placeholders and are not read from
+                  student records.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 md:grid-cols-3">
@@ -224,7 +259,12 @@ export default function VCPolicyPlanning() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Calculator className="h-5 w-5 text-primary" /> Financial Forecasting</CardTitle>
-                <CardDescription>Adjust parameters to see projected financial impact for FY 2026-27</CardDescription>
+                <CardDescription>
+                  Adjust parameters to see projected financial impact for FY 2026-27.
+                  <span className="text-amber-600">
+                    {' '}Baselines are illustrative constants, not figures from the finance ledger.
+                  </span>
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {/* Interactive Sliders */}
@@ -294,11 +334,13 @@ export default function VCPolicyPlanning() {
                       </div>
                     ))}
                     <div className="flex gap-2 pt-2">
-                      <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Report Saved', description: 'Financial projection saved to documents.' })}>
-                        <Save className="h-3 w-3" /> Save Report
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-1" onClick={() => toast({ title: 'Exported', description: 'Financial projection exported as PDF.' })}>
-                        <Download className="h-3 w-3" /> Export PDF
+                      {/* A "Save Report" button sat here firing a "saved to
+                          documents" toast with no request behind it — nothing
+                          was stored anywhere. Removed rather than left
+                          claiming it. The export beside it is now a real
+                          download instead of an "exported as PDF" toast. */}
+                      <Button variant="outline" size="sm" className="gap-1" onClick={handleExportProjection}>
+                        <Download className="h-3 w-3" /> Export CSV
                       </Button>
                     </div>
                   </div>
@@ -337,7 +379,10 @@ export default function VCPolicyPlanning() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setSelectedScenario(null)}>Close</Button>
-              <Button onClick={() => { toast({ title: 'Report Saved', description: 'Simulation report saved to your documents.' }); setSelectedScenario(null); }}>Save Report</Button>
+              {/* Was a "Save Report" button toasting "saved to your documents"
+                  with nothing behind it. There is no store for a simulation
+                  report, so it now simply closes. */}
+              <Button onClick={() => setSelectedScenario(null)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
