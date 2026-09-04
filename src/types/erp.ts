@@ -17,7 +17,16 @@ export type UserRole =
   | 'sports_director'
   | 'grievance_officer'
   | 'security_officer'
-  | 'librarian';
+  | 'librarian'
+  // Both are issued by the backend (KNOWN_ROLES in lib/tenant.ts) and granted
+  // real access — `auditor` is in the OVERSIGHT set for finance, hod, dean, vc,
+  // registrar, coe and iqac; `principal` for finance, hod, dean and registrar.
+  // They were missing here, so ROLE_INFO[user.role] was undefined and the
+  // `roleInfo.label` / `.icon` reads in Dashboard, Header and Sidebar threw
+  // "Cannot read properties of undefined" — a white screen on every page for
+  // anyone holding either role.
+  | 'principal'
+  | 'auditor';
 
 export interface User {
   id: string;
@@ -175,6 +184,24 @@ export const ROLE_INFO: Record<UserRole, RoleInfo> = {
     icon: 'Library',
     color: 'info',
     modules: ['library', 'catalog', 'circulation', 'acquisitions'],
+  },
+  // `modules` lists what each role can actually reach today, taken from the
+  // route mounts in backend/src/server.ts rather than aspirationally.
+  principal: {
+    id: 'principal',
+    label: 'Principal',
+    description: 'Institution oversight across academics, finance and records',
+    icon: 'Shield',
+    color: 'secondary',
+    modules: ['finance', 'hod', 'dean', 'registrar'],
+  },
+  auditor: {
+    id: 'auditor',
+    label: 'Internal Auditor',
+    description: 'Read-oriented oversight across finance, academics and quality',
+    icon: 'FileText',
+    color: 'warning',
+    modules: ['finance', 'hod', 'dean', 'vc', 'registrar', 'coe', 'iqac'],
   },
 };
 

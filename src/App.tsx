@@ -158,19 +158,31 @@ import LibraryAcquisitions from "./components/library/LibraryAcquisitions";
 
 const queryClient = new QueryClient();
 
+/**
+ * Client-side path gate. Each entry MIRRORS the `authorizeRoles(...)` call on
+ * the matching mount in backend/src/server.ts — if the two disagree, a role is
+ * either bounced from a screen it is entitled to, or shown one whose every
+ * request will 403.
+ *
+ * `principal` and `auditor` were absent from every rule, so both were
+ * redirected to /dashboard from all seven modules the backend explicitly
+ * grants them (`OVERSIGHT = ['auditor']` is spread into the finance, hod,
+ * dean, vc, registrar, coe and iqac mounts; `principal` is named on finance,
+ * hod, dean and registrar). An internal auditor could reach nothing at all.
+ */
 const PATH_ROLE_RULES: Array<{ prefix: string; roles: UserRole[] }> = [
   { prefix: '/student', roles: ['student'] },
   { prefix: '/faculty', roles: ['faculty'] },
-  { prefix: '/hod', roles: ['hod'] },
-  { prefix: '/dean', roles: ['dean'] },
-  { prefix: '/vc', roles: ['vice_chancellor', 'pro_vc'] },
-  { prefix: '/registrar', roles: ['registrar'] },
-  { prefix: '/coe', roles: ['coe'] },
-  { prefix: '/finance', roles: ['finance_officer'] },
+  { prefix: '/hod', roles: ['hod', 'principal', 'auditor'] },
+  { prefix: '/dean', roles: ['dean', 'principal', 'auditor'] },
+  { prefix: '/vc', roles: ['vice_chancellor', 'pro_vc', 'auditor'] },
+  { prefix: '/registrar', roles: ['registrar', 'principal', 'auditor'] },
+  { prefix: '/coe', roles: ['coe', 'auditor'] },
+  { prefix: '/finance', roles: ['finance_officer', 'principal', 'auditor'] },
   { prefix: '/placement', roles: ['placement_officer'] },
   { prefix: '/sports', roles: ['sports_director'] },
   { prefix: '/alumni', roles: ['alumni_officer'] },
-  { prefix: '/iqac', roles: ['iqac_coordinator'] },
+  { prefix: '/iqac', roles: ['iqac_coordinator', 'auditor'] },
   { prefix: '/admin', roles: ['super_admin'] },
   { prefix: '/grievance', roles: ['grievance_officer'] },
   { prefix: '/security', roles: ['security_officer'] },

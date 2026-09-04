@@ -134,7 +134,13 @@ export default function DeanResults() {
                     </TableCell>
                     <TableCell className="text-center font-medium">{r.avgGPA ?? 'N/A'}</TableCell>
                     <TableCell>
-                      <Badge variant={r.status === 'published' ? 'default' : r.status === 'approved' ? 'secondary' : 'outline'} className="capitalize text-[10px]">
+                      {/* `approved` was checked here but is not a value this
+                          field can hold: GET /dean/results maps an underlying
+                          approval of `approved` OR `published` onto
+                          'published', so the only states are draft,
+                          pending_approval and published. The dead branch meant
+                          pending_approval rendered identically to draft. */}
+                      <Badge variant={r.status === 'published' ? 'default' : r.status === 'pending_approval' ? 'secondary' : 'outline'} className="capitalize text-[10px]">
                         {r.status.replace('_', ' ')}
                       </Badge>
                     </TableCell>
