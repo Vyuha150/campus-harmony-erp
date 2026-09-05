@@ -1055,7 +1055,19 @@ router.put('/hodapprovals/:id/status', authenticate, validate({ params: z.object
 
 router.get('/departmentcalendar', authenticate, async (_req: Request, res: Response) => {
   try {
-    const meetings = await prisma.meeting.findMany({ orderBy: { date: 'asc' }, take: 10 });
+    // Was `findMany({ orderBy: { date: 'asc' }, take: 10 })` with no date
+    // filter, so this returned the ten OLDEST meetings ever recorded —
+    // including ones already held — and a newly scheduled meeting could not
+    // appear at all once ten earlier-dated rows existed. A calendar that shows
+    // past meetings and hides upcoming ones is backwards; scope it to what is
+    // still ahead.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const meetings = await prisma.meeting.findMany({
+      where: { date: { gte: startOfToday } },
+      orderBy: { date: 'asc' },
+      take: 10
+    });
     res.json({
       success: true,
       data: meetings.map((meeting: any) => ({

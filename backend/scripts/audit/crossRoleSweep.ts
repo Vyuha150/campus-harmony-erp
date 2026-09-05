@@ -24,6 +24,24 @@
  * reported as `write-rejected` and the pair is NOT judged — a failed write
  * cannot demonstrate anything about visibility. Only pairs that actually wrote
  * are scored, so the pass rate means what it says.
+ *
+ * THE CONTROL, AND WHY IT IS NEEDED
+ *
+ * Pairing on the Prisma model alone cannot tell three different things apart,
+ * and the first run reported all three as "invisible":
+ *
+ *   - a genuine cross-role break (the reader should see it and does not);
+ *   - a write whose columns no reader displays at all — PUT /faculty/profile
+ *     writes qualification/specialization/experience while its paired readers
+ *     return id/name/email;
+ *   - a write that changed nothing, because the generated body re-sent values
+ *     already stored (both mentoring ids come from the same seed row).
+ *
+ * So each write is first checked against a SAME-ROLE reader of the same model.
+ * If even that control does not move, the write produced no observable change
+ * anywhere, and the cross-role pairs beneath it are not evidence of anything —
+ * they are reported as `no-observable-change` instead. Only a write whose
+ * control DID move can demonstrate a cross-role break.
  */
 
 import { basePrisma } from '../../src/lib/prisma.js';
@@ -162,10 +180,20 @@ for (const w of writers) {
   );
   if (!partners.length) { bump('no-cross-role-reader'); continue; }
 
+  // The control: a reader of the same model under the WRITER's own role. If
+  // this does not move, the write changed nothing anyone can see, and the
+  // cross-role pairs below it prove nothing.
+  const controls = readers.filter(
+    (r) => r.reads.some((m) => w.writes.includes(m)) &&
+           roleOf(r).join('|') === roleOf(w).join('|') &&
+           actorFor(r)
+  );
+
   const before = new Map<string, string | null>();
-  for (const r of partners) {
+  for (const r of [...partners, ...controls]) {
     const role = actorFor(r)!;
-    before.set(`${r.path}|${role}`, await readAs(r, role));
+    const key = `${r.path}|${role}`;
+    if (!before.has(key)) before.set(key, await readAs(r, role));
   }
 
   const wres = await req(BASE.replace('/api', '') + w.path, {
@@ -185,6 +213,32 @@ for (const w of writers) {
     continue;
   }
 
+  // Did the write change anything the writer's own role can see?
+  let controlMoved: boolean | null = null;
+  for (const r of controls) {
+    const role = actorFor(r)!;
+    const key = `${r.path}|${role}`;
+    const b = before.get(key);
+    if (b === null || b === undefined) continue;
+    const after = await readAs(r, role);
+    if (after === null) continue;
+    controlMoved = controlMoved === true || after !== b;
+  }
+
+  if (controlMoved === false) {
+    // Either the body re-sent values already stored, or the columns it writes
+    // are returned by no reader. Both are worth knowing and neither is a
+    // cross-role break, so the pairs beneath are not scored.
+    bump('no-observable-change');
+    results.push({
+      pair: `${roleOf(w).join('|')} ${w.method} ${w.path}`,
+      model: w.writes.join(','),
+      outcome: 'no-observable-change',
+      detail: `${partners.length} cross-role pair(s) not judged`
+    });
+    continue;
+  }
+
   for (const r of partners) {
     const role = actorFor(r)!;
     const key = `${r.path}|${role}`;
@@ -196,6 +250,12 @@ for (const w of writers) {
     if (before.get(key) === null) { bump('read-unavailable'); continue; }
 
     if (after !== before.get(key)) { bump('visible'); results.push({ pair, model: r.reads.join(','), outcome: 'visible' }); }
+    else if (controlMoved === null) {
+      // No same-role reader exists, so there is no control. Report it, but do
+      // not call it a break on evidence this thin.
+      bump('invisible-unverified');
+      results.push({ pair, model: r.reads.join(','), outcome: 'invisible-unverified' });
+    }
     else { bump('invisible'); results.push({ pair, model: r.reads.join(','), outcome: 'invisible' }); }
   }
 }
@@ -213,9 +273,23 @@ if (rejected.length) {
   if (rejected.length > 25) console.log(`  ... and ${rejected.length - 25} more`);
 }
 
+const noChange = results.filter((r) => r.outcome === 'no-observable-change');
+if (noChange.length) {
+  console.log('\n--- no observable change even for the writer own role ---');
+  console.log('    (body re-sent stored values, or it writes columns nothing returns)');
+  for (const r of noChange) console.log(`  ${r.pair}   [${r.model}]  ${r.detail}`);
+}
+
+const unverified = results.filter((r) => r.outcome === 'invisible-unverified');
+if (unverified.length) {
+  console.log('\n--- no same-role reader exists, so no control ---');
+  for (const r of unverified.slice(0, 15)) console.log(`  ${r.pair}`);
+  if (unverified.length > 15) console.log(`  ... and ${unverified.length - 15} more`);
+}
+
 const invisible = results.filter((r) => r.outcome === 'invisible');
 if (invisible.length) {
-  console.log('\n--- wrote successfully, reader saw NO change ---');
+  console.log('\n--- CONTROL MOVED but this reader saw NO change (real candidates) ---');
   for (const r of invisible.slice(0, 40)) console.log(`  ${r.pair}   [${r.model}]`);
   if (invisible.length > 40) console.log(`  ... and ${invisible.length - 40} more`);
 }
