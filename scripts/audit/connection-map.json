@@ -1,0 +1,8109 @@
+{
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/auth/login",
+      "file": "backend/src/routes/auth.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "file": "backend/src/routes/auth.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/messages",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "enrollment",
+        "classMessage",
+        "broadcastMessage",
+        "studentProfile",
+        "classEnrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/dashboard",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "enrollment",
+        "user",
+        "semesterResult",
+        "attendance",
+        "feeRecord",
+        "examSchedule"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/courses",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "enrollment",
+        "attendance"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/attendance",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "enrollment",
+        "attendance"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/profile",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "menteeAssignment",
+        "facultyProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/mentoring",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "menteeAssignment",
+        "facultyProfile",
+        "counselingNote"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/current-semester",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "studentProfile"
+      ],
+      "reads": [
+        "academicYear"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/students/profile",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "studentProfile"
+      ],
+      "reads": [
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/assignments",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "assignment"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/students/assignments/:id/submit",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "submission"
+      ],
+      "reads": [
+        "assignment",
+        "classEnrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/examinations",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "enrollment",
+        "examination"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/examinations/hall-ticket",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "enrollment",
+        "examination"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/results",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "enrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/results/transcript",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "enrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/students/examinations/:id/revaluation",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [
+        "examination",
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/fees",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "feeRecord"
+      ],
+      "reads": [
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/students/fees/pay",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/library",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "libraryService.studentHistory"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/hostel",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "hostelAllocation"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/placements",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "placementDrive"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/students/placements/:id/apply",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "studentApplication"
+      ],
+      "reads": [
+        "placementDrive"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/students/library/:id/renew",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "libraryService.renewLoan"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/grievances",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "grievanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/grievances/:id",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "grievanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/students/grievances",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "grievanceCase"
+      ],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/feedback",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "enrollment",
+        "feedbackResponse"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/students/feedback/:id/submit",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "feedbackResponse"
+      ],
+      "reads": [
+        "feedbackForm",
+        "feedbackResponse"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/certificates",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "certificateRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/students/certificates/request",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "certificateRequest"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/students/enroll",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "enrollment"
+      ],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/students/enroll/:courseId",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [
+        "enrollment"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/timetable",
+      "file": "backend/src/routes/students.ts",
+      "roles": [
+        "student",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "enrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/dashboard",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "submission",
+        "publication",
+        "leaveRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/profile",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "leaveRequest",
+        "course",
+        "publication",
+        "researchProject"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/profile/leave-balances",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "leaveRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/profile/leave-history",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "leaveRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/faculty/profile",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "facultyProfile"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/faculty/profile/leave-request",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "leaveRequest"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/courses",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/classes",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/current-semester",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course",
+        "academicYear"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/faculty/courses/:id/details",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "course",
+        "courseClass",
+        "courseSchedule"
+      ],
+      "reads": [
+        "course",
+        "courseClass"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/courses/lesson-plans",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course",
+        "facultyLessonPlan"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/faculty/courses/:courseId/lesson-plans/:weekNumber",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "facultyLessonPlan"
+      ],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/courses/:id/students",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course",
+        "enrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/attendance/sessions",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "attendanceSession"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/attendance/roster",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course",
+        "enrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/faculty/attendance/mark",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "attendanceSession",
+        "attendance"
+      ],
+      "reads": [
+        "course",
+        "enrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/attendance/history",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "attendanceSession"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/assignments",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "assignment"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/faculty/assignments",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "assignment"
+      ],
+      "reads": [
+        "courseClass"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/faculty/assignments/:id",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "assignment"
+      ],
+      "reads": [
+        "assignment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/assignments/:id/submissions",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "assignment",
+        "submission"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/assignments/submissions",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "assignment",
+        "submission"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/faculty/assignments/:id/submissions/:subId/grade",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "submission"
+      ],
+      "reads": [
+        "submission"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/marks/:courseId",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course",
+        "enrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/faculty/marks/:courseId",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "enrollment"
+      ],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/mentees",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "menteeAssignment",
+        "studentProfile",
+        "counselingNote"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/faculty/mentees/:id/notes",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "counselingNote",
+        "menteeAssignment"
+      ],
+      "reads": [
+        "menteeAssignment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/research/publications",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "publication"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/faculty/research/publications",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "publication"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/research/projects",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "researchProject"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/research/patents",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/dashboard/announcements",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "broadcastMessage"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/dashboard/tasks",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "assignment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/dashboard/alerts",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "attendanceSession"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/feedback-summaries",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/faculty/research/projects",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "researchProject"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/committees",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "committee"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/grievances",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "grievanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/grievances/:id",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "grievanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/faculty/grievances",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "grievanceCase"
+      ],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/faculty/grievances/:id/respond",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "grievanceCase"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/faculty/messages",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course",
+        "classMessage"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/faculty/messages",
+      "file": "backend/src/routes/faculty.ts",
+      "roles": [
+        "faculty",
+        "super_admin"
+      ],
+      "writes": [
+        "classMessage"
+      ],
+      "reads": [
+        "course",
+        "enrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/payments",
+      "file": "backend/src/modules/finance/finance.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/students/:studentProfileId/ledger",
+      "file": "backend/src/modules/finance/finance.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/receipts/:receiptId/cancel",
+      "file": "backend/src/modules/finance/finance.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/receipts/verify",
+      "file": "backend/src/modules/finance/finance.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/dashboard",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord",
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/snapshot",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "budgetAllocation",
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/alerts",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "budgetAllocation",
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/finance/alerts/:id/ack",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/tasks",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/finance/tasks/:id",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/fee-structures",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/fee-structures",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/payments",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/fee-payments",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/finance/fee-payments/:id",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "feeRecord"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/defaulters",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/journal-entries",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/journal-entries",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/finance/journal-entries/:id",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/purchase-orders",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/purchase-orders",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/finance/purchase-orders/:id",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/vendors",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "vendor"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/vendors",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "vendor"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/payroll",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/finance/payroll/:id",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/payroll/disburse",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/payroll/process",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "payrollRecord"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/payroll/:id",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "payrollRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/reports",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord",
+        "budgetAllocation"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/reports/generate",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/reports/catalog",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/reports/summary",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/budgets",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/budgets",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/finance/budgets/:id",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/expenditure-trend",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "budgetAllocation"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/revenue-streams",
+      "file": "backend/src/routes/finance.ts",
+      "roles": [
+        "finance_officer",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/dashboard",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "incidentReport"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/users",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/users",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [
+        "user"
+      ],
+      "reads": [],
+      "services": [
+        "adminService.assertKnownRole"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/users/:id",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [
+        "user"
+      ],
+      "reads": [
+        "user"
+      ],
+      "services": [
+        "adminService.assertRoleChangeAllowed"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/users/:id",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "adminService.deleteUser"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/config",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "department",
+        "academicYear"
+      ],
+      "services": [
+        "adminService.institutionConfig"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/config",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/departments",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [
+        "department"
+      ],
+      "reads": [
+        "department"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/departments",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [
+        "department"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/academic-years",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "academicYear"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/academicyears",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "academicYear"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/academic-years",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [
+        "academicYear"
+      ],
+      "reads": [
+        "academicYear"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/academic-years/:id",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [
+        "academicYear"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/audit-logs",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "systemAuditLog"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/notifications",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "systemNotificationRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/systemnotifications",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "systemNotificationRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/notifications",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [
+        "systemNotificationRecord"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/analytics/login-trend",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "systemAuditLog"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/analytics/module-usage",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "systemAuditLog"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/analytics/role-distribution",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/courses",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/courses",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [
+        "course"
+      ],
+      "reads": [
+        "department",
+        "facultyProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/courses/:id",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [
+        "course"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/courses/:id",
+      "file": "backend/src/routes/admin.ts",
+      "roles": [
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/dashboard",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "course",
+        "approvalItem",
+        "enrollment",
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/faculty",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/approvals",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/approvals/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/workload",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "courseClass",
+        "timetableSlot"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/workload/assign",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "courseClass",
+        "course"
+      ],
+      "reads": [
+        "facultyProfile",
+        "courseClass",
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/workload/course-options",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course",
+        "facility"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/timetable",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "timetableSlot",
+        "courseClass"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/students",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/results",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/accreditation",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "accreditationData"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/accreditation/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "accreditationData"
+      ],
+      "reads": [
+        "accreditationData"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/inventory",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "labInventoryItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/inventory/purchase-request",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "purchaseRequest"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/messages",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "broadcastMessage"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/messages",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "broadcastMessage"
+      ],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/departmentfaculty",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/faculty/:id/roles",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/faculty/:id/leave",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "leaveRequest"
+      ],
+      "reads": [
+        "facultyProfile",
+        "leaveRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/faculty/:id/promotion-recommendation",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/departmentstudents",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "menteeAssignment",
+        "facultyProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/students/:id/advisor",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "menteeAssignment"
+      ],
+      "reads": [
+        "studentProfile",
+        "facultyProfile",
+        "menteeAssignment"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/students/:id/counseling-note",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/hodapprovals",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/hodapprovals/:id/status",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/departmentcalendar",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "meeting"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/workload/course",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "courseClass",
+        "classEnrollment",
+        "timetableSlot"
+      ],
+      "reads": [
+        "course",
+        "facultyProfile",
+        "facility",
+        "timetableSlot",
+        "classEnrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/workload/course/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "course",
+        "courseClass",
+        "timetableSlot",
+        "classEnrollment"
+      ],
+      "reads": [
+        "courseClass",
+        "facultyProfile",
+        "facility",
+        "timetableSlot",
+        "classEnrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/hod/workload/course/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/courseresults",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/courseresults/:courseCode/verify",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/courseresults/:courseCode/remedial",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/courseresults/forward-coe",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/accreditationdata",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "accreditationData"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/accreditationdata",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "accreditationData"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/accreditationdata/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "accreditationData"
+      ],
+      "reads": [
+        "accreditationData"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/labinventory",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "labInventoryItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/labinventory",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "labInventoryItem"
+      ],
+      "reads": [
+        "facility"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/labinventory/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "labInventoryItem"
+      ],
+      "reads": [
+        "labInventoryItem",
+        "facility"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/labinventory/:id/maintenance",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "labInventoryItem"
+      ],
+      "reads": [
+        "labInventoryItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/purchaserequests",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "purchaseRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/purchaserequests",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "purchaseRequest"
+      ],
+      "reads": [
+        "facility"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/purchaserequests/:id/status",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/course-management/options",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "facultyProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/course-management",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/course-management",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "course"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/course-management/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "course"
+      ],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/hod/course-management/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/curriculum-proposals",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "curriculumProposal",
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/curriculum-proposals",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "curriculumProposal"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/facility-management",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "facility"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/facility-management",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "facility"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/facility-management/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "facility"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/hod/facility-management/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/communication/messages",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "broadcastMessage"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/communication/messages",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "broadcastMessage"
+      ],
+      "reads": [
+        "user",
+        "courseClass"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/hod/communication/messages/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/communication/recipient-options",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "courseClass"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/grievances",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "grievanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/hod/grievances/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "grievanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/hod/grievances/:id",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "grievanceCase"
+      ],
+      "reads": [
+        "grievanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/students/export",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/students/merit-list",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/students/:id/email",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/students/:id/report-card",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/workload/check-conflicts",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/timetable/export",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/accreditation/export-ssr",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/accreditation/upload-document",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/hod/inventory/export",
+      "file": "backend/src/routes/hod.ts",
+      "roles": [
+        "hod",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/dashboard",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "approvalItem",
+        "department"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/academics",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "department"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/curriculum-proposals",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "curriculumProposal"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/curriculum-proposals/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "curriculumProposal"
+      ],
+      "reads": [
+        "curriculumProposal"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/faculty",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/recruitment",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "facultyRecruitment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/student-affairs",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "disciplinaryCase",
+        "feeRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/disciplinary/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "disciplinaryCase"
+      ],
+      "reads": [
+        "disciplinaryCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/results",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "department",
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/results/:id/approve",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "department",
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/finance",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "departmentBudget"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/accreditation",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "qualityMetric"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/events",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "interDeptEvent"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/class-management/options",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course",
+        "facultyProfile",
+        "facility"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/class-management",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "courseClass",
+        "timetableSlot"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/dean/class-management",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "courseClass",
+        "classEnrollment",
+        "timetableSlot"
+      ],
+      "reads": [
+        "course",
+        "facultyProfile",
+        "facility",
+        "timetableSlot",
+        "classEnrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/class-management/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "course",
+        "courseClass",
+        "timetableSlot",
+        "classEnrollment"
+      ],
+      "reads": [
+        "courseClass",
+        "facility",
+        "timetableSlot",
+        "classEnrollment"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/dean/class-management/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/dean/events",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "interDeptEvent"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/events/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "interDeptEvent"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/meetings",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "meeting"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/dean/meetings",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "meeting"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/meetings/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "meeting"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/mentoring/options",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "facultyProfile",
+        "studentProfile",
+        "menteeAssignment"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/dean/mentoring/assignments",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "menteeAssignment"
+      ],
+      "reads": [
+        "studentProfile",
+        "facultyProfile",
+        "menteeAssignment",
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/dean/mentoring/assignments/:studentId",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "menteeAssignment"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/course-management/options",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "facultyProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/course-management",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/dean/course-management",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "course"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/course-management/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "course"
+      ],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/dean/course-management/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/facility-management",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "facility"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/dean/facility-management",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "facility"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/facility-management/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "facility"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/dean/facility-management/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/semester-management/academic-years",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "academicYear"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/dean/semester-management/academic-years",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "academicYear"
+      ],
+      "reads": [
+        "academicYear"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/semester-management/academic-years/:id",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "academicYear"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dean/inventory/purchase-requests",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "purchaseRequest"
+      ],
+      "reads": [
+        "purchaseRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dean/inventory/purchase-requests/:id/status",
+      "file": "backend/src/routes/dean.ts",
+      "roles": [
+        "dean",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "purchaseRequest"
+      ],
+      "reads": [
+        "purchaseRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/dashboard",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "institutionKPI",
+        "user",
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/approvals",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/vc/approvals/:id",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/policies",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "policyScenario"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/policyscenarios",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "policyScenario"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/vc/policyscenarios",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [
+        "policyScenario"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/vc/policyscenarios/:id",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/vc/policies/simulate",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [
+        "policyScenario"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/meetings",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "meeting"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/meetingagendas",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "meeting"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/vc/meetings",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [
+        "meeting"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/vc/meetings/:id",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/meetings/:id/minutes",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "meeting"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/messages",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "broadcastMessage"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/broadcastmessages",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "broadcastMessage"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/vc/messages",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [
+        "broadcastMessage"
+      ],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/vc/messages/:id",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/compliance",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "complianceReport"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/vc/compliance/:id",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [
+        "complianceReport"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/finance",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord",
+        "departmentBudget"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/analytics",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/departmentperformance",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/campussummaries",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/institutionkpis",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "institutionKPI"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/liveupdates",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "approvalItem",
+        "meeting"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/executiveapprovals",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/financialoverview",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord",
+        "departmentBudget"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/finance-summary",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "departmentBudget"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/compliancereports",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "complianceReport"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/department-budgets",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "departmentBudget"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/revenue-streams",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feeRecord",
+        "researchProject",
+        "donation"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/global-access-records",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "department",
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/vc/global-access/:module",
+      "file": "backend/src/routes/vc.ts",
+      "roles": [
+        "vice_chancellor",
+        "pro_vc",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "course",
+        "feeRecord",
+        "grievanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/dashboard",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "certificateRequest",
+        "gatePass",
+        "vacancy"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/students",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/students/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "studentProfile"
+      ],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/students/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "registrarService.updateStudentRecord"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/record-changes",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "recordChangeRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/record-changes/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "registrarService.decideRequest"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/transfers",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "transferRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/registrar/transfers",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "transferRequest"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/transfers/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/certificates",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "certificateRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/certificates/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "registrarService.decideRequest"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/verifications",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "verificationRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/verifications/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "registrarService.decideRequest"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/exams",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "examProgress"
+      ],
+      "reads": [
+        "examProgress",
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/exams/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/documents",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "adminDocument"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/admindocuments",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "adminDocument"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/workflow-files",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "approvalItem",
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/workflow-files/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [
+        "approvalItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/registrar/documents",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "adminDocument"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/registrar/documents/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/hr/summary",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "vacancy",
+        "promotionRequest",
+        "retirementRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/hr/vacancies",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "vacancy"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/registrar/hr/vacancies",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "vacancy"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/hr/vacancies/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/registrar/hr/promotions/forward",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/accreditation",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "accreditationChecklist"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/accreditation/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/queries",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "verificationRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/promotions",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "promotionRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/promotions/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "registrarService.decideRequest"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/registrar/retirements",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "retirementRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/registrar/retirements/:id",
+      "file": "backend/src/routes/registrar.ts",
+      "roles": [
+        "registrar",
+        "principal",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "registrarService.decideRequest"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/coe/exams",
+      "file": "backend/src/routes/coe.ts",
+      "roles": [
+        "coe",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/coe/exams",
+      "file": "backend/src/routes/coe.ts",
+      "roles": [
+        "coe",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/coe/exams/:id",
+      "file": "backend/src/routes/coe.ts",
+      "roles": [
+        "coe",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/coe/exams/:id",
+      "file": "backend/src/routes/coe.ts",
+      "roles": [
+        "coe",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/coe/dashboard",
+      "file": "backend/src/routes/coe.ts",
+      "roles": [
+        "coe",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "coeService.dashboard"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/coe/submissions",
+      "file": "backend/src/routes/coe.ts",
+      "roles": [
+        "coe",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "coeService.listSubmissions"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/coe/results",
+      "file": "backend/src/routes/coe.ts",
+      "roles": [
+        "coe",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "coeService.departmentResults"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/coe/results/:id/submit",
+      "file": "backend/src/routes/coe.ts",
+      "roles": [
+        "coe",
+        "super_admin"
+      ],
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [
+        "department"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/dashboard",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "alumniProfile",
+        "donation",
+        "mentorshipProgram",
+        "alumniJobPosting"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/directory",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "alumniProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/directory/:id",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "alumniProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/alumni/directory/sync-graduates",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "alumniProfile"
+      ],
+      "reads": [
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/communications",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "alumniCommunicationRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/alumni/communications",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "alumniCommunicationRecord"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/events",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "alumniEvent"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/alumni/events",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "alumniEvent"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/alumni/events/:id",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/mentorship/programs",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "mentorshipProgram"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/alumni/mentorship/programs",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "mentorshipProgram"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/mentorship/matches",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "mentorshipProgram"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/donations",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "donation"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/alumni/donations",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "donation"
+      ],
+      "reads": [
+        "alumniProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/progression/surveys",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "progressionSurvey"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/alumni/progression/surveys",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "progressionSurvey"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/progression/metrics",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "alumniProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/alumni/jobs",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "alumniJobPosting"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/alumni/jobs",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "alumniJobPosting"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/alumni/jobs/:id",
+      "file": "backend/src/routes/alumni.ts",
+      "roles": [
+        "alumni_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/iqac/dashboard",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "qualityMetric",
+        "iQACActionItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/iqac/criteria",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "qualityMetric"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/iqac/criteria/:id",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/iqac/actions",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "iQACActionItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/iqac/actions",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [
+        "iQACActionItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/iqac/actions/:id",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [
+        "iQACActionItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/iqac/documents",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "qualityDocument"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/iqac/documents",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [
+        "qualityDocument"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/iqac/documents/:id",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [
+        "qualityDocument"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/iqac/feedback",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "feedbackForm"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/iqac/feedback/create-form",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [
+        "feedbackForm"
+      ],
+      "reads": [
+        "course"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/iqac/reports",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "aQARRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/iqac/reports/generate",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [
+        "aQARRecord"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/iqac/reports/:id",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [
+        "aQARRecord"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/iqac/meetings",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "iQACMeeting"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/iqac/meetings",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [
+        "iQACMeeting"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/iqac/meetings/:id",
+      "file": "backend/src/routes/iqac.ts",
+      "roles": [
+        "iqac_coordinator",
+        "super_admin"
+      ],
+      "writes": [
+        "iQACMeeting"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/dashboard",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "studentProfile",
+        "placementDrive",
+        "jobOffer",
+        "studentApplication"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/students",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/placements/students",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "user",
+        "studentProfile"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/students/:id",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/placements/students/:id",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "user"
+      ],
+      "reads": [
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/placements/students/:id",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/companies",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "company"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/placements/companies",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "company"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/placements/companies/:id",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "company"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/placements/companies/:id",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/drives",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "placementDrive"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/placements/drives",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "placementDrive"
+      ],
+      "reads": [
+        "company"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/placements/drives/:id",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "placementDrive"
+      ],
+      "reads": [
+        "company",
+        "placementDrive"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/placements/drives/:id",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/drives/:id/applications",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "studentApplication"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/placements/drives/:driveId/applications/:applicationId",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "studentApplication"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/training",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "trainingSession"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/placements/training",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "trainingSession"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/placements/training/:id",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "trainingSession"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/placements/training/:id",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/reports",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "studentProfile",
+        "placementDrive",
+        "studentApplication",
+        "jobOffer"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/analytics/department-wise",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/offers/recent",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "jobOffer"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/reports/department-wise",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/reports/outcomes",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "studentProfile",
+        "studentApplication"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/reports/salary-bands",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "jobOffer",
+        "studentApplication"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/placements/reports/generate",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/messages",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "placementMessage"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/placements/messages",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "placementMessage"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/communication/recent",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "placementMessage"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/communication/templates",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/placements/communication/templates",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/placements/communication/stats",
+      "file": "backend/src/routes/placements.ts",
+      "roles": [
+        "placement_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "placementMessage"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/sports/dashboard",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "sportsTeam",
+        "sportsFacility",
+        "sportsAthlete",
+        "sportsEvent"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/sports/athletes",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "sportsAthlete"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/sports/athletes",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsAthlete"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sports/athletes/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsAthlete"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sports/athletes/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/sports/teams",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "sportsTeam"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/sports/teams",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsTeam"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sports/teams/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsTeam"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sports/teams/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/sports/attendance",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "sportsAttendance"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/sports/attendance",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsAttendance"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sports/attendance/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsAttendance"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sports/attendance/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/sports/facilities",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "sportsFacility"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sports/facilities/:id/book",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsFacility"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sports/facilities/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsFacility"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sports/facilities/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/sports/inventory",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "sportsInventoryItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/sports/inventory",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsInventoryItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sports/inventory/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsInventoryItem"
+      ],
+      "reads": [
+        "sportsInventoryItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sports/inventory/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/sports/events",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "sportsEvent"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/sports/events",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsEvent"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sports/events/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "sportsEvent"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sports/events/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/sports/events/:id/results",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "sportsEvent"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/sports/health",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "fitnessRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/sports/health/fitness-test",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "fitnessRecord"
+      ],
+      "reads": [
+        "studentProfile"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sports/health/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [
+        "fitnessRecord"
+      ],
+      "reads": [
+        "fitnessRecord"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sports/health/:id",
+      "file": "backend/src/routes/sports.ts",
+      "roles": [
+        "sports_director",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/grievances/dashboard",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "grievanceCase",
+        "complianceItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/grievances/cases",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "grievanceService.listCases"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/grievances/cases/:id",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "grievanceService.getCase"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/grievances/cases",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "grievanceService.fileCase"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/grievances/cases/:id",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "grievanceService.updateCase"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/grievances/cases/:id/activity",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "grievanceService.addActivity"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/grievances/compliance",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "complianceItem",
+        "antiRaggingAffidavit"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/grievances/compliance/:id",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "complianceItem"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/grievances/compliance",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "complianceItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/grievances/compliance/:id",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "complianceItem"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/grievances/affidavits",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "antiRaggingAffidavit"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/grievances/affidavits",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "antiRaggingAffidavit"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/grievances/affidavits/:id",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/grievances/reports",
+      "file": "backend/src/routes/grievances.ts",
+      "roles": [
+        "grievance_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "grievanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/dashboard",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "visitorPass",
+        "gatePass",
+        "incidentReport",
+        "iDCardRequest",
+        "vehiclePass"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/visitors",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "visitorPass"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/security/visitors",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "visitorPass"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/security/visitors/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "visitorPass"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/security/visitors/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "securityService.removeRecord"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/incidents",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "incidentReport"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/security/incidents",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "incidentReport"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/security/incidents/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "incidentReport"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/security/incidents/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "securityService.removeRecord"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/patrols",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "patrolLog"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/security/patrols",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "patrolLog"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/security/patrols/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "patrolLog"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/security/patrols/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "securityService.removeRecord"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/guards",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "user",
+        "patrolLog"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/security/guards",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "user"
+      ],
+      "reads": [
+        "user"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/security/guards/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "user"
+      ],
+      "reads": [
+        "patrolLog"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/security/guards/:id/duty",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "patrolLog",
+        "user"
+      ],
+      "reads": [
+        "user",
+        "patrolLog"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/security/guards/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "securityService.removeGuard"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/id-cards",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "iDCardRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/security/id-cards",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "iDCardRequest"
+      ],
+      "reads": [
+        "iDCardRequest"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/security/id-cards/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "iDCardRequest"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/security/id-cards/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "securityService.removeRecord"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/vehicle-passes",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "vehiclePass"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/security/vehicle-passes",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "vehiclePass"
+      ],
+      "reads": [
+        "vehiclePass"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/security/vehicle-passes/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "vehiclePass"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/security/vehicle-passes/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "securityService.removeRecord"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/hostel-access",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "hostelAccessLog"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/vigilance-cases",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "vigilanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/security/vigilance-cases",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "vigilanceCase"
+      ],
+      "reads": [
+        "vigilanceCase"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/security/vigilance-cases/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "vigilanceCase"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/security/vigilance-cases/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "securityService.removeRecord"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/security/support-tickets",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [
+        "supportTicket"
+      ],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/security/support-tickets",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "supportTicket"
+      ],
+      "reads": [
+        "supportTicket"
+      ],
+      "services": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/security/support-tickets/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [
+        "supportTicket"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/security/support-tickets/:id",
+      "file": "backend/src/routes/security.ts",
+      "roles": [
+        "security_officer",
+        "super_admin"
+      ],
+      "writes": [],
+      "reads": [],
+      "services": [
+        "securityService.removeRecord"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/library/dashboard",
+      "file": "backend/src/modules/library/library.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/library/books",
+      "file": "backend/src/modules/library/library.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/library/students",
+      "file": "backend/src/modules/library/library.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/books",
+      "file": "backend/src/modules/library/library.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/books/:id/issue",
+      "file": "backend/src/modules/library/library.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/books/:id/renew",
+      "file": "backend/src/modules/library/library.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/books/:id/return",
+      "file": "backend/src/modules/library/library.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/library/loans/:loanId/waive-fine",
+      "file": "backend/src/modules/library/library.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/library/students/:studentProfileId/history",
+      "file": "backend/src/modules/library/library.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admissions/cycles",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admissions/cycles",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admissions/cycles/:id/open",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admissions/cycles/:id/statistics",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admissions/cycles/:id/merit-list",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admissions/cycles/:id/applications",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admissions/applications",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admissions/applications/:id/verify",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admissions/applications/:id/offer",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admissions/offers/:id/decline",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/admissions/offers/:id/confirm",
+      "file": "backend/src/modules/admissions/admissions.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/results/grade-scales",
+      "file": "backend/src/modules/results/results.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/results/grade-scales",
+      "file": "backend/src/modules/results/results.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/results/course-results",
+      "file": "backend/src/modules/results/results.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/results/students/:id/recompute",
+      "file": "backend/src/modules/results/results.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/results/students/:id/transcript",
+      "file": "backend/src/modules/results/results.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/results/publish",
+      "file": "backend/src/modules/results/results.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/results/course-results/:id/history",
+      "file": "backend/src/modules/results/results.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/curriculum/schemes",
+      "file": "backend/src/modules/curriculum/curriculum.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/curriculum/schemes",
+      "file": "backend/src/modules/curriculum/curriculum.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/curriculum/schemes/:id/courses",
+      "file": "backend/src/modules/curriculum/curriculum.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/curriculum/schemes/:id/activate",
+      "file": "backend/src/modules/curriculum/curriculum.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/curriculum/registration/check",
+      "file": "backend/src/modules/curriculum/curriculum.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/curriculum/registration",
+      "file": "backend/src/modules/curriculum/curriculum.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/curriculum/students/:id/progress",
+      "file": "backend/src/modules/curriculum/curriculum.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/sessions",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/sessions/:id/schedules",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/sessions/:id/open-registration",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/examinations/sessions/:id/statistics",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/examinations/sessions/:id/eligibility/:studentId",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/sessions/:id/register",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/registrations/:id/condone",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/sessions/:id/hall-ticket",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/schedules/:id/marks",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/course-results/:id/moderate",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/sessions/:id/publish",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/revaluations",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/examinations/revaluations/:id/complete",
+      "file": "backend/src/modules/examination/examination.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/notifications/templates",
+      "file": "backend/src/modules/notifications/notifications.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/notifications/policies",
+      "file": "backend/src/modules/notifications/notifications.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/notifications/dispatch",
+      "file": "backend/src/modules/notifications/notifications.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/notifications/retry",
+      "file": "backend/src/modules/notifications/notifications.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/notifications/statistics",
+      "file": "backend/src/modules/notifications/notifications.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/notifications/inbox",
+      "file": "backend/src/modules/notifications/notifications.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/notifications/inbox/:id/read",
+      "file": "backend/src/modules/notifications/notifications.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/reports/",
+      "file": "backend/src/modules/reporting/reporting.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/reports/:code",
+      "file": "backend/src/modules/reporting/reporting.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/import/types",
+      "file": "backend/src/modules/import/import.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/import/templates/:entityType",
+      "file": "backend/src/modules/import/import.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/import/templates/:entityType/guidance",
+      "file": "backend/src/modules/import/import.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/import/",
+      "file": "backend/src/modules/import/import.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/import/jobs",
+      "file": "backend/src/modules/import/import.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/import/jobs/:jobId",
+      "file": "backend/src/modules/import/import.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/obe/policy",
+      "file": "backend/src/modules/obe/obe.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/obe/assessments",
+      "file": "backend/src/modules/obe/obe.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/obe/assessments/:assessmentId/marks",
+      "file": "backend/src/modules/obe/obe.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/obe/assessments/:assessmentId/publish",
+      "file": "backend/src/modules/obe/obe.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/obe/indirect",
+      "file": "backend/src/modules/obe/obe.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/obe/attainment/course/:schemeCourseId",
+      "file": "backend/src/modules/obe/obe.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/obe/attainment/programme/:schemeId",
+      "file": "backend/src/modules/obe/obe.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow/definitions",
+      "file": "backend/src/modules/workflow/workflow.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow/instances",
+      "file": "backend/src/modules/workflow/workflow.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow/instances/:instanceId/act",
+      "file": "backend/src/modules/workflow/workflow.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/workflow/inbox",
+      "file": "backend/src/modules/workflow/workflow.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/workflow/instances/:instanceId",
+      "file": "backend/src/modules/workflow/workflow.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow/escalate",
+      "file": "backend/src/modules/workflow/workflow.routes.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/uploads/",
+      "file": "backend/src/routes/uploads.ts",
+      "roles": [],
+      "writes": [
+        "fileMetadata"
+      ],
+      "reads": [],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/uploads/:id",
+      "file": "backend/src/routes/uploads.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [
+        "fileMetadata"
+      ],
+      "services": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/uploads/:id/metadata",
+      "file": "backend/src/routes/uploads.ts",
+      "roles": [],
+      "writes": [],
+      "reads": [
+        "fileMetadata"
+      ],
+      "services": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/uploads/:id",
+      "file": "backend/src/routes/uploads.ts",
+      "roles": [],
+      "writes": [
+        "fileMetadata"
+      ],
+      "reads": [
+        "fileMetadata"
+      ],
+      "services": []
+    }
+  ],
+  "serviceModels": {
+    "modules/admin/admin.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/admin/admin.service.ts": {
+      "writes": [
+        "user"
+      ],
+      "reads": [
+        "user",
+        "institution"
+      ]
+    },
+    "modules/admissions/admissions.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/admissions/admissions.schema.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/admissions/admissions.service.ts": {
+      "writes": [
+        "admissionCycle",
+        "admissionApplication",
+        "admissionSeatMatrix",
+        "admissionOffer",
+        "user",
+        "studentProfile",
+        "feeRecord"
+      ],
+      "reads": [
+        "programme",
+        "admissionCycle",
+        "admissionApplication",
+        "admissionOffer",
+        "user",
+        "studentProfile"
+      ]
+    },
+    "modules/auth/auth.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/coe/coe.service.ts": {
+      "writes": [],
+      "reads": [
+        "department",
+        "user",
+        "approvalItem",
+        "examProgress"
+      ]
+    },
+    "modules/coe/exams.schema.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/coe/exams.service.ts": {
+      "writes": [
+        "examProgress"
+      ],
+      "reads": [
+        "examProgress",
+        "user"
+      ]
+    },
+    "modules/common/entityCreate.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/common/entityDelete.service.ts": {
+      "writes": [
+        "X"
+      ],
+      "reads": []
+    },
+    "modules/common/entityUpdate.schemas.ts": {
+      "writes": [
+        "X"
+      ],
+      "reads": []
+    },
+    "modules/common/entityUpdate.service.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/common/legacyWrite.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/curriculum/curriculum.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/curriculum/curriculum.service.ts": {
+      "writes": [
+        "curriculumScheme",
+        "schemeCourse",
+        "coursePrerequisite",
+        "enrollment"
+      ],
+      "reads": [
+        "programme",
+        "curriculumScheme",
+        "course",
+        "schemeCourse",
+        "studentProfile",
+        "courseResult",
+        "enrollment"
+      ]
+    },
+    "modules/dean/dean.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/examination/examination.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/examination/examination.service.ts": {
+      "writes": [
+        "examSession",
+        "examRegistration",
+        "hallTicket"
+      ],
+      "reads": [
+        "examSession",
+        "course",
+        "attendanceSession",
+        "attendance",
+        "feeRecord",
+        "studentProfile",
+        "examRegistration",
+        "hallTicket"
+      ]
+    },
+    "modules/examination/marks.service.ts": {
+      "writes": [
+        "courseResult",
+        "gradeHistory",
+        "examRegistration",
+        "examSession",
+        "revaluationRequest"
+      ],
+      "reads": [
+        "gradeScale",
+        "examSchedule",
+        "examRegistration",
+        "studentProfile",
+        "courseResult",
+        "examSession",
+        "revaluationRequest"
+      ]
+    },
+    "modules/faculty/faculty.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/finance/finance.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/finance/finance.service.ts": {
+      "writes": [
+        "payment",
+        "paymentAllocation",
+        "feeRecord",
+        "receipt"
+      ],
+      "reads": [
+        "studentProfile",
+        "payment",
+        "receipt",
+        "user",
+        "feeRecord"
+      ]
+    },
+    "modules/finance/legacy.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/finance/legacy.service.ts": {
+      "writes": [
+        "feeStructure",
+        "journalEntry",
+        "purchaseOrder",
+        "budgetAllocation",
+        "payrollRecord"
+      ],
+      "reads": [
+        "feeStructure",
+        "journalEntry",
+        "purchaseOrder",
+        "vendor",
+        "budgetAllocation",
+        "payrollRecord"
+      ]
+    },
+    "modules/finance/money.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/grievances/grievances.schema.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/grievances/grievances.service.ts": {
+      "writes": [
+        "grievanceCase"
+      ],
+      "reads": [
+        "user",
+        "grievanceCase"
+      ]
+    },
+    "modules/hod/hod.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/import/csv.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/import/import.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/import/import.service.ts": {
+      "writes": [
+        "importJob",
+        "importError"
+      ],
+      "reads": [
+        "department",
+        "programme",
+        "user",
+        "studentProfile",
+        "course",
+        "facultyProfile",
+        "importJob"
+      ]
+    },
+    "modules/import/importers.ts": {
+      "writes": [
+        "user",
+        "studentProfile",
+        "facultyProfile",
+        "course"
+      ],
+      "reads": []
+    },
+    "modules/iqac/iqac.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/library/fines.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/library/library.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/library/library.service.ts": {
+      "writes": [
+        "libraryBook",
+        "libraryLoan"
+      ],
+      "reads": [
+        "libraryBook",
+        "libraryPolicy",
+        "user",
+        "studentProfile",
+        "libraryLoan"
+      ]
+    },
+    "modules/notifications/notifications.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/notifications/notifications.service.ts": {
+      "writes": [
+        "notificationTemplate",
+        "notificationPolicy",
+        "notificationDelivery"
+      ],
+      "reads": [
+        "notificationTemplate",
+        "notificationPolicy",
+        "user",
+        "notificationDelivery"
+      ]
+    },
+    "modules/notifications/providers.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/obe/attainment.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/obe/obe.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/obe/obe.service.ts": {
+      "writes": [
+        "assessment",
+        "assessmentOutcome",
+        "assessmentCoMark",
+        "indirectAttainment"
+      ],
+      "reads": [
+        "obeAttainmentPolicy",
+        "schemeCourse",
+        "courseOutcome",
+        "assessment",
+        "studentProfile",
+        "assessmentCoMark",
+        "indirectAttainment",
+        "curriculumScheme",
+        "programmeOutcome",
+        "coPoMapping"
+      ]
+    },
+    "modules/placements/placements.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/registrar/registrar.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/registrar/registrar.service.ts": {
+      "writes": [
+        "studentProfile",
+        "user"
+      ],
+      "reads": [
+        "user",
+        "studentProfile"
+      ]
+    },
+    "modules/reporting/export.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/reporting/reporting.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/reporting/reports.ts": {
+      "writes": [],
+      "reads": [
+        "studentProfile",
+        "semesterResult",
+        "courseResult",
+        "course",
+        "admissionCycle",
+        "admissionApplication",
+        "facultyProfile",
+        "attendanceSession",
+        "attendance"
+      ]
+    },
+    "modules/results/gpa.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/results/results.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/results/results.service.ts": {
+      "writes": [
+        "gradeScale",
+        "courseResult",
+        "gradeHistory",
+        "semesterResult",
+        "studentProfile"
+      ],
+      "reads": [
+        "gradeScale",
+        "course",
+        "studentProfile",
+        "courseResult",
+        "semesterResult",
+        "gradeHistory"
+      ]
+    },
+    "modules/security/security.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/security/security.service.ts": {
+      "writes": [
+        "X",
+        "patrolLog",
+        "user"
+      ],
+      "reads": [
+        "user"
+      ]
+    },
+    "modules/students/students.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/uploads/uploads.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/vc/vc.schemas.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/workflow/bridge.ts": {
+      "writes": [
+        "approvalItem"
+      ],
+      "reads": [
+        "workflowDefinition",
+        "workflowInstance"
+      ]
+    },
+    "modules/workflow/builtins.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/workflow/workflow.routes.ts": {
+      "writes": [],
+      "reads": []
+    },
+    "modules/workflow/workflow.service.ts": {
+      "writes": [
+        "workflowDefinition",
+        "workflowStep",
+        "workflowInstance",
+        "workflowTransition"
+      ],
+      "reads": [
+        "workflowDefinition",
+        "workflowInstance"
+      ]
+    }
+  }
+}
