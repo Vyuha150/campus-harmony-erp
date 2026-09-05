@@ -180,6 +180,25 @@ router.get('/students', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Departments, for the student-onboarding form's picker.
+ *
+ * The only other department list is GET /admin/departments, which is mounted
+ * super_admin-only, so a placement officer could not populate a picker at all —
+ * which is part of why students were being created without one.
+ */
+router.get('/departments', authenticate, async (req: Request, res: Response) => {
+  try {
+    const departments = await prisma.department.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, code: true }
+    });
+    res.json({ success: true, data: departments });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
 router.post('/students', authenticate, validate({ body: placementStudentCreateSchema }), async (req: Request, res: Response) => {
   try {
     const payload = req.body ?? {};
@@ -204,13 +223,33 @@ router.post('/students', authenticate, validate({ body: placementStudentCreateSc
     const hashedPassword = await hashPassword(temporaryPassword);
     const passwordWasGenerated = payload.password !== temporaryPassword;
 
+    // departmentId is client-supplied, so confirm it belongs to this
+    // institution before writing it — the same check POST /admin/courses makes
+    // for its department.
+    const departmentId = payload.departmentId ? String(payload.departmentId) : null;
+    if (departmentId) {
+      const department = await prisma.department.findFirst({
+        where: { id: departmentId, institutionId: getTenantContext(req).institutionId },
+        select: { id: true }
+      });
+      if (!department) {
+        res.status(404).json({ success: false, message: 'Department not found' });
+        return;
+      }
+    }
+
     const created = await prisma.$transaction(async (tx: any) => {
       const user = await tx.user.create({
         data: {
           name,
           email,
           password: hashedPassword,
-          role: 'student'
+          role: 'student',
+          // Was omitted entirely, so every student onboarded here had a null
+          // departmentId and was invisible to every department-scoped view —
+          // GET /hod/students filters on exactly this column, so no HOD ever
+          // saw them.
+          ...(departmentId ? { departmentId } : {})
         }
       });
 

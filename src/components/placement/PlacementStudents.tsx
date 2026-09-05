@@ -59,6 +59,7 @@ interface StudentFormState {
   batch: string;
   admissionYear: string;
   cgpa: string;
+  departmentId: string;
 }
 
 const formatPackage = (amount: number) => {
@@ -100,7 +101,13 @@ export default function PlacementStudents() {
     batch: `${new Date().getFullYear()}`,
     admissionYear: `${new Date().getFullYear()}`,
     cgpa: '0',
+    departmentId: '',
   });
+
+  // Without a department the created User has a null departmentId, and every
+  // department-scoped view is blind to the student — GET /hod/students filters
+  // on exactly that column, so no HOD would ever see them.
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string; code?: string }>>([]);
 
   const setFormField = (field: keyof StudentFormState, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -118,6 +125,7 @@ export default function PlacementStudents() {
       batch: `${new Date().getFullYear()}`,
       admissionYear: `${new Date().getFullYear()}`,
       cgpa: '0',
+      departmentId: '',
     });
   };
 
@@ -224,9 +232,15 @@ export default function PlacementStudents() {
     setCreateOpen(true);
   };
 
+  useEffect(() => {
+    fetchApi<Array<{ id: string; name: string; code?: string }>>('/placements/departments')
+      .then((d) => setDepartments(Array.isArray(d) ? d : []))
+      .catch((error) => { console.error('API request failed', error); });
+  }, []);
+
   const handleCreateStudent = async () => {
-    if (!form.name.trim() || !form.email.trim() || !form.rollNumber.trim() || !form.branch.trim()) {
-      toast({ title: 'Missing fields', description: 'Name, email, roll number, and branch are required.', variant: 'destructive' });
+    if (!form.name.trim() || !form.email.trim() || !form.rollNumber.trim() || !form.branch.trim() || !form.departmentId) {
+      toast({ title: 'Missing fields', description: 'Name, email, roll number, branch, and department are required.', variant: 'destructive' });
       return;
     }
 
@@ -243,6 +257,7 @@ export default function PlacementStudents() {
         batch: form.batch.trim(),
         admissionYear: Number(form.admissionYear || new Date().getFullYear()),
         cgpa: Number(form.cgpa || 0),
+        departmentId: form.departmentId,
       });
       await loadStudents();
       setCreateOpen(false);
@@ -426,6 +441,19 @@ export default function PlacementStudents() {
               <div><Label>Batch</Label><Input value={form.batch} onChange={(e) => setFormField('batch', e.target.value)} placeholder="2026" /></div>
               <div><Label>Admission Year</Label><Input type="number" value={form.admissionYear} onChange={(e) => setFormField('admissionYear', e.target.value)} /></div>
               <div><Label>CGPA</Label><Input type="number" step="0.01" value={form.cgpa} onChange={(e) => setFormField('cgpa', e.target.value)} /></div>
+              <div>
+                <Label>Department</Label>
+                <select
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={form.departmentId}
+                  onChange={(e) => setFormField('departmentId', e.target.value)}
+                >
+                  <option value="">Select a department...</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}{d.code ? ` (${d.code})` : ''}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={saving}>Cancel</Button>

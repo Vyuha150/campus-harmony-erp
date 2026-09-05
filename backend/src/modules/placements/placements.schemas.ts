@@ -22,6 +22,7 @@
  */
 
 import { z } from 'zod';
+import { entityId } from '../../schemas/common.js';
 
 const trimmed = (max: number) => z.string().trim().min(1).max(max);
 const optionalTrimmed = (max: number) => z.string().trim().max(max).optional();
@@ -40,6 +41,11 @@ export const placementStudentCreateSchema = z
     email: z.string().trim().toLowerCase().email().max(200),
     rollNumber: trimmed(60),
     password: z.string().min(8).max(200).optional(),
+    // Without this the created User has no departmentId, and every
+    // department-scoped view — GET /hod/students filters on it — is blind to
+    // the student forever. `branch` is free text and cannot stand in for the
+    // foreign key.
+    departmentId: entityId.optional(),
     program: optionalTrimmed(120),
     branch: optionalTrimmed(120),
     semester: z.coerce.number().int().min(1).max(20).optional(),
