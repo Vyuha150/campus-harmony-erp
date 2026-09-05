@@ -686,13 +686,37 @@ router.get('/messages', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * The audience vocabulary BroadcastMessage rows are stored in.
+ *
+ * `GET /faculty/dashboard/announcements` selects on
+ * `recipients IN ('all','faculty','faculties','all_faculty')`, so a row stored
+ * with anything else is invisible to the faculty it was addressed to. This
+ * function is the single place that decides the stored value; it was
+ * previously defined inside one handler while a second handler wrote
+ * `recipients` straight through, which is how 'department' — a value no reader
+ * selects on — became storable.
+ */
+function normalizeAudience(raw: string): string {
+  const value = String(raw || '').trim().toLowerCase();
+  if (value === 'all' || value === 'students' || value === 'faculties') return value;
+  if (value.startsWith('class:')) return value;
+  if (value === 'everyone') return 'all';
+  if (value === 'all_students' || value === 'department') return 'students';
+  if (value === 'all_faculty' || value === 'faculty') return 'faculties';
+  return 'all';
+}
+
 router.post('/messages', authenticate, validate({ body: hodBroadcastCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const user = await prisma.user.findUnique({ where: { id: userId } });
     const { subject, content, type, recipients } = req.body;
     const msg = await db.broadcastMessage.create({
-      data: { subject, content, sender: user?.name || 'HOD', type: type || 'announcement', recipients: recipients || 'department' }
+      // Was `recipients || 'department'`. No reader selects on 'department',
+      // so a broadcast stored that way reached nobody. Normalised through the
+      // same function the communication endpoint uses, so both agree.
+      data: { subject, content, sender: user?.name || 'HOD', type: type || 'announcement', recipients: normalizeAudience(String(recipients || 'all')) }
     });
     res.json({ success: true, data: msg });
   } catch (error: any) {
@@ -2059,16 +2083,6 @@ router.delete(
 router.get('/communication/messages', authenticate, async (_req: Request, res: Response) => {
   try {
     const messages = await db.broadcastMessage.findMany({ orderBy: { sentAt: 'desc' }, take: 50 });
-
-    const normalizeAudience = (raw: string) => {
-      const value = String(raw || '').trim().toLowerCase();
-      if (value === 'all' || value === 'students' || value === 'faculties') return value;
-      if (value.startsWith('class:')) return value;
-      if (value === 'everyone') return 'all';
-      if (value === 'all_students' || value === 'department') return 'students';
-      if (value === 'all_faculty') return 'faculties';
-      return 'all';
-    };
 
     res.json({
       success: true,
