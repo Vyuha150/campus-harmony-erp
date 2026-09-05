@@ -663,7 +663,15 @@ router.post('/hr/promotions/forward', authenticate, validate({ body: promotionFo
         details: `${name} (${department}) recommended for promotion from ${fromDesignation} to ${toDesignation}. Years of service: ${years ?? 'N/A'}. Forwarded by Registrar for VC review.`,
         requestedBy: userId,
         priority: 'high',
-        status: 'forwarded',
+        // Was 'forwarded', which put this item outside every queue AND every
+        // decision path. In this system 'forwarded' is a decision the VC
+        // MAKES (forwarding onward to the Board of Management); 'pending' is
+        // what awaits one. Every dashboard counts `status: 'pending'` and
+        // every decision handler updates `where: { id, status: 'pending' }`,
+        // so a recommendation stored as 'forwarded' appeared in the VC's list
+        // and then refused to be approved or rejected — "No pending approval
+        // with that id" — with no way to clear it.
+        status: 'pending',
       }
     });
 

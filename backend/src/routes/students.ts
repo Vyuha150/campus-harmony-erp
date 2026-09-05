@@ -1499,7 +1499,14 @@ router.post('/certificates/request', authenticate, validate({ body: certificateR
         type,
         purpose,
         copies: copies || 1,
-        status: 'processing'
+        // Was 'processing', a value that appears nowhere else in this model's
+        // vocabulary: the registrar dashboard counts
+        // `certificateRequest where status: 'pending'`, and the registrar's own
+        // decision enum starts from 'pending' too. A request created as
+        // 'processing' was therefore never counted as pending work and sat
+        // outside the recognised lifecycle — the student saw it submitted, the
+        // registrar's queue never showed it arriving.
+        status: 'pending'
       }
     });
     res.json({ success: true, data: certificate });
