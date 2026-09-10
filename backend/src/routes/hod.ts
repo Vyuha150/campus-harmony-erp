@@ -1,10 +1,18 @@
 import type { Request, Response } from 'express';
 import { Router } from 'express';
+import path from 'node:path';
+import multer from 'multer';
 import { prisma } from '../lib/prisma.js';
 import { fromRoleGrievanceStatus, toRoleGrievanceStatus } from '../lib/grievanceStatus.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.js';
-import { sendError, NotFoundError } from '../lib/errors.js';
+import { sendError, NotFoundError, ValidationError } from '../lib/errors.js';
 import { getTenantContext } from '../lib/tenant.js';
+import { recordFromRequest } from '../lib/audit.js';
+import { toCsv, exportMeta, UNSUPPORTED_FORMATS } from '../modules/reporting/export.js';
+import { providerFor } from '../modules/notifications/providers.js';
+import { createStorageProvider, buildStorageKey } from '../lib/storage.js';
+import { config } from '../config/env.js';
+import { ALLOWED_TYPES } from './uploads.js';
 import * as workflow from '../modules/workflow/workflow.service.js';
 import { openInstanceFor, ensureDefinition } from '../modules/workflow/bridge.js';
 import { PURCHASE_REQUEST, CURRICULUM_PROPOSAL } from '../modules/workflow/builtins.js';
@@ -58,6 +66,29 @@ const db: any = prisma;
  *
  * @throws {NotFoundError} when the user has no department assignment.
  */
+/**
+ * Multipart handling for the accreditation-document upload.
+ *
+ * Reuses `ALLOWED_TYPES` from the uploads router rather than declaring a
+ * second allowlist — two lists would drift, and the one that drifts is the
+ * one that lets an executable content type through.
+ */
+const accreditationUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: config.uploads.maxFileSizeBytes, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    const allowedMimes = ALLOWED_TYPES[extension];
+    if (!allowedMimes || !allowedMimes.includes(file.mimetype)) {
+      cb(new ValidationError(`File type "${extension || 'unknown'}" is not permitted.`, {
+        allowedExtensions: Object.keys(ALLOWED_TYPES)
+      }));
+      return;
+    }
+    cb(null, true);
+  }
+});
+
 async function getHODDepartment(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { department: true } });
   if (!user?.departmentId) {
@@ -2333,10 +2364,73 @@ router.put('/grievances/:id', authenticate, validate({ params: z.object({ id: en
   }
 });
 
+/**
+ * POST /students/export.
+ *
+ * Previously returned `{ success: true, exportedAt: <now> }` and produced no
+ * file whatsoever — the screen reported a completed export and the user had
+ * nothing to download. Now emits a real CSV of the HOD's own department,
+ * through the same RFC 4180 writer (with CSV-injection defence) the reporting
+ * module uses, rather than a second hand-rolled one.
+ */
 router.post('/students/export', authenticate, validate({ body: studentsExportSchema }), async (req: Request, res: Response) => {
   try {
     const format = String(req.body?.format || 'csv');
-    res.json({ success: true, data: { format, exportedAt: new Date().toISOString() } });
+
+    if (format in UNSUPPORTED_FORMATS) {
+      throw new ValidationError(UNSUPPORTED_FORMATS[format]!, { supportedFormats: ['csv'] });
+    }
+
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new NotFoundError('Department assignment');
+
+    const students = await prisma.user.findMany({
+      where: { departmentId: department.id, role: 'student' },
+      include: { studentProfile: true },
+      orderBy: { name: 'asc' }
+    });
+
+    const rows = students.map((student) => ({
+      rollNumber: student.studentProfile?.rollNumber ?? '',
+      name: student.name,
+      email: student.email,
+      programme: student.studentProfile?.program ?? '',
+      branch: student.studentProfile?.branch ?? '',
+      semester: student.studentProfile?.semester ?? '',
+      section: student.studentProfile?.section ?? '',
+      cgpa: student.studentProfile?.cgpa ?? '',
+      earnedCredits: student.studentProfile?.earnedCredits ?? ''
+    }));
+
+    const columns = [
+      { key: 'rollNumber', label: 'Roll Number' },
+      { key: 'name', label: 'Name' },
+      { key: 'email', label: 'Email' },
+      { key: 'programme', label: 'Programme' },
+      { key: 'branch', label: 'Branch' },
+      { key: 'semester', label: 'Semester' },
+      { key: 'section', label: 'Section' },
+      { key: 'cgpa', label: 'CGPA' },
+      { key: 'earnedCredits', label: 'Earned Credits' }
+    ];
+
+    // Student records leaving the system is exactly the event an auditor asks
+    // about, so it is recorded before the bytes go out.
+    await recordFromRequest(req, {
+      action: 'EXPORT',
+      module: 'hod',
+      resource: `Department:${department.id}`,
+      details: `Exported ${rows.length} student record(s) as CSV`,
+      severity: 'warning'
+    });
+
+    const meta = exportMeta('csv');
+    const filename = `students_${department.code ?? department.id}_${new Date().toISOString().slice(0, 10)}.${meta.extension}`;
+    res.setHeader('Content-Type', meta.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // BOM so Excel reads UTF-8 names correctly on a default Windows install.
+    res.send('﻿' + toCsv(rows, columns));
   } catch (error: any) {
     sendError(res, error);
   }
@@ -2370,75 +2464,372 @@ router.post('/students/merit-list', authenticate, validate({ body: meritListSche
   }
 });
 
+/**
+ * POST /students/:id/email.
+ *
+ * Previously wrote an ApprovalItem titled "Email sent to student <id>" with
+ * status `approved` and sent no email — a durable record asserting a delivery
+ * that never happened. It now actually sends, through the same provider
+ * pipeline as every other channel, and records what the provider reported
+ * rather than what the handler hoped.
+ */
 router.post('/students/:id/email', authenticate, validate({ params: z.object({ id: entityId }), body: studentEmailSchema }), async (req: Request, res: Response) => {
   try {
     const studentId = String(req.params.id);
     const subject = String(req.body?.subject || 'Department Communication');
     const message = String(req.body?.message || 'Please check your department portal for updates.');
 
-    const entry = await prisma.approvalItem.create({
-      data: {
-        institutionId: getTenantContext(req).institutionId,
-        type: 'student_communication',
-        title: `Email sent to student ${studentId}`,
-        details: `${subject}: ${message}`,
-        requestedBy: (req as any).user.id,
-        priority: 'low',
-        status: 'approved'
-      }
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new NotFoundError('Department assignment');
+
+    // Scoped to the HOD's own department: a department head may not mail a
+    // student who is not theirs.
+    const student = await prisma.studentProfile.findFirst({
+      where: { id: studentId, user: { departmentId: department.id } },
+      include: { user: true }
+    });
+    if (!student?.user) throw new NotFoundError('Student');
+
+    const outcome = await providerFor('email').send({
+      to: student.user.email,
+      recipientName: student.user.name,
+      subject,
+      body: message
     });
 
-    res.json({ success: true, data: entry });
+    await recordFromRequest(req, {
+      action: 'CREATE',
+      module: 'hod',
+      resource: `User:${student.user.id}`,
+      details: `Emailed student "${subject}" via ${outcome.provider}`
+    });
+
+    res.json({
+      success: true,
+      data: {
+        studentId,
+        to: student.user.email,
+        delivered: outcome.delivered,
+        provider: outcome.provider,
+        providerMessageId: outcome.providerMessageId ?? null
+      }
+    });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.post('/students/:id/report-card', authenticate, async (req: Request, res: Response) => {
+/**
+ * POST /students/:id/report-card.
+ *
+ * Previously returned `{ studentId, generatedAt }` and produced no report
+ * card. It now returns the student's real enrolled courses and grades.
+ *
+ * SOURCE OF THE GRADES: `Enrollment.grade`, because that is what the faculty
+ * marks screen actually writes and what the student's own results screen
+ * actually reads today. The richer `CourseResult` path (grade points, SGPA,
+ * credits) exists but no screen currently feeds it — when that consolidation
+ * lands, this reads from there instead and gains the GPA columns.
+ */
+router.post('/students/:id/report-card', authenticate, validate({ params: z.object({ id: entityId }) }), async (req: Request, res: Response) => {
   try {
     const studentId = String(req.params.id);
-    res.json({ success: true, data: { studentId, generatedAt: new Date().toISOString() } });
+
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new NotFoundError('Department assignment');
+
+    const student = await prisma.studentProfile.findFirst({
+      where: { id: studentId, user: { departmentId: department.id } },
+      include: { user: true }
+    });
+    if (!student?.user) throw new NotFoundError('Student');
+
+    const enrollments = await prisma.enrollment.findMany({
+      where: { studentProfileId: student.id },
+      include: { course: true }
+    });
+
+    const courses = enrollments.map((e) => ({
+      courseCode: e.course?.code ?? '',
+      courseName: e.course?.name ?? '',
+      credits: e.course?.credits ?? null,
+      grade: e.grade ?? null
+    }));
+
+    await recordFromRequest(req, {
+      action: 'EXPORT',
+      module: 'hod',
+      resource: `StudentProfile:${student.id}`,
+      details: `Generated report card covering ${courses.length} course(s)`,
+      severity: 'warning'
+    });
+
+    res.json({
+      success: true,
+      data: {
+        student: {
+          id: student.id,
+          name: student.user.name,
+          rollNumber: student.rollNumber,
+          programme: student.program,
+          semester: student.semester,
+          cgpa: student.cgpa
+        },
+        courses,
+        // Stated rather than implied: a caller must not read the absence of
+        // grade points as "no grade points exist for this student".
+        gradedCourses: courses.filter((c) => c.grade).length,
+        generatedAt: new Date().toISOString()
+      }
+    });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.post('/workload/check-conflicts', authenticate, async (_req: Request, res: Response) => {
+/**
+ * POST /workload/check-conflicts.
+ *
+ * Previously returned `conflicts: []` unconditionally — it reported "no
+ * clashes" for a timetable it never looked at, which is worse than not
+ * offering the check at all, because a real double-booking was actively
+ * confirmed as fine. It now compares actual TimetableSlot rows.
+ *
+ * Two kinds of clash are detected, both scoped to the HOD's department:
+ * one faculty member in two places at once, and one room hosting two
+ * classes at once.
+ */
+router.post('/workload/check-conflicts', authenticate, async (req: Request, res: Response) => {
   try {
-    res.json({ success: true, data: { conflicts: [] } });
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new NotFoundError('Department assignment');
+
+    const slots = await prisma.timetableSlot.findMany({ where: { departmentId: department.id } });
+
+    /** "HH:MM" -> minutes. Slots are stored as text, so ordering must be numeric. */
+    const minutes = (time: string): number => {
+      const [h, m] = time.split(':').map(Number);
+      return (h ?? 0) * 60 + (m ?? 0);
+    };
+    const overlaps = (a: (typeof slots)[number], b: (typeof slots)[number]): boolean =>
+      a.day === b.day && minutes(a.startTime) < minutes(b.endTime) && minutes(b.startTime) < minutes(a.endTime);
+
+    const conflicts: Array<{
+      type: 'faculty' | 'room';
+      resource: string;
+      day: string;
+      first: string;
+      second: string;
+    }> = [];
+
+    for (let i = 0; i < slots.length; i += 1) {
+      for (let j = i + 1; j < slots.length; j += 1) {
+        const a = slots[i]!;
+        const b = slots[j]!;
+        if (!overlaps(a, b)) continue;
+
+        const describe = (s: (typeof slots)[number]) =>
+          `${s.courseCode} ${s.startTime}-${s.endTime} (${s.section})`;
+
+        if (a.faculty && a.faculty === b.faculty) {
+          conflicts.push({ type: 'faculty', resource: a.faculty, day: a.day, first: describe(a), second: describe(b) });
+        }
+        if (a.room && a.room === b.room) {
+          conflicts.push({ type: 'room', resource: a.room, day: a.day, first: describe(a), second: describe(b) });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: { conflicts, slotsChecked: slots.length, checkedAt: new Date().toISOString() }
+    });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.post('/timetable/export', authenticate, async (_req: Request, res: Response) => {
+/** POST /timetable/export — real CSV of the department's timetable. */
+router.post('/timetable/export', authenticate, async (req: Request, res: Response) => {
   try {
-    res.json({ success: true, data: { exportedAt: new Date().toISOString(), format: 'pdf' } });
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new NotFoundError('Department assignment');
+
+    const slots = await prisma.timetableSlot.findMany({
+      where: { departmentId: department.id },
+      orderBy: [{ day: 'asc' }, { startTime: 'asc' }]
+    });
+
+    const columns = [
+      { key: 'day', label: 'Day' },
+      { key: 'startTime', label: 'Start' },
+      { key: 'endTime', label: 'End' },
+      { key: 'courseCode', label: 'Course Code' },
+      { key: 'courseName', label: 'Course' },
+      { key: 'faculty', label: 'Faculty' },
+      { key: 'room', label: 'Room' },
+      { key: 'section', label: 'Section' },
+      { key: 'type', label: 'Type' }
+    ];
+
+    await recordFromRequest(req, {
+      action: 'EXPORT',
+      module: 'hod',
+      resource: `Department:${department.id}`,
+      details: `Exported ${slots.length} timetable slot(s) as CSV`,
+      severity: 'warning'
+    });
+
+    const meta = exportMeta('csv');
+    const filename = `timetable_${department.code ?? department.id}_${new Date().toISOString().slice(0, 10)}.${meta.extension}`;
+    res.setHeader('Content-Type', meta.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send('﻿' + toCsv(slots as unknown as Array<Record<string, unknown>>, columns));
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
+/**
+ * POST /accreditation/export-ssr.
+ *
+ * REFUSES, deliberately. It previously returned `{ success: true, type:
+ * 'ssr' }` and generated nothing — for a NAAC Self-Study Report, the single
+ * most consequential document an institution files.
+ *
+ * A real SSR cannot be generated from this codebase yet: it requires the
+ * official NAAC framework (criterion structure, metric definitions, weightings
+ * and the prescribed data-capture format), which nobody has supplied. Building
+ * one against a guess at the framework would produce a document that looks
+ * authoritative and is wrong — the failure mode that matters most here.
+ *
+ * The raw underlying data IS available today via `GET /hod/accreditation`
+ * and the CSV exports on this router, so the refusal points there.
+ */
 router.post('/accreditation/export-ssr', authenticate, async (_req: Request, res: Response) => {
   try {
-    res.json({ success: true, data: { exportedAt: new Date().toISOString(), type: 'ssr' } });
+    throw new ValidationError(
+      'SSR generation is not available. It requires the official NAAC framework definition ' +
+        '(criteria, metrics and weightings), which is not present in this system. The underlying ' +
+        'accreditation data can be exported meanwhile via GET /hod/accreditation.',
+      { requires: 'Official NAAC SSR framework specification' }
+    );
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.post('/accreditation/upload-document', authenticate, validate({ body: accreditationDocumentUploadSchema }), async (req: Request, res: Response) => {
-  try {
-    const name = String(req.body?.name || 'document');
-    res.json({ success: true, data: { name, uploadedAt: new Date().toISOString() } });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+/**
+ * POST /accreditation/upload-document.
+ *
+ * Previously accepted a JSON body containing only a `name` string — it had no
+ * field capable of carrying file bytes at all — and echoed back
+ * `{ name, uploadedAt }`. Nothing was ever stored.
+ *
+ * It now accepts a real multipart upload and persists through the SAME
+ * storage provider and FileMetadata record as every other upload in the
+ * system, tagged `module: 'accreditation'`, rather than introducing a second
+ * parallel upload path.
+ */
+router.post(
+  '/accreditation/upload-document',
+  authenticate,
+  // Multer first, then validation: the text fields do not exist on req.body
+  // until multipart has been parsed. Same ordering as the uploads router.
+  accreditationUpload.single('file'),
+  validate({ body: accreditationDocumentUploadSchema }),
+  async (req: Request, res: Response) => {
+    try {
+      const file = (req as Request & { file?: Express.Multer.File }).file;
+      if (!file) {
+        throw new ValidationError('A file is required.', { field: 'file' });
+      }
 
-router.post('/inventory/export', authenticate, async (_req: Request, res: Response) => {
+      const context = getTenantContext(req);
+      const department = await getHODDepartment((req as any).user.id);
+      if (!department) throw new NotFoundError('Department assignment');
+
+      const provider = createStorageProvider();
+      const key = buildStorageKey(context.institutionId, 'accreditation', file.originalname);
+      const stored = await provider.put(key, file.buffer, file.mimetype);
+
+      const metadata = await prisma.fileMetadata.create({
+        data: {
+          institutionId: context.institutionId,
+          storageKey: stored.storageKey,
+          storageProvider: provider.name,
+          module: 'accreditation',
+          originalName: String(req.body?.name || file.originalname),
+          mimeType: file.mimetype,
+          sizeBytes: stored.sizeBytes,
+          checksum: stored.checksum,
+          uploadedBy: (req as any).user.id,
+          visibility: 'role_restricted'
+        }
+      });
+
+      await recordFromRequest(req, {
+        action: 'FILE_UPLOAD',
+        module: 'hod',
+        resource: `FileMetadata:${metadata.id}`,
+        details: `Uploaded accreditation document "${metadata.originalName}" (${stored.sizeBytes} bytes)`
+      });
+
+      res.json({
+        success: true,
+        data: {
+          id: metadata.id,
+          name: metadata.originalName,
+          sizeBytes: metadata.sizeBytes,
+          checksum: metadata.checksum,
+          departmentId: department.id,
+          uploadedAt: metadata.createdAt
+        }
+      });
+    } catch (error: any) {
+      sendError(res, error);
+    }
+  }
+);
+
+/** POST /inventory/export — real CSV of the department's lab inventory. */
+router.post('/inventory/export', authenticate, async (req: Request, res: Response) => {
   try {
-    res.json({ success: true, data: { exportedAt: new Date().toISOString() } });
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new NotFoundError('Department assignment');
+
+    const items = await prisma.labInventoryItem.findMany({
+      where: { departmentId: department.id },
+      orderBy: { name: 'asc' }
+    });
+
+    const columns = [
+      { key: 'name', label: 'Item' },
+      { key: 'lab', label: 'Lab' },
+      { key: 'category', label: 'Category' },
+      { key: 'quantity', label: 'Quantity' },
+      { key: 'workingCondition', label: 'Working Condition (%)' },
+      { key: 'status', label: 'Status' },
+      { key: 'purchaseDate', label: 'Purchase Date' },
+      { key: 'warrantyExpiry', label: 'Warranty Expiry' },
+      { key: 'lastMaintenance', label: 'Last Maintenance' }
+    ];
+
+    await recordFromRequest(req, {
+      action: 'EXPORT',
+      module: 'hod',
+      resource: `Department:${department.id}`,
+      details: `Exported ${items.length} inventory item(s) as CSV`,
+      severity: 'warning'
+    });
+
+    const meta = exportMeta('csv');
+    const filename = `inventory_${department.code ?? department.id}_${new Date().toISOString().slice(0, 10)}.${meta.extension}`;
+    res.setHeader('Content-Type', meta.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send('﻿' + toCsv(items as unknown as Array<Record<string, unknown>>, columns));
   } catch (error: any) {
     sendError(res, error);
   }
