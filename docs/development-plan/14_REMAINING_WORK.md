@@ -177,9 +177,57 @@ F1 was closed without Redis. The requirement is a store shared by every
 instance, and PostgreSQL — already a hard dependency — satisfies it and can be
 verified here. `RateLimitStore` is the seam if Redis is preferred later.
 
-> ⚠️ **No performance measurement has ever been taken on this system.** Every
-> scalability statement in this repository remains structural inference. Load
-> testing is still outstanding work.
+### Load testing — first measurements taken 2026-09-10
+
+The line that stood here — *"no performance measurement has ever been taken on
+this system"* — is no longer true. `backend/scripts/loadtest.mjs` is the
+harness; run it with `LOADTEST_PASSWORD` set and the rate limiter raised.
+
+**Read the ratios, not the absolute numbers.** Repeated runs of an identical
+configuration varied by up to 3x with nothing changed but ambient CPU load on
+the test machine, which idles at ~42% utilisation. The ratios between
+endpoints, however, held almost exactly across those runs:
+
+| | health (no DB) | authed tenant read | login |
+|---|---|---|---|
+| run 1 | 2321 req/s | 194 req/s | 44.3 req/s |
+| run 2 | 830 req/s | 74 req/s | 15.0 req/s |
+| **ratio** | **1** | **~0.086** | **~0.019** |
+
+So: **an authenticated tenant-scoped read costs ~11x a bare health check, and
+a login costs ~55x one.** Those multiples are the transferable result.
+
+**Login is the bottleneck, and the mechanism is confirmed rather than guessed.**
+`bcrypt.compare` at work factor 10 measures **90.1 ms of pure CPU** per call.
+libuv's default thread pool is 4, so the predicted ceiling was
+`4 / 0.090 = 44.4` logins/sec — against 44.3 measured on the first run. The
+prediction and the measurement agree to within 0.1 req/sec.
+
+Since bcrypt is **CPU-bound, not I/O-bound**, raising `UV_THREADPOOL_SIZE`
+does *not* fix this: tested at 8 threads, throughput got worse, not better.
+**No threadpool tuning has been baked into the Dockerfile** — the theory that
+it would help did not survive being measured.
+
+Project real capacity from the cost model instead:
+
+> **login ceiling ≈ (vCPUs × 1000 ms) / 90 ms per login**
+
+which on **Render's 0.5-vCPU starter instance is roughly 5–6 logins/sec**.
+That is the number that matters for a deployment decision: a campus-wide
+Monday-morning or results-day login surge would queue badly. Mitigations, in
+order of cost: more vCPU, a login-specific instance, or session cookies that
+avoid re-running bcrypt on every request.
+
+**Also found:** `resolveTenantContext` performs one `User.findUnique` on
+**every authenticated request** ([tenantContext.ts:52](../../backend/src/middleware/tenantContext.ts)).
+That is a deliberate trade — the role is read from the database so a demoted
+user loses access immediately rather than in 24 hours — but it is a per-request
+round trip, and it is a large part of the 11x multiple above. Worth revisiting
+with a short-TTL cache only if measurements on real hardware justify it.
+
+> ⚠️ Still not measured: sustained soak behaviour, memory growth over time,
+> connection-pool exhaustion under sustained concurrency, and anything at all
+> on production-class hardware. These numbers come from one developer laptop.
 
 ---
 
