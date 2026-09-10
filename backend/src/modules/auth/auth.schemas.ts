@@ -21,3 +21,25 @@ export const loginSchema = z
     role: z.enum(KNOWN_ROLES).optional()
   })
   .strict();
+
+/** POST /auth/forgot-password. */
+export const forgotPasswordSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email('Must be a valid email address.').max(254)
+  })
+  .strict();
+
+/**
+ * POST /auth/reset-password.
+ *
+ * No length/composition minimum on `newPassword` here — `hashPassword` (see
+ * `lib/password.ts`) already validates it against real institutional policy,
+ * and duplicating a threshold here risks the schema and the policy silently
+ * drifting apart. The schema's only job is to make sure something was sent.
+ */
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().trim().min(1, 'Reset token is required.').max(200),
+    newPassword: z.string().min(1, 'New password is required.').max(200)
+  })
+  .strict();

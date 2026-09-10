@@ -438,6 +438,7 @@ model User {
   sections                   Section[]
   systemAuditLogs            SystemAuditLog[]
   departmentsHeaded          Department[]           @relation("DepartmentHod")
+  passwordResetTokens        PasswordResetToken[]
 
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
@@ -5119,4 +5120,33 @@ model RateLimitWindow {
   resetAt DateTime @db.Timestamptz(3)
 
   @@index([resetAt])
+}
+
+/// Self-service password reset (T-auth-reset).
+///
+/// Only the SHA-256 of the raw token is ever stored — the same discipline as
+/// `User.password`, applied here because a leaked reset-token table must not
+/// itself become a way to take over accounts. The raw token exists only in
+/// the one email sent to the account holder.
+///
+/// No `institutionId`: like `RateLimitWindow`, this exists before any tenant
+/// context is resolved, and `userId` alone is sufficient to reach the right
+/// account. `onDelete: Cascade` — an outstanding reset token for a deleted
+/// user is meaningless, not an orphan worth investigating.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  /// Set when the token is consumed. A used token is never valid again, even
+  /// if `expiresAt` has not passed — reuse is exactly what a leaked link (in
+  /// a mail log, a browser history, a forwarded message) would attempt.
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  requestIp String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }

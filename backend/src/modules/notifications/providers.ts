@@ -13,12 +13,15 @@
  * providers therefore throw with an actionable message, and the delivery row
  * records the failure.
  *
- * `in_app` is fully implemented — it needs no external service. `email`, `sms`,
- * `push` and `whatsapp` require credentials and a vendor account, so they are
- * stubs until someone provisions them. `log` exists for development so the
- * pipeline can be exercised end-to-end without a vendor.
+ * `in_app` is fully implemented — it needs no external service. `email` (SMTP
+ * via nodemailer) and `sms` (Twilio) are real implementations that activate
+ * the moment their credentials are set — see `EmailProvider` and
+ * `SmsProvider` below. `push` and `whatsapp` remain stubs until someone
+ * provisions them. `log` exists for development so the pipeline can be
+ * exercised end-to-end without a vendor.
  */
 
+import nodemailer from 'nodemailer';
 import { config } from '../../lib/config-notifications.js';
 import { logger } from '../../lib/logger.js';
 import { IntegrationError } from '../../lib/errors.js';
@@ -92,6 +95,99 @@ export class LogProvider implements ChannelProvider {
 }
 
 /**
+ * Real email delivery over SMTP.
+ *
+ * Failure is not caught and downgraded to `delivered: false` — it is
+ * rethrown as `IntegrationError` so the caller's retry/failure-recording path
+ * (see `notifications.service.ts`) runs, exactly as for `UnconfiguredProvider`.
+ * The only difference from that class is that this one can also succeed.
+ */
+export class EmailProvider implements ChannelProvider {
+  readonly channel = 'email';
+  readonly name = 'smtp';
+
+  private readonly transport: ReturnType<typeof nodemailer.createTransport>;
+
+  constructor(smtp: { host: string; port: number; secure: boolean; user: string; password: string }) {
+    this.transport = nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: smtp.user ? { user: smtp.user, pass: smtp.password } : undefined
+    });
+  }
+
+  async send(message: OutboundMessage): Promise<DeliveryOutcome> {
+    try {
+      const info = await this.transport.sendMail({
+        from: `"${config.notifications.fromName}" <${config.notifications.fromEmail}>`,
+        to: message.to,
+        subject: message.subject ?? '(no subject)',
+        text: message.body
+      });
+      return { delivered: true, provider: this.name, providerMessageId: info.messageId };
+    } catch (error) {
+      throw new IntegrationError(
+        `SMTP delivery to "${message.to}" failed: ${(error as Error).message}`,
+        { channel: 'email' }
+      );
+    }
+  }
+}
+
+/**
+ * Real SMS delivery via Twilio's REST API.
+ *
+ * Twilio's contract (POST .../Messages.json, Basic Auth, To/From/Body form
+ * fields) was verified against Twilio's own API reference before writing
+ * this, rather than assumed.
+ *
+ * DLT template registration for Indian transactional SMS is a TRAI-mandated
+ * compliance step the SENDING INSTITUTION must complete directly with their
+ * chosen route — it is not something this or any code path can satisfy. The
+ * `body` passed to `send()` must be the exact text of a template the
+ * institution has registered, or the carrier will reject it regardless of
+ * what this provider does.
+ */
+export class SmsProvider implements ChannelProvider {
+  readonly channel = 'sms';
+  readonly name = 'twilio';
+
+  constructor(
+    private readonly cfg: { accountSid: string; authToken: string; fromNumber: string }
+  ) {}
+
+  async send(message: OutboundMessage): Promise<DeliveryOutcome> {
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${this.cfg.accountSid}/Messages.json`;
+    const auth = Buffer.from(`${this.cfg.accountSid}:${this.cfg.authToken}`).toString('base64');
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        To: message.to,
+        From: this.cfg.fromNumber,
+        Body: message.body
+      }).toString()
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => response.statusText);
+      throw new IntegrationError(`Twilio SMS delivery to "${message.to}" failed: ${detail}`, {
+        channel: 'sms',
+        status: response.status
+      });
+    }
+
+    const payload = (await response.json()) as { sid?: string };
+    return { delivered: true, provider: this.name, providerMessageId: payload.sid };
+  }
+}
+
+/**
  * Provider awaiting configuration.
  *
  * Throws rather than pretending. The thrown error names exactly what is missing
@@ -116,10 +212,9 @@ class UnconfiguredProvider implements ChannelProvider {
 }
 
 const REQUIREMENTS: Record<string, string> = {
-  email:
-    'Install an email client (e.g. `npm install nodemailer`), implement EmailProvider, and set SMTP_HOST / SMTP_USER / SMTP_PASSWORD.',
+  email: 'Set SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASSWORD.',
   sms:
-    'Choose an Indian SMS gateway (MSG91, Gupshup, Twilio), implement SmsProvider, and set the gateway credentials. Note DLT template registration is mandatory for transactional SMS in India.',
+    'Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER. Note DLT template registration is mandatory for transactional SMS to Indian numbers regardless of gateway.',
   push:
     'Configure Firebase Cloud Messaging and implement PushProvider.',
   whatsapp:
@@ -142,6 +237,30 @@ function currentDriver(): string {
 }
 
 /**
+ * SMTP settings, read at CALL TIME — same rationale as `currentDriver()`.
+ * `config.notifications.smtp` is a snapshot taken at module load and cannot
+ * be exercised by a test that sets `SMTP_HOST` afterward.
+ */
+function currentSmtp() {
+  return {
+    host: process.env.SMTP_HOST ?? config.notifications.smtp.host,
+    port: Number(process.env.SMTP_PORT ?? config.notifications.smtp.port),
+    secure: (process.env.SMTP_SECURE ?? String(config.notifications.smtp.secure)) === 'true',
+    user: process.env.SMTP_USER ?? config.notifications.smtp.user,
+    password: process.env.SMTP_PASSWORD ?? config.notifications.smtp.password
+  };
+}
+
+/** Twilio settings, read at CALL TIME — same rationale as `currentSmtp()`. */
+function currentSms() {
+  return {
+    accountSid: process.env.TWILIO_ACCOUNT_SID ?? config.notifications.sms.accountSid,
+    authToken: process.env.TWILIO_AUTH_TOKEN ?? config.notifications.sms.authToken,
+    fromNumber: process.env.TWILIO_FROM_NUMBER ?? config.notifications.sms.fromNumber
+  };
+}
+
+/**
  * Resolve the provider for a channel.
  *
  * `NOTIFICATION_DRIVER=log` routes every external channel to the log provider,
@@ -153,7 +272,19 @@ export function providerFor(channel: string): ChannelProvider {
 
   let provider: ChannelProvider;
 
-  if (channel === 'in_app') {
+  // A real provider takes priority over the log driver whenever it is
+  // genuinely configured — NOTIFICATION_DRIVER=log then means "everything
+  // WITHOUT its own credentials goes to the log", not "ignore credentials
+  // that are actually set". Checked before the `channel === 'in_app'` branch
+  // is irrelevant to in_app, which has no external config to find.
+  const smtp = currentSmtp();
+  const sms = currentSms();
+
+  if (channel === 'email' && smtp.host) {
+    provider = new EmailProvider(smtp);
+  } else if (channel === 'sms' && sms.accountSid) {
+    provider = new SmsProvider(sms);
+  } else if (channel === 'in_app') {
     provider = new InAppProvider();
   } else if (currentDriver() === 'log') {
     provider = new LogProvider(channel);

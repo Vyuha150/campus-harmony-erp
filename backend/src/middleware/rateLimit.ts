@@ -32,7 +32,7 @@ import {
   type RateLimitStore
 } from './rateLimitStore.js';
 
-function createLimiter(options: {
+export function createLimiter(options: {
   windowMs: number;
   max: number;
   name: string;
@@ -99,6 +99,25 @@ function createLimiter(options: {
  */
 export const loginRateLimiter = createLimiter({
   name: 'login',
+  windowMs: config.rateLimit.loginWindowMs,
+  max: config.rateLimit.loginMaxAttempts,
+  store: new ResilientRateLimitStore(),
+  keyOf: (req) => {
+    const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : 'unknown';
+    return `${req.ip ?? 'unknown'}:${email}`;
+  }
+});
+
+/**
+ * Forgot-password throttle. Same shared store and per-account reasoning as
+ * `loginRateLimiter`, but its OWN bucket namespace (`password-reset:...`) —
+ * sharing login's bucket would let an attacker who spams forgot-password for
+ * a victim's email also exhaust that victim's login attempts, turning a
+ * self-service recovery feature into a denial-of-service lever against the
+ * account it is meant to help.
+ */
+export const passwordResetRateLimiter = createLimiter({
+  name: 'password-reset',
   windowMs: config.rateLimit.loginWindowMs,
   max: config.rateLimit.loginMaxAttempts,
   store: new ResilientRateLimitStore(),

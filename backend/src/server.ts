@@ -1,3 +1,6 @@
+// Imported FIRST, before anything else, so Sentry's instrumentation is in
+// place before any module it might need to patch is loaded.
+import { attachExpressErrorHandler, installProcessSafetyNet } from './lib/monitoring.js';
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import fs from 'node:fs';
@@ -209,7 +212,13 @@ app.use('/api/uploads', ...tenantScoped, uploadRoutes);
 // names and constraint details, and collapsing every failure into a 500 so
 // clients could not distinguish 404 from 409 from a genuine server fault.
 app.use(notFoundHandler);
+// Must sit between the routes/404 handler above and this app's own error
+// handler below — Sentry's own docs: "after all routes, but before any
+// other error-handling middleware."
+attachExpressErrorHandler(app);
 app.use(errorHandler);
+
+installProcessSafetyNet();
 
 const PORT = config.port;
 
