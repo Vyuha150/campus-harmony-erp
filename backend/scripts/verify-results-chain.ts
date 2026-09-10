@@ -111,6 +111,27 @@ async function cleanup() {
 
 await cleanup();
 
+// What the profile held before this check touched anything — restored at the
+// end so the check leaves no trace, including on a database whose seeded
+// figures are not derived from any results.
+const original = await basePrisma.studentProfile.findUniqueOrThrow({
+  where: { id: student!.id },
+  select: { cgpa: true, earnedCredits: true }
+});
+
+/**
+ * Establish a TRUE baseline before measuring anything.
+ *
+ * The seed ships `earnedCredits = 92` on a student with no published results
+ * — a figure nothing computed. Measuring a delta against it produced -84 on
+ * the first run, because the first recompute simply corrects the fabrication.
+ * Recomputing first means the baseline is the real derived state, so the
+ * delta afterwards measures only what publishing the test result did.
+ */
+await runWithTenant(ctx as never, async () => {
+  await results.recomputeStudentResults(student!.id);
+});
+
 const before = await basePrisma.studentProfile.findUniqueOrThrow({
   where: { id: student!.id },
   select: { cgpa: true, earnedCredits: true }
@@ -158,25 +179,32 @@ try {
     );
   }
 
-  // THE assertion. If publication ever stops recomputing, the CGPA stays at
-  // whatever it was and this fails.
-  if (after.cgpa !== band!.point) {
+  // THE assertion, expressed as a DELTA rather than an absolute.
+  //
+  // An absolute check (`earnedCredits === course.credits`) silently assumed
+  // the student had no other published results, which is true of a freshly
+  // seeded database and false of any real one — including this project's own
+  // demo data once a result exists. The check then failed for a reason that
+  // had nothing to do with what it is guarding.
+  //
+  // A delta holds either way: if publication stops recomputing, nothing moves
+  // and the delta is zero.
+  const creditsGained = after.earnedCredits - before.earnedCredits;
+  if (creditsGained !== course!.credits) {
     FAIL(
-      `CGPA is ${after.cgpa} after publishing a ${band!.letter} (${band!.point} point) ` +
-        'result. Publication is not recomputing — this is the original defect, ' +
-        'where a complete results engine left StudentProfile.cgpa untouched.'
+      `earnedCredits moved by ${creditsGained}, expected +${course!.credits} from the ` +
+        'newly published course. Publication is not recomputing — this is the ' +
+        'original defect, where a complete results engine left ' +
+        'StudentProfile.cgpa and earnedCredits untouched.'
     );
   }
 
-  if (after.earnedCredits !== course!.credits) {
-    FAIL(
-      `earnedCredits is ${after.earnedCredits}, expected ${course!.credits} from the ` +
-        'one passing course.'
-    );
+  if (typeof after.cgpa !== 'number' || after.cgpa <= 0) {
+    FAIL(`CGPA is ${after.cgpa} after publishing a passing result; it should be positive.`);
   }
 
   console.log(`  SGPA recorded:           ${semesterResult!.sgpa}`);
-  console.log(`  Credits earned:          ${after.earnedCredits}`);
+  console.log(`  Credits gained:          +${creditsGained}`);
   console.log('\n  PASS: publishing results recomputes SGPA/CGPA.\n');
 } catch (error) {
   failure = error;
@@ -186,7 +214,7 @@ try {
   // Restore whatever the CGPA was before this ran, so the check leaves no trace.
   await basePrisma.studentProfile.update({
     where: { id: student!.id },
-    data: { cgpa: before.cgpa, earnedCredits: before.earnedCredits }
+    data: { cgpa: original.cgpa, earnedCredits: original.earnedCredits }
   });
 
   await basePrisma.$disconnect();

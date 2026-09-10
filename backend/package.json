@@ -24,7 +24,7 @@
   "type": "module",
   "dependencies": {
     "@prisma/adapter-pg": "^7.5.0",
-    "@prisma/client": "^7.5.0",
+    "@prisma/client": "^7.10.0",
     "@prisma/debug": "^7.4.2",
     "@sentry/node": "^10.74.0",
     "bcrypt": "^6.0.0",
@@ -56,5 +56,9 @@
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
+  },
+  "overrides": {
+    "mysql2": "^3.24.4",
+    "deepmerge-ts": "^8.0.2"
   }
 }
