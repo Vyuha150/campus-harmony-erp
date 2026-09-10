@@ -30,6 +30,7 @@ import {
   ValidationError
 } from '../../lib/errors.js';
 import { resolveGradeBand, round2 } from '../results/gpa.js';
+import { recomputeWithin } from '../results/results.service.js';
 
 const MODULE = 'examination';
 
@@ -378,7 +379,23 @@ export async function publishSessionResults(sessionId: string) {
         data: { status: 'results_published' }
       });
 
-      return { published: results.length, session: session.code };
+      // Recompute SGPA/CGPA for every affected student, IN THIS TRANSACTION.
+      //
+      // Nothing did this before. `StudentProfile.cgpa` had exactly one writer
+      // (`recomputeStudentResults`), reachable only through an endpoint no
+      // screen ever called — so results could be published while every
+      // affected student's CGPA stayed at whatever it was, typically 0. A
+      // published result the GPA does not reflect is worse than an unpublished
+      // one: it looks finished.
+      //
+      // Inside the transaction rather than after it, so publication and the
+      // figures derived from it cannot disagree.
+      const affected = [...new Set(results.map((r) => r.studentProfileId))];
+      for (const studentProfileId of affected) {
+        await recomputeWithin(db, ctx, studentProfileId);
+      }
+
+      return { published: results.length, session: session.code, recomputed: affected.length };
     }
   );
 }
@@ -567,14 +584,21 @@ export async function completeRevaluation(
         }
       });
 
+      // A revaluation that changes a grade changes the CGPA by definition.
+      // This used to return `recomputeRequiredFor` and rely on the caller —
+      // and no caller anywhere ever did it, so a successful revaluation
+      // updated the transcript and left the CGPA reflecting the old mark.
+      // Done here, in the same transaction, rather than asked of a caller who
+      // may forget.
+      const recomputed = await recomputeWithin(db, ctx, original.studentProfileId);
+
       return {
         requestNumber: request.requestNumber,
         marksChanged: true,
         attempt: nextAttempt,
         oldGrade: original.letterGrade,
         newGrade: band.letter,
-        /** The caller must recompute the student's CGPA after this. */
-        recomputeRequiredFor: original.studentProfileId
+        cgpa: recomputed.cgpa
       };
     }
   );

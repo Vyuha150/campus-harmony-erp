@@ -116,6 +116,9 @@ const IDS = {
     exam: 'seed-exam-cse501',
     attendanceSession: 'seed-attendance-session-cse501',
   },
+  results: {
+    gradeScale: 'seed-grade-scale-10point',
+  },
 };
 
 const day = 24 * 60 * 60 * 1000;
@@ -398,6 +401,92 @@ async function main() {
     room: 'CSE-301',
     type: 'Lecture',
   });
+
+  // ── Grading scale ───────────────────────────────────────────────────────────
+  //
+  // Without an active GradeScale, EVERY entry point that touches marks —
+  // recordCourseResult, recomputeStudentResults, enterExamMarks,
+  // moderateResult, completeRevaluation — throws
+  // "No active grading scale is configured". The whole results engine existed
+  // but could not run against a seeded database, because nothing ever created
+  // one.
+  //
+  // THIS IS A PLACEHOLDER, NOT A RECOMMENDATION. It is the widely used Indian
+  // 10-point pattern, seeded so the engine is exercisable out of the box. An
+  // institution's real scale is set by its own academic regulations and differs
+  // in bands, cut-offs and pass mark — it is configured through
+  // POST /api/results/grade-scales, which supersedes this by version rather
+  // than editing it, so historical results stay interpretable.
+  const existingScale = await prisma.gradeScale.findFirst({
+    where: { institutionId: SEED_INSTITUTION_ID, code: 'DEFAULT-10' },
+    select: { id: true },
+  });
+
+  if (!existingScale) {
+    await prisma.gradeScale.create({
+      data: {
+        id: IDS.results.gradeScale,
+        institutionId: SEED_INSTITUTION_ID,
+        code: 'DEFAULT-10',
+        name: 'Default 10-point scale (placeholder — replace with your regulations)',
+        maxPoint: 10,
+        passingPoint: 4,
+        version: '1.0',
+        effectiveFrom: daysFromNow(-365),
+        isActive: true,
+        createdBy: IDS.users.superAdmin,
+        bands: {
+          create: [
+            { letter: 'O', point: 10, minMarks: 90, maxMarks: 100, description: 'Outstanding' },
+            { letter: 'A+', point: 9, minMarks: 80, maxMarks: 89, description: 'Excellent' },
+            { letter: 'A', point: 8, minMarks: 70, maxMarks: 79, description: 'Very good' },
+            { letter: 'B+', point: 7, minMarks: 60, maxMarks: 69, description: 'Good' },
+            { letter: 'B', point: 6, minMarks: 50, maxMarks: 59, description: 'Above average' },
+            { letter: 'C', point: 5, minMarks: 45, maxMarks: 49, description: 'Average' },
+            { letter: 'P', point: 4, minMarks: 40, maxMarks: 44, description: 'Pass' },
+            {
+              letter: 'F',
+              point: 0,
+              minMarks: 0,
+              maxMarks: 39,
+              isPassing: false,
+              description: 'Fail — counts in the GPA denominator',
+            },
+            // Administrative outcomes. Awarded by decision rather than by a
+            // score, so they carry a nominal range and are excluded from the
+            // GPA denominator entirely rather than counting as a zero.
+            {
+              letter: 'AB',
+              point: 0,
+              minMarks: 0,
+              maxMarks: 0,
+              isPassing: false,
+              isExcludedFromGpa: true,
+              description: 'Absent',
+            },
+            {
+              letter: 'W',
+              point: 0,
+              minMarks: 0,
+              maxMarks: 0,
+              isPassing: false,
+              isExcludedFromGpa: true,
+              description: 'Withdrawn',
+            },
+            {
+              letter: 'I',
+              point: 0,
+              minMarks: 0,
+              maxMarks: 0,
+              isPassing: false,
+              isExcludedFromGpa: true,
+              description: 'Incomplete',
+            },
+          ],
+        },
+      },
+    });
+  }
 
   await prisma.enrollment.upsert({
     where: {

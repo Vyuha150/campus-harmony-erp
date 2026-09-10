@@ -172,6 +172,17 @@ jobs:
         working-directory: backend
         run: npx prisma db seed
 
+      # Proves publishing results actually moves a student's CGPA.
+      #
+      # This runs here rather than in the unit-test job because the defect it
+      # guards was in the WIRING between correct parts — the GPA arithmetic
+      # passed its unit tests the whole time StudentProfile.cgpa sat at 0 for
+      # a student with 92 credits. Only a real database, driven through the
+      # real services, exercises the connection.
+      - name: Verify results publication recomputes CGPA
+        working-directory: backend
+        run: npm run verify:results
+
       - name: Verify backup and restore
         working-directory: backend
         env:

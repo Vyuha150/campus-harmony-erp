@@ -15,7 +15,8 @@
     "backup": "tsx scripts/backup.ts create",
     "backup:list": "tsx scripts/backup.ts list",
     "backup:prune": "tsx scripts/backup.ts prune",
-    "backup:verify": "tsx scripts/backup.ts verify"
+    "backup:verify": "tsx scripts/backup.ts verify",
+    "verify:results": "tsx scripts/verify-results-chain.ts"
   },
   "keywords": [],
   "author": "",

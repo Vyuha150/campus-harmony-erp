@@ -343,20 +343,34 @@ export interface StudentResultSummary {
  * output cannot drift from the underlying grades. `StudentProfile.cgpa` and the
  * credit columns are refreshed as a cache of this calculation.
  */
-export async function recomputeStudentResults(
+/**
+ * The computation itself, running inside a caller-supplied transaction.
+ *
+ * Split out from `recomputeStudentResults` so that publication can recompute
+ * IN THE SAME TRANSACTION that publishes. Before this existed, nothing
+ * recomputed on publish at all: `StudentProfile.cgpa` was written by exactly
+ * one function, which was called by exactly one endpoint, which nothing in the
+ * product ever called — so a student's results could be published while their
+ * CGPA stayed at whatever it was before, commonly 0.
+ *
+ * Doing it in the caller's transaction rather than after it matters: a
+ * publication that committed while the recompute failed would leave results
+ * visible against a stale CGPA, which is the same class of half-applied
+ * outcome this module already refuses elsewhere.
+ */
+export async function recomputeWithin(
+  db: typeof basePrisma,
+  ctx: { institutionId: string },
   studentProfileId: string
 ): Promise<StudentResultSummary> {
-  const ctx = requireContext();
-
-  const student = await basePrisma.studentProfile.findFirst({
+  const student = await db.studentProfile.findFirst({
     where: { id: studentProfileId, institutionId: ctx.institutionId }
   });
   if (!student) throw new NotFoundError('Student profile');
 
   const scale = await activeGradeScale(ctx.institutionId);
 
-  // Latest attempt per course wins — a supplementary supersedes the original.
-  const allResults = await basePrisma.courseResult.findMany({
+  const allResults = await db.courseResult.findMany({
     where: { studentProfileId, institutionId: ctx.institutionId },
     orderBy: [{ semester: 'asc' }, { attempt: 'asc' }]
   });
@@ -389,6 +403,91 @@ export async function recomputeStudentResults(
   const computations: SemesterComputation[] = [];
   const summary: StudentResultSummary['semesters'] = [];
 
+  for (const semester of semesters) {
+    const bucket = bySemester.get(semester)!;
+    const computation = computeSgpa(bucket.courses);
+    computations.push(computation);
+
+    const cumulative = computeCgpa(computations);
+
+    await db.semesterResult.upsert({
+      where: {
+        studentProfileId_semester_academicYear: {
+          studentProfileId,
+          semester,
+          academicYear: bucket.academicYear
+        }
+      },
+      update: {
+        gradeScaleId: scale.id,
+        creditsRegistered: computation.creditsRegistered,
+        creditsEarned: computation.creditsEarned,
+        sgpa: computation.sgpa,
+        cgpa: cumulative.cgpa,
+        cumulativeCreditsRegistered: cumulative.cumulativeCreditsRegistered,
+        cumulativeCreditsEarned: cumulative.cumulativeCreditsEarned,
+        resultStatus: computation.creditsEarned === computation.creditsRegistered ? 'pass' : 'fail',
+        computedAt: new Date()
+      },
+      create: {
+        institutionId: ctx.institutionId,
+        studentProfileId,
+        semester,
+        academicYear: bucket.academicYear,
+        gradeScaleId: scale.id,
+        creditsRegistered: computation.creditsRegistered,
+        creditsEarned: computation.creditsEarned,
+        sgpa: computation.sgpa,
+        cgpa: cumulative.cgpa,
+        cumulativeCreditsRegistered: cumulative.cumulativeCreditsRegistered,
+        cumulativeCreditsEarned: cumulative.cumulativeCreditsEarned,
+        resultStatus: computation.creditsEarned === computation.creditsRegistered ? 'pass' : 'fail',
+        status: 'draft'
+      }
+    });
+
+    summary.push({
+      semester,
+      academicYear: bucket.academicYear,
+      sgpa: computation.sgpa,
+      cgpa: cumulative.cgpa,
+      creditsRegistered: computation.creditsRegistered,
+      creditsEarned: computation.creditsEarned,
+      courseCount: bucket.courses.length
+    });
+  }
+
+  const final = computeCgpa(computations);
+
+  // Refresh the cache on StudentProfile. This column is DERIVED — the only
+  // writers are this function and, through it, `recomputeStudentResults`.
+  await db.studentProfile.update({
+    where: { id: studentProfileId },
+    data: {
+      cgpa: final.cgpa,
+      earnedCredits: final.cumulativeCreditsEarned
+    }
+  });
+
+  return {
+    rollNumber: student.rollNumber,
+    cgpa: final.cgpa,
+    totalCreditsRegistered: final.cumulativeCreditsRegistered,
+    totalCreditsEarned: final.cumulativeCreditsEarned,
+    semesters: summary
+  };
+}
+
+export async function recomputeStudentResults(
+  studentProfileId: string
+): Promise<StudentResultSummary> {
+  const ctx = requireContext();
+
+  const student = await basePrisma.studentProfile.findFirst({
+    where: { id: studentProfileId, institutionId: ctx.institutionId }
+  });
+  if (!student) throw new NotFoundError('Student profile');
+
   return mutate(
     ctx,
     {
@@ -396,91 +495,14 @@ export async function recomputeStudentResults(
       module: MODULE,
       resource: `StudentProfile:${studentProfileId}`,
       details: (r) =>
-        `Recomputed results for ${student.rollNumber}: CGPA ${(r as StudentResultSummary).cgpa} across ${semesters.length} semester(s)`,
+        `Recomputed results for ${student.rollNumber}: CGPA ${(r as StudentResultSummary).cgpa} across ${(r as StudentResultSummary).semesters.length} semester(s)`,
       oldValue: { cgpa: student.cgpa, earnedCredits: student.earnedCredits },
       // Resolved after the computation so the audit records the value actually
       // written, not one predicted before the work ran.
       newValue: undefined,
       severity: 'warning'
     },
-    async (tx) => {
-      const db = tx as never as typeof basePrisma;
-
-      for (const semester of semesters) {
-        const bucket = bySemester.get(semester)!;
-        const computation = computeSgpa(bucket.courses);
-        computations.push(computation);
-
-        // CGPA as at THIS semester — cumulative over everything up to here.
-        const cumulative = computeCgpa(computations);
-
-        await db.semesterResult.upsert({
-          where: {
-            studentProfileId_semester_academicYear: {
-              studentProfileId,
-              semester,
-              academicYear: bucket.academicYear
-            }
-          },
-          update: {
-            gradeScaleId: scale.id,
-            creditsRegistered: computation.creditsRegistered,
-            creditsEarned: computation.creditsEarned,
-            sgpa: computation.sgpa,
-            cgpa: cumulative.cgpa,
-            cumulativeCreditsRegistered: cumulative.cumulativeCreditsRegistered,
-            cumulativeCreditsEarned: cumulative.cumulativeCreditsEarned,
-            resultStatus: computation.creditsEarned === computation.creditsRegistered ? 'pass' : 'fail',
-            computedAt: new Date()
-          },
-          create: {
-            institutionId: ctx.institutionId,
-            studentProfileId,
-            semester,
-            academicYear: bucket.academicYear,
-            gradeScaleId: scale.id,
-            creditsRegistered: computation.creditsRegistered,
-            creditsEarned: computation.creditsEarned,
-            sgpa: computation.sgpa,
-            cgpa: cumulative.cgpa,
-            cumulativeCreditsRegistered: cumulative.cumulativeCreditsRegistered,
-            cumulativeCreditsEarned: cumulative.cumulativeCreditsEarned,
-            resultStatus: computation.creditsEarned === computation.creditsRegistered ? 'pass' : 'fail',
-            status: 'draft'
-          }
-        });
-
-        summary.push({
-          semester,
-          academicYear: bucket.academicYear,
-          sgpa: computation.sgpa,
-          cgpa: cumulative.cgpa,
-          creditsRegistered: computation.creditsRegistered,
-          creditsEarned: computation.creditsEarned,
-          courseCount: bucket.courses.length
-        });
-      }
-
-      const final = computeCgpa(computations);
-
-      // Refresh the cache on StudentProfile. This column is now DERIVED — the
-      // only writer is this function, and it always writes a computed value.
-      await db.studentProfile.update({
-        where: { id: studentProfileId },
-        data: {
-          cgpa: final.cgpa,
-          earnedCredits: final.cumulativeCreditsEarned
-        }
-      });
-
-      return {
-        rollNumber: student.rollNumber,
-        cgpa: final.cgpa,
-        totalCreditsRegistered: final.cumulativeCreditsRegistered,
-        totalCreditsEarned: final.cumulativeCreditsEarned,
-        semesters: summary
-      };
-    }
+    async (tx) => recomputeWithin(tx as never as typeof basePrisma, ctx, studentProfileId)
   );
 }
 
@@ -524,6 +546,14 @@ export async function publishSemesterResults(semester: number, academicYear: str
         data: { status: 'published', publishedAt: now, publishedBy: ctx.userId }
       });
 
+      // Recompute BEFORE marking the semester records published, so the rows
+      // being published carry the freshly computed SGPA/CGPA rather than
+      // whatever a previous run left behind.
+      const affected = [...new Set(pending.map((r) => r.studentProfileId))];
+      for (const studentProfileId of affected) {
+        await recomputeWithin(db, ctx, studentProfileId);
+      }
+
       await db.semesterResult.updateMany({
         where: { institutionId: ctx.institutionId, semester, academicYear },
         data: { status: 'published', publishedAt: now, publishedBy: ctx.userId }
@@ -533,10 +563,11 @@ export async function publishSemesterResults(semester: number, academicYear: str
         module: MODULE,
         operation: 'publishSemesterResults',
         userId: ctx.userId,
-        resource: `${academicYear}-S${semester}`
+        resource: `${academicYear}-S${semester}`,
+        studentsRecomputed: affected.length
       });
 
-      return { published: pending.length, semester, academicYear };
+      return { published: pending.length, semester, academicYear, recomputed: affected.length };
     }
   );
 }
