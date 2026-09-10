@@ -131,6 +131,21 @@ export async function enterExamMarks(input: EnterMarksInput) {
   });
   if (!student) throw new NotFoundError('Student profile');
 
+  // Inherit the continuous-assessment marks the course faculty already
+  // recorded, unless this caller is explicitly overriding them.
+  //
+  // Before `Enrollment.internalMarks` existed the faculty's figure lived only
+  // in a string column this module could not sensibly read, so the exam cell
+  // either re-typed marks that had already been entered — with the
+  // transcription errors that invites — or left the field null and lost the
+  // internal component from the record entirely.
+  const enrolment = await basePrisma.enrollment.findFirst({
+    where: { studentProfileId: input.studentProfileId, courseId: schedule.courseId },
+    select: { internalMarks: true }
+  });
+
+  const internalMarks = input.internalMarks ?? enrolment?.internalMarks ?? null;
+
   // An absent candidate gets the scale's excluded-from-GPA band where one
   // exists, so absence is not silently scored as a zero.
   const absentBand = scale.bands.find((b) => b.isExcludedFromGpa);
@@ -165,7 +180,7 @@ export async function enterExamMarks(input: EnterMarksInput) {
         courseId: schedule.courseId,
         semester: schedule.session.semester,
         academicYear: schedule.session.academicYear,
-        internalMarks: input.internalMarks ?? null,
+        internalMarks,
         externalMarks: input.externalMarks ?? null,
         totalMarks: input.isAbsent ? null : input.totalMarks,
         maxMarks,

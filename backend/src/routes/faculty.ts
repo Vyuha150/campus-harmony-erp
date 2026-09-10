@@ -1145,9 +1145,27 @@ router.put('/marks/:courseId', authenticate, validate({ params: z.object({ cours
     const { marks } = req.body;
     if (marks && Array.isArray(marks)) {
       for (const m of marks) {
+        // The screen submits the internal-assessment TOTAL as a string. Store
+        // it as a number in `internalMarks` as well, so the examination module
+        // can read it: `enterExamMarks` takes internalMarks numerically, and
+        // with the value only ever living in the string `grade` column there
+        // was nothing for it to read — the exam cell had to re-enter marks the
+        // faculty had already recorded.
+        //
+        // `grade` keeps being written unchanged, because the student results
+        // screen still reads it as the working grade before publication.
+        const numeric = m.grade === null || m.grade === undefined || String(m.grade).trim() === ''
+          ? null
+          : Number(String(m.grade).trim());
+
+        const internalMarks =
+          numeric !== null && Number.isFinite(numeric) && numeric >= 0 && numeric <= 100
+            ? numeric
+            : null;
+
         await prisma.enrollment.updateMany({
           where: { courseId, studentProfileId: m.studentId },
-          data: { grade: m.grade }
+          data: { grade: m.grade, internalMarks }
         });
       }
     }

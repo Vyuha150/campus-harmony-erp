@@ -824,7 +824,25 @@ model Enrollment {
   studentProfileId String
   courseId         String
   semester         Int
+  /// The working grade shown before a result is published. Historically this
+  /// also held NUMERIC internal marks, because the faculty marks screen wrote
+  /// `String(total)` into it — a number in a column named `grade`. New writes
+  /// put the number in `internalMarks` below; this keeps the letter/working
+  /// value it was named for.
   grade            String?
+
+  /// Continuous-assessment marks recorded by the course faculty.
+  ///
+  /// Separate from `grade` because they are a different kind of value, and
+  /// because the examination engine needs them as a NUMBER: `enterExamMarks`
+  /// takes `internalMarks` as an input, and before this column existed there
+  /// was nowhere for the faculty's figure to travel from — the exam cell had
+  /// to re-type marks the faculty had already entered, or leave them null.
+  ///
+  /// A richer per-component breakdown (quiz / assignment / mid-term) is a
+  /// larger design; this is the single total the marks screen actually
+  /// collects today.
+  internalMarks Float?
 
   student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
   course  Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
