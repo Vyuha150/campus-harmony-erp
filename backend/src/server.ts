@@ -49,6 +49,7 @@ import examinationRoutes from './modules/examination/examination.routes.js';
 import notificationRoutes from './modules/notifications/notifications.routes.js';
 import reportingRoutes from './modules/reporting/reporting.routes.js';
 import financeModuleRoutes from './modules/finance/finance.routes.js';
+import { gatewayRouter, gatewayWebhookRouter } from './modules/finance/gateway.routes.js';
 import importRoutes from './modules/import/import.routes.js';
 import obeRoutes from './modules/obe/obe.routes.js';
 import workflowRoutes from './modules/workflow/workflow.routes.js';
@@ -70,7 +71,21 @@ app.use(
     credentials: true
   })
 );
-app.use(express.json({ limit: '1mb' }));
+app.use(
+  express.json({
+    limit: '1mb',
+    // Razorpay signs the RAW bytes, and re-serialising a parsed object does
+    // not reliably reproduce them (key order, unicode escapes, float
+    // formatting), so every signature would fail. Captured only for the
+    // webhook path — retaining raw bodies for all traffic would be memory
+    // spent on requests that never look at it.
+    verify: (req, _res, buf) => {
+      if (req.url?.includes('/payments/gateway/webhook')) {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+      }
+    }
+  })
+);
 app.use(requestLogger);
 app.use('/api', apiRateLimiter);
 
@@ -147,6 +162,14 @@ app.use('/api/faculty', ...tenantScoped, authorizeRoles('faculty', 'super_admin'
 // which would reject an accountant before the request ever reached this router.
 // This module does its own role checks because they depend on the path — a
 // student may read their OWN ledger, which a blanket gate cannot express.
+// Gateway webhook FIRST, and deliberately outside `tenantScoped`: Razorpay's
+// servers hold no JWT, so it authenticates by HMAC signature instead and
+// derives its institution from signature-covered order notes. Mounted ahead of
+// the tenant-scoped routers so it is not rejected by `authenticate` before it
+// can prove itself.
+app.use('/api/finance', gatewayWebhookRouter);
+
+app.use('/api/finance', ...tenantScoped, gatewayRouter);
 app.use('/api/finance', ...tenantScoped, financeModuleRoutes);
 
 app.use('/api/finance', ...tenantScoped, authorizeRoles('finance_officer', 'principal', 'super_admin', ...OVERSIGHT), financeRoutes);

@@ -177,12 +177,55 @@ describe('source guard — tenant middleware is wired', () => {
     expect(code).toContain('rejectClientTenantOverride');
 
     // Every /api route except auth, health and ready must be tenant-scoped.
-    const mounts = [...code.matchAll(/app\.use\('\/api\/([a-z-]+)'/g)].map((m) => m[1]);
-    const exempt = new Set(['auth']);
-    for (const mount of mounts) {
-      if (exempt.has(mount!)) continue;
-      const line = code.split('\n').find((l) => l.includes(`app.use('/api/${mount}'`));
-      expect(line, `/api/${mount} is not tenant-scoped`).toContain('tenantScoped');
+    //
+    // Checks EVERY mount line, not just the first one found for a path. A path
+    // can be mounted more than once (finance is mounted three times), and the
+    // original `.find()` stopped at the first — so a second, unscoped mount of
+    // an already-scoped path passed silently. That is precisely the mistake
+    // this guard exists to catch.
+    const exemptPaths = new Set(['auth']);
+
+    /**
+     * Routers deliberately mounted OUTSIDE the tenant middleware, each of
+     * which must prove its own identity some other way. Adding to this list
+     * means taking responsibility for that proof.
+     *
+     *   gatewayWebhookRouter — Razorpay's servers hold no JWT. It authenticates
+     *   by HMAC signature over the raw body and derives its institution from
+     *   signature-covered order notes, so a forged institutionId cannot be
+     *   submitted. See modules/finance/gateway.routes.ts.
+     */
+    const exemptRouters = ['gatewayWebhookRouter'];
+
+    const mountLines = code
+      .split('\n')
+      .filter((l) => /app\.use\('\/api\/[a-z-]+'/.test(l));
+
+    for (const line of mountLines) {
+      const mount = line.match(/app\.use\('\/api\/([a-z-]+)'/)?.[1];
+      if (!mount || exemptPaths.has(mount)) continue;
+      if (exemptRouters.some((r) => line.includes(r))) continue;
+
+      expect(line, `/api/${mount} is mounted without tenantScoped`).toContain('tenantScoped');
     }
+  });
+
+  it('the tenant-exempt webhook verifies a signature instead', async () => {
+    // An exemption above is only acceptable while the router it names really
+    // does authenticate by another means. If someone strips the signature
+    // check out, the exemption silently becomes an unauthenticated,
+    // unscoped write endpoint — so the exemption and the check are asserted
+    // together, here.
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const gateway = await fs.readFile(
+      path.resolve(process.cwd(), 'src/modules/finance/gateway.routes.ts'),
+      'utf8'
+    );
+
+    expect(gateway).toContain('verifyWebhookSignature');
+    // The institution must come from the signed payload, never from a
+    // client-supplied field on the request.
+    expect(gateway).toContain('parsed.notes.institutionId');
   });
 });
