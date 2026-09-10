@@ -24,9 +24,18 @@ import { basePrisma } from '../src/lib/prisma.js';
 import { runWithTenant } from '../src/lib/tenantStore.js';
 import * as results from '../src/modules/results/results.service.js';
 
+/**
+ * Throws rather than calling process.exit().
+ *
+ * process.exit() terminates immediately and SKIPS the finally block, so a
+ * failing run left its own rows behind — and the next run then collided with
+ * them and failed for a different reason than the real one. A check that
+ * dirties the database when it fails is a check people stop trusting.
+ */
+class CheckFailed extends Error {}
+
 const FAIL = (message: string): never => {
-  console.error(`\n  FAIL: ${message}\n`);
-  process.exit(1);
+  throw new CheckFailed(message);
 };
 
 const institution = await basePrisma.institution.findFirst({ select: { id: true } });
@@ -107,6 +116,8 @@ const before = await basePrisma.studentProfile.findUniqueOrThrow({
   select: { cgpa: true, earnedCredits: true }
 });
 
+let failure: unknown = null;
+
 try {
   await runWithTenant(ctx as never, async () => {
     await results.recordCourseResult({
@@ -167,6 +178,8 @@ try {
   console.log(`  SGPA recorded:           ${semesterResult!.sgpa}`);
   console.log(`  Credits earned:          ${after.earnedCredits}`);
   console.log('\n  PASS: publishing results recomputes SGPA/CGPA.\n');
+} catch (error) {
+  failure = error;
 } finally {
   await cleanup();
 
@@ -177,4 +190,11 @@ try {
   });
 
   await basePrisma.$disconnect();
+}
+
+if (failure) {
+  console.error(`
+  FAIL: ${failure instanceof Error ? failure.message : String(failure)}
+`);
+  process.exit(1);
 }

@@ -49,8 +49,9 @@ type SemesterResult = {
     courseCode: string;
     courseName: string;
     credits: number;
-    internalMarks: number;
-    externalMarks: number;
+    /** Null where no published result exists — render as unavailable, never as 0. */
+    internalMarks: number | null;
+    externalMarks: number | null;
     totalMarks: number;
     grade: string;
   }>;
@@ -103,8 +104,15 @@ function normalizeSemesterResult(raw: any): SemesterResult {
       courseCode: safeString(course?.courseCode),
       courseName: safeString(course?.courseName),
       credits: safeNumber(course?.credits),
-      internalMarks: safeNumber(course?.internalMarks),
-      externalMarks: safeNumber(course?.externalMarks),
+      // NOT safeNumber: Number(null) is 0, so a missing mark would render as
+      // a score of zero — misleading in exactly the way the fabricated 0.4/0.6
+      // split was.
+      internalMarks: course?.internalMarks === null || course?.internalMarks === undefined
+        ? null
+        : safeNumber(course.internalMarks),
+      externalMarks: course?.externalMarks === null || course?.externalMarks === undefined
+        ? null
+        : safeNumber(course.externalMarks),
       totalMarks: safeNumber(course?.totalMarks),
       grade: safeString(course?.grade),
     })),
@@ -181,34 +189,61 @@ function buildSemesterResults(enrollments: any[], profileCgpa: number): Semester
   return sortedSemesters.map((semester, index) => {
     const rows = grouped.get(semester) ?? [];
     const courses = rows.map((row: any) => {
-      const rawGrade = safeString(row?.grade, 'NA');
       const credits = safeNumber(row?.course?.credits, 0);
-      const metrics = resolveGradeMetrics(rawGrade);
-      const grade = metrics.grade;
-      const totalMarks = metrics.totalMarks;
-      const gradePoints = metrics.gradePoints;
+
+      // A PUBLISHED result is authoritative. Its letter grade came from the
+      // institution's own configured grading scale, and its internal/external
+      // marks are the ones actually awarded.
+      const published = row?.result;
+      if (published) {
+        return {
+          courseId: safeString(row?.courseId),
+          courseCode: safeString(row?.course?.code, '-'),
+          courseName: safeString(row?.course?.name, 'Course'),
+          credits: safeNumber(published.credits, credits),
+          internalMarks: published.internalMarks,
+          externalMarks: published.externalMarks,
+          totalMarks: published.totalMarks,
+          grade: safeString(published.letterGrade, 'NA'),
+        };
+      }
+
+      // No published result yet — show the working grade as recorded, and
+      // nothing more. This used to invent an internal/external split by
+      // multiplying the total by 0.4 and 0.6, showing students a breakdown of
+      // marks that nobody had awarded and that exists nowhere in the system.
+      const metrics = resolveGradeMetrics(safeString(row?.grade, 'NA'));
       return {
         courseId: safeString(row?.courseId),
         courseCode: safeString(row?.course?.code, '-'),
         courseName: safeString(row?.course?.name, 'Course'),
         credits,
-        internalMarks: Math.round(totalMarks * 0.4),
-        externalMarks: Math.round(totalMarks * 0.6),
-        totalMarks,
-        grade,
+        internalMarks: null,
+        externalMarks: null,
+        totalMarks: metrics.totalMarks,
+        grade: metrics.grade,
       };
     });
 
     const totalCredits = courses.reduce((sum, course) => sum + course.credits, 0);
+
+    // Prefer the SGPA/CGPA the BACKEND computed from the institution's own
+    // grading scale. The local calculation below is a fallback for semesters
+    // with no published result, and it uses a scale that does not match the
+    // institution's — which is exactly why the real figures win when present.
+    const backendSgpa = rows.map((r: any) => r?.semesterSgpa).find((v: any) => typeof v === 'number');
+    const backendCgpa = rows.map((r: any) => r?.semesterCgpa).find((v: any) => typeof v === 'number');
+
     const weightedPoints = courses.reduce((sum, course) => sum + (gradeToPoints(course.grade) * course.credits), 0);
-    const sgpa = totalCredits > 0 ? weightedPoints / totalCredits : 0;
-    const fallbackCgpa = profileCgpa;
+    const sgpa = typeof backendSgpa === 'number'
+      ? backendSgpa
+      : (totalCredits > 0 ? weightedPoints / totalCredits : 0);
 
     return normalizeSemesterResult({
       semester,
       year: `${new Date().getFullYear() - index}`,
       sgpa,
-      cgpa: fallbackCgpa,
+      cgpa: typeof backendCgpa === 'number' ? backendCgpa : profileCgpa,
       earnedCredits: courses.reduce((sum, course) => sum + (course.grade === 'F' ? 0 : course.credits), 0),
       totalCredits,
       courses,
@@ -684,8 +719,12 @@ export default function StudentExaminations() {
                                         <TableCell className="font-medium">{course.courseCode}</TableCell>
                                         <TableCell>{course.courseName}</TableCell>
                                         <TableCell>{course.credits}</TableCell>
-                                        <TableCell>{course.internalMarks}</TableCell>
-                                        <TableCell>{course.externalMarks}</TableCell>
+                                        <TableCell>
+                                          {course.internalMarks ?? <span className="text-muted-foreground" title="No published result yet">—</span>}
+                                        </TableCell>
+                                        <TableCell>
+                                          {course.externalMarks ?? <span className="text-muted-foreground" title="No published result yet">—</span>}
+                                        </TableCell>
                                         <TableCell>{course.totalMarks}</TableCell>
                                         <TableCell>
                                           <span className={cn('font-bold', getGradeColor(course.grade))}>

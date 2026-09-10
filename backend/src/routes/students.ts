@@ -889,15 +889,83 @@ router.get('/examinations/hall-ticket', authenticate, async (req: Request, res: 
 });
 
 // Get Results
+/**
+ * A student's results.
+ *
+ * Each enrolment now carries the PUBLISHED result from `CourseResult` when one
+ * exists, under `result`, plus the institution's real SGPA for that semester
+ * from `SemesterResult`.
+ *
+ * WHY: this endpoint returned only `Enrollment.grade`, and the student screen
+ * made up everything else from it. It carried its own hardcoded grade scale
+ * (A+ = 10, A = 9 …) which disagrees with the institution's configured scale
+ * (O = 10, A+ = 9 …), so a student saw a different letter grade than the one
+ * in the official record. It also derived "internal marks" and "external
+ * marks" by multiplying the total by 0.4 and 0.6 — numbers that exist nowhere
+ * in the system and that no one had ever awarded.
+ *
+ * `result` is null where the exam-cell workflow has not produced a published
+ * result yet, and the caller must show the working grade plainly rather than
+ * inventing a breakdown for it.
+ */
 router.get('/results', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
-    const enrollments = await prisma.enrollment.findMany({
-      where: { studentProfileId: profile.id },
-      include: { course: true }
+
+    const [enrollments, courseResults, semesterResults] = await Promise.all([
+      prisma.enrollment.findMany({
+        where: { studentProfileId: profile.id },
+        include: { course: true }
+      }),
+      prisma.courseResult.findMany({
+        where: { studentProfileId: profile.id, status: { in: ['published', 'revalued'] } },
+        orderBy: { attempt: 'asc' }
+      }),
+      prisma.semesterResult.findMany({
+        where: { studentProfileId: profile.id },
+        orderBy: { semester: 'asc' }
+      })
+    ]);
+
+    // Latest attempt wins — a revaluation or supplementary supersedes the
+    // original, exactly as the GPA computation treats it.
+    const resultByCourse = new Map<string, (typeof courseResults)[number]>();
+    for (const result of courseResults) {
+      const existing = resultByCourse.get(result.courseId);
+      if (!existing || result.attempt > existing.attempt) {
+        resultByCourse.set(result.courseId, result);
+      }
+    }
+
+    const sgpaBySemester = new Map(semesterResults.map((s) => [s.semester, s]));
+
+    const data = enrollments.map((enrollment) => {
+      const result = resultByCourse.get(enrollment.courseId);
+      return {
+        ...enrollment,
+        result: result
+          ? {
+              letterGrade: result.letterGrade,
+              gradePoint: result.gradePoint,
+              internalMarks: result.internalMarks,
+              externalMarks: result.externalMarks,
+              totalMarks: result.totalMarks,
+              maxMarks: result.maxMarks,
+              credits: result.credits,
+              isPassing: result.isPassing,
+              isExcludedFromGpa: result.isExcludedFromGpa,
+              attempt: result.attempt,
+              status: result.status,
+              publishedAt: result.publishedAt
+            }
+          : null,
+        semesterSgpa: sgpaBySemester.get(enrollment.semester)?.sgpa ?? null,
+        semesterCgpa: sgpaBySemester.get(enrollment.semester)?.cgpa ?? null
+      };
     });
-    res.json({ success: true, data: enrollments });
+
+    res.json({ success: true, data });
   } catch (error: any) {
     sendError(res, error);
   }
