@@ -1,7 +1,11 @@
 # 14 — Remaining Work to a Production ERP
 
-**Originally written 2026-08-19. Re-measured 2026-09-05.** Measured from the
-repository, not estimated from memory.
+**Originally written 2026-08-19. Re-measured 2026-09-05, and again 2026-09-11.**
+Measured from the repository, not estimated from memory.
+
+> **Read section C first if you are picking this up.** The 2026-09-11 pass found
+> that its central claim — that the academic core did not exist — was wrong, and
+> that changes what the remaining work actually is.
 
 ---
 
@@ -41,24 +45,44 @@ discovered in a browser:
 |---|---|---|---|
 | A1 | Backups + tested restore | ❌ model only | ✅ `npm run backup` / `backup:verify`, exercised in CI |
 | A2 | CI pipeline | ❌ nothing enforced | ✅ 6 gates: types, tests, migrations, audit, container, build |
-| A3 | Dependency vulnerabilities | ❌ 53, 1 critical | 🔷 9, none critical — **each triaged below**; none reachable in this application |
-| A4 | Backend deployment target | ❌ none | 🔷 `backend/Dockerfile` + compose; **host still undecided** |
+| A3 | Dependency vulnerabilities | ❌ 53, 1 critical | ✅ **1 low.** mysql2 and deepmerge-ts pinned to patched versions via npm overrides (2026-09-11); only a dev-server-only esbuild advisory remains |
+| A4 | Backend deployment target | ❌ none | ✅ `backend/Dockerfile` + `render.yaml` blueprint (Postgres, API with a persistent uploads disk, static frontend) |
 | A5 | Object storage for uploads | ❌ local disk | ✅ S3 client present |
 
-**A4 is the one genuinely open item here, and it is a decision, not code.**
+**A4 is resolved:** Render was chosen, and `render.yaml` provisions all three
+services. Read the comment block in it before changing the cross-service URLs:
+Render's `fromService` exposes only PRIVATE-network addresses, so wiring
+`CORS_ORIGINS` and `VITE_API_BASE_URL` that way deploys two services that both
+come up healthy and cannot reach each other.
 
-### A3 — the nine remaining advisories, triaged 2026-09-05
+### A3 — closed 2026-09-11
 
-`npm audit fix` (non-forcing) took 53 to 9. Everything left reports
-"fix available via `npm audit fix --force`", and forcing it would **downgrade
-Prisma from 7.10.0 to 6.19.3 — a major version — and remove 104 packages**, to
-patch tooling that never runs in production. Each was checked for reachability
-instead:
+Down to **one low-severity advisory**. The 2026-09-05 triage below concluded
+none of the nine were reachable, which was true — but "not reachable" is a
+judgement that has to be re-made every time the dependency tree moves, and a
+permanently non-empty audit is one people stop reading.
+
+`mysql2` and `deepmerge-ts` are now pinned to patched versions
+(3.24.4 and 8.0.2) with npm `overrides`. There is no Prisma release that fixes
+them — 7.10.0 is the latest stable, 8.x is release-candidate only, and
+`npm audit fix --force` proposes a *downgrade* to 6.19.3. `@prisma/client` was
+also realigned to 7.10.0, having drifted to 7.5.0 behind its own CLI.
+
+`deepmerge-ts` 8 is a major bump of a library Prisma's config loader uses, so
+it was verified rather than assumed: generate, `migrate status`, seed, the full
+test suite, the CGPA chain check, and a live server boot all pass on the
+overridden tree.
+
+**What remains:** `esbuild`, arbitrary file read *via the esbuild dev server*
+on Windows. `tsx` does not start one and production serves a built image on
+Linux. It stays.
+
+The original triage, kept because the reasoning is still the right method:
 
 | Package | Path | Reachable here? |
 |---|---|---|
-| `mysql2` | `prisma` CLI | **No.** The Prisma CLI bundles a driver per provider; this deployment is PostgreSQL and never loads it |
-| `deepmerge-ts` | `prisma` → `@prisma/config` | **No.** CLI config loading, used for migrations. The runtime package is `@prisma/client` |
+| `mysql2` | `prisma` CLI | **No** — bundled per provider; this deployment is PostgreSQL. *Pinned anyway.* |
+| `deepmerge-ts` | `prisma` → `@prisma/config` | **No** — CLI config loading. The runtime package is `@prisma/client`. *Pinned anyway.* |
 | `esbuild` (backend) | `tsx`, `vitest` | **No.** The advisory is arbitrary file read *when running the esbuild development server*. `tsx` does not start one |
 | `esbuild` (frontend) | `vite`, `lovable-tagger` | **No.** Same advisory. Production serves the static `dist/` build; the Vite dev server is not deployed |
 | `react-router` SSR hydration | `react-router-dom` | **No.** `deserializeErrors()` is an SSR-hydration path; this is a client-only SPA with no SSR |
@@ -122,28 +146,73 @@ percentage or fee total into a plausible wrong one. `unbounded("<reason>")` is
 the explicit, greppable escape hatch. The memory ceiling holds without any
 figure ever being quietly wrong.
 
-## C. Missing academic core — the ERP cannot yet do its central job
+## C. Academic core — re-measured 2026-09-11, and the earlier reading was wrong
 
-| # | Module | Status | Effort |
+**This section previously said the academic core did not exist. That was
+wrong, and the correction matters more than any single item in it.**
+
+The modules exist, are well built, and are mounted. `modules/examination`
+covers session → schedule → eligibility (computed from real attendance and fee
+records) → registration → hall ticket → marks → moderation gate → publication →
+revaluation-as-new-attempt. `modules/results` has versioned `GradeScale`/
+`GradeBand`, credit-weighted SGPA/CGPA, transcripts and grade history.
+`modules/curriculum` has schemes, elective baskets, prerequisites checked
+against real results, and degree progress. `modules/obe` is 1,392 lines of
+CO/PO attainment.
+
+The earlier "❌" was measured from the product surface, where none of it was
+reachable — which was true, and is the real defect, but it is a wiring problem,
+not a missing-module problem. Rebuilding any of this would have been waste.
+
+| # | Module | Status 2026-09-11 |
+|---|---|---|
+| C1 | **SGPA/CGPA engine** | ✅ **Closed.** Existed and was correct; nothing called it. Publication and revaluation now recompute in the same transaction, the seed ships a grading scale (without one every marks path threw), and CI fails if publication stops recomputing |
+| C2 | **Curriculum / electives** | 🔷 Engine real and complete; no UI reaches it |
+| C3 | **Examination lifecycle** | 🔷 Engine real and complete; no UI reaches it |
+| C4 | **OBE (CO/PO/PSO)** | 🔷 Engine real; zero frontend calls |
+| C5 | **Transcripts** | 🔷 `getStudentTranscript` real; student download uses the legacy path |
+| C6 | **Attendance eligibility** | ✅ Enforced by `checkEligibility` against real attendance |
+
+### C7 — the redundancy, stated plainly
+
+Five systems overlap here. This is the thing to fix, and most of it is not a
+code change:
+
+| # | System | Backing model | Who reaches it |
 |---|---|---|---|
-| C1 | **Grade-point + SGPA/CGPA engine** (T-403) | ❌ CGPA is a stored zero. **Correct, but not computed** | L |
-| C2 | **Curriculum / syllabus / electives** | ❌ `Programme` exists; no scheme, basket, or prerequisites | L |
-| C3 | **Examination lifecycle** | ❌ Registration → hall ticket → marks → moderation → result → transcript | XL |
-| C4 | **OBE (CO/PO/PSO + attainment)** | ❌ No models. Required for NBA | L |
-| C5 | **Transcripts & degree issuance** | ❌ Depends on C1 | M |
-| C6 | **Attendance eligibility rules** | 🔷 Recording works; no thresholds or alerts | M |
+| 1 | **The real engine** | `ExamSession`, `CourseResult`, `CurriculumScheme` | Now feeds student results and CGPA |
+| 2 | Faculty internal marks | `Enrollment.grade` → now also `Enrollment.internalMarks` | Faculty marks screen. **Bridged** into (1) as of 0043 |
+| 3 | Student exam view | `Examination` (unrelated model) | `StudentExaminations.tsx` |
+| 4 | COE/Registrar oversight | `ExamProgress` (status counter) | Two oversight screens |
+| 5 | Curriculum approvals | `CurriculumProposal` | Dean/HOD screens — complementary, not duplicate |
 
-> **C1 gates C3, C5, NIRF `GO`, and ABC credit transfer.** It is the highest-value item after section A.
+**Retiring 3 and 4 is a migration, not a refactor, and it should not be done
+on code confidence alone.** Their screens work today because they read simple
+models that carry the real data. The engine only produces results once an
+institution actually runs an exam session — schedules, registration,
+eligibility, moderation, publication. Point those screens at it before that
+happens and they show nothing.
+
+Order that works: adopt the session workflow for one cohort → migrate that
+cohort's data → repoint the screens → retire 3 and 4. The `workflow/bridge.ts`
+strangler already in this repo is the pattern to copy.
+
+> The browser also carried a **sixth** grading implementation — its own
+> hardcoded scale disagreeing with the institution's, so 85 marks showed a
+> student "A" while the record said "A+", plus an invented internal/external
+> split (`total × 0.4`, `total × 0.6`). Removed 2026-09-11.
 
 ## D. Missing operational modules
 
+Re-measured 2026-09-11.
+
 | # | Module | Status | Effort |
 |---|---|---|---|
-| D1 | **Notification delivery** | ⚠️ Stores messages, **sends nothing**. No email/SMS/push | L |
-| D2 | **Fee payment gateway + receipts** | ❌ No integration, no reconciliation | L |
-| D3 | **Bulk import/export** | ❌ No institution can onboard legacy data | L |
-| D4 | **Reporting layer + export** | ❌ No Excel/CSV/PDF anywhere | L |
-| D5 | **Workflow/approval engine** | ❌ Approval logic will be rebuilt per module without it | M |
+| D1 | **Notification delivery** | ✅ **Closed.** Real SMTP (`EmailProvider`) and Twilio (`SmsProvider`); both activate on credentials and fail loudly otherwise. Self-service password reset built on it | — |
+| D2 | **Fee payment gateway** | ✅ **Closed.** Razorpay order + signature-verified webhook, idempotent against retries, reconciled into the existing ledger. Needs merchant keys | — |
+| D3 | **Bulk import/export** | ✅ Was already real — students, faculty, courses, tested. The earlier ❌ was stale | — |
+| D4 | **Reporting layer** | 🔷 CSV/JSON real and honest about refusing xlsx/pdf; HOD exports now real too | S |
+| D5 | **Workflow/approval engine** | ✅ Real — `workflow.service` + the `bridge.ts` strangler | — |
 | D6 | **Committee/policy endpoints** | 🔷 Models exist (migration 0003); no API or UI | M |
 | D7 | **Research depth** | ❌ No citations, patents, consultancy, PhD scholars — NIRF `RP` inputs | M |
 | D8 | **Scholarships, transport, clubs** | ❌ | M |
@@ -260,12 +329,16 @@ Frontend empty states (fabrication removal made them reachable), the remaining 2
 
 ---
 
-## Honest summary
+## Honest summary — rewritten 2026-09-11
 
 **Fixed:** the defects that made the system dangerous — fabricated records, absent audit trail, no migrations, hardcoded secret, public file access, no tenant isolation.
 
-**Proven:** multi-tenancy, and one module (admissions) demonstrating the full target architecture with transactions, validation, audit and quota enforcement.
+**Closed since 2026-09-10:** notification delivery (real SMTP and SMS), self-service password reset, online fee payment (Razorpay, webhook-verified and idempotent), error monitoring, the first load test ever run here, the high-severity dependency advisories, eight fabricated `hod.ts` endpoints that returned success and did nothing — and **CGPA**.
 
-**Outstanding:** 479 endpoints on the legacy pattern, the entire academic core (CGPA, curriculum, examinations), five operational modules, and every production-operations capability.
+**The lesson from this round is worth more than the list.** Almost nothing found in it was a missing feature. The academic core was *built* — examination lifecycle, grading scales, credit-weighted CGPA, curriculum, OBE — and this document previously recorded all of it as absent, because it was measured from the product surface where none of it was reachable. The CGPA bug was not a broken calculation; the calculation was correct and unit-tested throughout. Nothing called it.
 
-**The system is currently a sound foundation with one complete module — not a production ERP.**
+That is the shape of the remaining risk: **correct parts that are not connected**, and unit tests that pass while the connection is missing. The guards added for it — `verify-results-chain.ts` in CI, `payloadContract.test.ts`, `routeExistence.test.ts`, the tenant mount guard — all test *wiring* rather than units, because that is where this codebase actually fails.
+
+**Outstanding:** the five-way overlap in C7 (a migration and a workflow-adoption decision, not a refactor), the legacy endpoint pattern, compliance (blocked on official NAAC/NIRF documents — cannot be honestly built without them), F3's job queue, research/scholarship modules, and load testing on production-class hardware.
+
+**No longer true: "a sound foundation with one complete module."** The foundation is sound, several modules are complete, and the dominant problem is now integration rather than absence. It is not yet a production ERP for a full-scale rollout, but the distance is smaller than this document has been claiming.
