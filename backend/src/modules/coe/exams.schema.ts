@@ -33,6 +33,17 @@ const isoDate = z
   .trim()
   .refine((v) => !Number.isNaN(Date.parse(v)), 'must be a valid date');
 
+/**
+ * The examination session this oversight row reports on, if the institution
+ * is running one.
+ *
+ * Accepted on create and update — unlike `marksEntered` and
+ * `resultsPublished`, this is not an assertion about work done, it is a
+ * pointer to where the truth about that work lives. Setting it makes the
+ * figures derived rather than stored.
+ */
+const examSessionLink = z.string().trim().min(1).max(80).nullable().optional();
+
 export const createExamSchema = z
   .object({
     examName: z.string().trim().min(3).max(120),
@@ -41,7 +52,8 @@ export const createExamSchema = z
     totalStudents: z.coerce.number().int().min(0).max(100000),
     startDate: isoDate,
     endDate: isoDate,
-    coordinator: z.string().trim().min(2).max(120).optional()
+    coordinator: z.string().trim().min(2).max(120).optional(),
+    examSessionId: examSessionLink
   })
   .strict()
   .refine((v) => Date.parse(v.endDate) >= Date.parse(v.startDate), {
@@ -58,7 +70,8 @@ export const updateExamSchema = z
     startDate: isoDate.optional(),
     endDate: isoDate.optional(),
     coordinator: z.string().trim().min(2).max(120).optional(),
-    status: z.enum(EXAM_STATUSES).optional()
+    status: z.enum(EXAM_STATUSES).optional(),
+    examSessionId: examSessionLink
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update.' });

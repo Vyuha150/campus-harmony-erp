@@ -298,60 +298,33 @@ router.put(
 );
 
 // ─── Exam Oversight ───
-router.get('/exams', authenticate, async (req: Request, res: Response) => {
-  try {
-    const [exams, profiles] = await Promise.all([
-      prisma.examProgress.findMany({ orderBy: { startDate: 'desc' } }),
-      prisma.studentProfile.findMany({ select: { program: true, semester: true } })
-    ]);
-
-    const totalProfiles = profiles.length;
-    const programCounts = new Map<string, number>();
-    const programSemesterCounts = new Map<string, number>();
-
-    for (const profile of profiles) {
-      const programKey = normalizeText(profile.program);
-      const semester = normalizeSemester(profile.semester);
-      if (!programKey) continue;
-
-      programCounts.set(programKey, (programCounts.get(programKey) || 0) + 1);
-      if (semester !== null) {
-        const key = `${programKey}::${semester}`;
-        programSemesterCounts.set(key, (programSemesterCounts.get(key) || 0) + 1);
-      }
-    }
-
-    const normalized = exams.map((exam: any) => {
-      const storedTotal = Math.max(0, Number(exam.totalStudents) || 0);
-      const programKey = normalizeText(exam.program);
-      const semester = normalizeSemester(exam.semester);
-
-      let inferredTotal: number | undefined;
-      if (programKey && semester !== null) {
-        inferredTotal = programSemesterCounts.get(`${programKey}::${semester}`);
-      }
-      if ((inferredTotal === undefined || inferredTotal === 0) && programKey) {
-        inferredTotal = programCounts.get(programKey);
-      }
-      if (inferredTotal === undefined || inferredTotal === 0) {
-        inferredTotal = totalProfiles > 0 ? totalProfiles : storedTotal;
-      }
-
-      const totalStudents = Math.max(0, inferredTotal || 0);
-      let marksEntered = Math.max(0, Number(exam.marksEntered) || 0);
-      marksEntered = Math.min(marksEntered, totalStudents);
-      if (exam.status === 'published' || exam.resultsPublished) {
-        marksEntered = totalStudents;
-      }
-
-      return { ...exam, totalStudents, marksEntered };
-    });
-
-    res.json({ success: true, data: normalized });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+//
+// Reads through the SAME service the CoE screen uses, rather than a second
+// implementation over the same table.
+//
+// The handler this replaces produced different numbers from the same rows.
+// It ignored the stored `totalStudents` and inferred a cohort instead,
+// falling through three guesses to "every student profile in the system" —
+// so an exam for one programme could report the whole university as its
+// cohort. It then forced `marksEntered = totalStudents` for anything
+// published, which is a progress bar that always reads complete at the end
+// regardless of what was actually entered.
+//
+// `coe/exams.service.ts` had already removed exactly these two inventions
+// and recorded why: "If a stored figure is wrong, the fix belongs where the
+// figure is written, not in a display path that quietly overwrites it." The
+// registrar screen kept showing the invented figures while the CoE screen
+// showed honest ones, for the same examinations.
+router.get(
+  '/exams',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    // Response shape unchanged — the screen receives the same flat `data`
+    // array it always has, with honest figures in it now.
+    const result = await exams.listExams(getTenantContext(req), { page: 1, pageSize: 200 });
+    res.json({ success: true, data: result.data, meta: result.meta });
+  })
+);
 
 // Phase 3a. This handler carried the SAME line as coe.ts:
 //

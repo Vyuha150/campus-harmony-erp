@@ -91,13 +91,125 @@ export async function listExams(
     basePrisma.examProgress.count({ where: { institutionId: context.institutionId } })
   ]);
 
-  return paginated(rows as ExamView[], total, page);
+  const withProgress = await withDerivedProgress(context, rows as unknown as ExamProgressRow[]);
+  return paginated(withProgress, total, page);
+}
+
+/** A stored row, before the engine's figures are layered over it. */
+type ExamProgressRow = ExamView & { examSessionId: string | null };
+
+/**
+ * Replace the stored progress figures with the engine's real ones, for rows
+ * that name a session.
+ *
+ * The stored columns could never track anything: `marksEntered` is written as
+ * 0 on create and nothing in the codebase ever updated it, and
+ * `resultsPublished` moved only when an operator set the status by hand. The
+ * counts the screen wants have always existed — in `ExamRegistration` and
+ * `CourseResult` — with nothing joining the two.
+ *
+ * Rows with no session keep their stored values untouched. An institution
+ * tracks examinations here before it adopts the session workflow, and
+ * overwriting its figures with zeroes from an engine it is not using yet
+ * would be the same invention in the opposite direction.
+ */
+async function withDerivedProgress(
+  context: TenantContext,
+  rows: ExamProgressRow[]
+): Promise<ExamView[]> {
+  const sessionIds = rows.map((r) => r.examSessionId).filter((id): id is string => Boolean(id));
+  if (sessionIds.length === 0) return rows;
+
+  const [registrations, results, sessions] = await Promise.all([
+    basePrisma.examRegistration.groupBy({
+      by: ['sessionId'],
+      where: { sessionId: { in: sessionIds }, institutionId: context.institutionId },
+      _count: { _all: true }
+    }),
+    // Marks entered = course results reachable from the session's schedules.
+    basePrisma.examSchedule.findMany({
+      where: { sessionId: { in: sessionIds }, institutionId: context.institutionId },
+      select: { sessionId: true, courseId: true, session: { select: { semester: true, academicYear: true } } }
+    }),
+    basePrisma.examSession.findMany({
+      where: { id: { in: sessionIds }, institutionId: context.institutionId },
+      select: { id: true, status: true }
+    })
+  ]);
+
+  const registeredBySession = new Map(registrations.map((r) => [r.sessionId, r._count._all]));
+  const statusBySession = new Map(sessions.map((s) => [s.id, s.status]));
+
+  // One grouped count per session's course set, rather than a query per row.
+  const marksBySession = new Map<string, number>();
+  for (const sessionId of new Set(schedulesSessionIds(results))) {
+    const scoped = results.filter((s) => s.sessionId === sessionId);
+    const first = scoped[0];
+    if (!first) continue;
+
+    marksBySession.set(
+      sessionId,
+      await basePrisma.courseResult.count({
+        where: {
+          institutionId: context.institutionId,
+          courseId: { in: scoped.map((s) => s.courseId) },
+          semester: first.session.semester,
+          academicYear: first.session.academicYear
+        }
+      })
+    );
+  }
+
+  return rows.map((row) => {
+    if (!row.examSessionId) return row;
+
+    const sessionStatus = statusBySession.get(row.examSessionId);
+    return {
+      ...row,
+      totalStudents: registeredBySession.get(row.examSessionId) ?? row.totalStudents,
+      marksEntered: marksBySession.get(row.examSessionId) ?? 0,
+      resultsPublished: sessionStatus === 'results_published'
+    };
+  });
+}
+
+function schedulesSessionIds(schedules: Array<{ sessionId: string }>): string[] {
+  return schedules.map((s) => s.sessionId);
+}
+
+/**
+ * Resolve a client-supplied session id, refusing one from another
+ * institution.
+ *
+ * Without this the link would be an unchecked foreign key straight from a
+ * request body — the exact shape of the mass-assignment defect this file was
+ * written to close, just pointing at a different table.
+ */
+async function resolveSessionLink(
+  context: TenantContext,
+  examSessionId: string | null | undefined
+): Promise<string | null | undefined> {
+  if (examSessionId === undefined) return undefined;
+  if (examSessionId === null) return null;
+
+  const session = await basePrisma.examSession.findFirst({
+    where: { id: examSessionId, institutionId: context.institutionId },
+    select: { id: true }
+  });
+
+  if (!session) {
+    throw new NotFoundError(`Examination session ${examSessionId}`);
+  }
+
+  return session.id;
 }
 
 export async function createExam(
   context: TenantContext,
   input: CreateExamInput
 ): Promise<ExamView> {
+  const linkedSessionId = await resolveSessionLink(context, input.examSessionId);
+
   const coordinator =
     input.coordinator ??
     (await basePrisma.user.findFirst({ where: { id: context.userId }, select: { name: true } }))
@@ -128,6 +240,7 @@ export async function createExam(
           // meaning anything.
           marksEntered: 0,
           resultsPublished: false,
+          examSessionId: linkedSessionId ?? null,
           status: 'scheduling',
           startDate: new Date(input.startDate),
           endDate: new Date(input.endDate),
@@ -152,6 +265,8 @@ export async function updateExam(
 ): Promise<ExamView> {
   const existing = await basePrisma.examProgress.findFirst({ where: { id, institutionId: context.institutionId } });
   if (!existing) throw new NotFoundError(`Exam ${id}`);
+
+  const linkedSessionId = await resolveSessionLink(context, input.examSessionId);
 
   if (input.startDate || input.endDate) {
     const start = Date.parse(input.startDate ?? existing.startDate.toISOString());
@@ -198,6 +313,11 @@ export async function updateExam(
           // removed: it made a progress figure that always read complete at
           // the end regardless of what was actually entered.
           ...(input.status === 'published' ? { resultsPublished: true } : {}),
+          // Pointing the row at a session (or clearing it) is allowed: it says
+          // where the truth lives, it does not assert what the truth is. Once
+          // set, the progress figures are read from the session rather than
+          // from the columns above.
+          ...(linkedSessionId !== undefined ? { examSessionId: linkedSessionId } : {}),
           ...(input.startDate !== undefined ? { startDate: new Date(input.startDate) } : {}),
           ...(input.endDate !== undefined ? { endDate: new Date(input.endDate) } : {})
         }

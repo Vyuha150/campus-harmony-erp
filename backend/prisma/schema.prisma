@@ -2010,15 +2010,30 @@ model ExamProgress {
   examName         String
   semester         String
   program          String
+  /// Stored figures. These are a FALLBACK. When `examSessionId` is set, the
+  /// read path derives `totalStudents`, `marksEntered` and `resultsPublished`
+  /// from the examination engine instead, because these columns cannot track
+  /// anything on their own: `marksEntered` is written as 0 on create and no
+  /// code anywhere ever updated it.
   totalStudents    Int
   marksEntered     Int      @default(0)
   resultsPublished Boolean  @default(false)
+
+  /// The examination session this row reports on, once the institution runs
+  /// one. Nullable because an institution can track an examination here
+  /// before adopting the session workflow — which is the state every
+  /// institution starts in, and the reason this table still exists.
+  examSessionId String?
+
   status           String   @default("scheduling")
   startDate        DateTime @db.Timestamptz(3)
   endDate          DateTime @db.Timestamptz(3)
   coordinator      String
 
-  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  institution Institution  @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  /// SetNull, not Cascade: deleting a session must not silently delete the
+  /// oversight record of the examination it reported on.
+  examSession ExamSession? @relation(fields: [examSessionId], references: [id], onDelete: SetNull)
 
   @@index([institutionId])
 }
@@ -3335,6 +3350,8 @@ model ExamSession {
 
   schedules     ExamSchedule[]
   registrations ExamRegistration[]
+  /// Oversight rows reporting on this session — see `ExamProgress`.
+  progressViews ExamProgress[]
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
