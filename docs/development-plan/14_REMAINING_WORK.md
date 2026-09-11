@@ -170,7 +170,7 @@ not a missing-module problem. Rebuilding any of this would have been waste.
 | C2 | **Curriculum / electives** | 🔷 Engine real and complete; still no UI reaches it — the one genuinely unbridged module |
 | C3 | **Examination lifecycle** | ✅ **Bridged.** Student schedule, hall tickets and revaluation served from the engine; CoE/Registrar oversight derives its figures from it |
 | C4 | **OBE (CO/PO/PSO)** | 🔷 Engine real; zero frontend calls |
-| C5 | **Transcripts** | 🔷 `getStudentTranscript` real; the student download still uses the legacy path, though its CGPA is now the computed one |
+| C5 | **Transcripts** | ✅ **Bridged.** Published results only, with grade/points/credits and per-semester SGPA/CGPA; provisional and labelled so when nothing is published. The download previously printed course code, name and date per row — no grade, no CGPA anywhere on it |
 | C6 | **Attendance eligibility** | ✅ Enforced by `checkEligibility` against real attendance |
 
 ### C7 — the redundancy, and what was done about it *(2026-09-11)*
@@ -196,6 +196,12 @@ serve; until then the old path answers, and the screen never goes blank.
 session workflow for a cohort, migrate that cohort's data, confirm the engine
 is answering, then drop the tables. The bridges above mean that can happen per
 institution, without a coordinated release.
+
+**Found while bridging the transcript, and fixed:** the CGPA recompute had no
+status filter. A submitted-but-unmoderated F pulled a live student from 9.00 to
+5.14 and manufactured a semester row with SGPA 0. A CGPA moves when a result is
+published, not before; the recompute now reads published and revalued results
+only, and the CI guard tests that as a second property.
 
 **The seed now walks the engine path.** A fresh database comes up with a
 session, an eligible registration, an issued hall ticket with a seat
