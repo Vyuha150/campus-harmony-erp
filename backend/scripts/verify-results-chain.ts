@@ -101,10 +101,10 @@ const ctx = {
 // Clean any residue from a previous run, so the check is repeatable.
 async function cleanup() {
   await basePrisma.gradeHistory.deleteMany({
-    where: { courseResult: { academicYear: ACADEMIC_YEAR, attempt: ATTEMPT } }
+    where: { courseResult: { academicYear: ACADEMIC_YEAR, attempt: { in: [ATTEMPT, ATTEMPT + 1] } } }
   });
   await basePrisma.courseResult.deleteMany({
-    where: { academicYear: ACADEMIC_YEAR, attempt: ATTEMPT }
+    where: { academicYear: ACADEMIC_YEAR, attempt: { in: [ATTEMPT, ATTEMPT + 1] } }
   });
   await basePrisma.semesterResult.deleteMany({ where: { academicYear: ACADEMIC_YEAR } });
 }
@@ -205,7 +205,62 @@ try {
 
   console.log(`  SGPA recorded:           ${semesterResult!.sgpa}`);
   console.log(`  Credits gained:          +${creditsGained}`);
-  console.log('\n  PASS: publishing results recomputes SGPA/CGPA.\n');
+
+  // ── Second property: an UNPUBLISHED result must not count ─────────────────
+  //
+  // Found after the first version of this check shipped. The recompute had no
+  // status filter, so a mark that was entered but not yet moderated or
+  // published counted towards the CGPA as soon as anything triggered a
+  // recompute. One submitted F on a 3-credit course pulled a live student
+  // from 9.00 to 5.14. A CGPA moves when a result is published, not before.
+  const DRAFT_SEMESTER = SEMESTER - 1;
+  await basePrisma.courseResult.create({
+    data: {
+      institutionId: institution!.id,
+      studentProfileId: student!.id,
+      courseId: course!.id,
+      semester: DRAFT_SEMESTER,
+      academicYear: ACADEMIC_YEAR,
+      totalMarks: 5,
+      maxMarks: 100,
+      letterGrade: 'F',
+      gradePoint: 0,
+      credits: course!.credits,
+      isPassing: false,
+      isExcludedFromGpa: false,
+      attempt: ATTEMPT + 1,
+      status: 'submitted'
+    }
+  });
+
+  await runWithTenant(ctx as never, async () => {
+    await results.recomputeStudentResults(student!.id);
+  });
+
+  const withDraft = await basePrisma.studentProfile.findUniqueOrThrow({
+    where: { id: student!.id },
+    select: { cgpa: true, earnedCredits: true }
+  });
+
+  if (withDraft.cgpa !== after.cgpa) {
+    FAIL(
+      `CGPA moved from ${after.cgpa} to ${withDraft.cgpa} because of a SUBMITTED, unpublished ` +
+        'result. Unpublished marks are counting towards the official CGPA.'
+    );
+  }
+
+  const zombie = await basePrisma.semesterResult.findFirst({
+    where: { studentProfileId: student!.id, semester: DRAFT_SEMESTER, academicYear: ACADEMIC_YEAR }
+  });
+  if (zombie) {
+    FAIL(
+      `A SemesterResult was created for semester ${DRAFT_SEMESTER}, which has no published ` +
+        'result — the recompute is manufacturing semester rows from unpublished marks.'
+    );
+  }
+
+  console.log(`  Draft result ignored:    CGPA still ${withDraft.cgpa}`);
+  console.log('\n  PASS: publishing recomputes SGPA/CGPA, and unpublished marks do not count.\n');
 } catch (error) {
   failure = error;
 } finally {

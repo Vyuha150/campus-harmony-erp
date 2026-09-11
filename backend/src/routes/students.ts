@@ -1107,11 +1107,94 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
 });
 
 // Generate Transcript Data
+/**
+ * A student's transcript.
+ *
+ * Built from PUBLISHED results only. A transcript is an official record of
+ * outcomes, and a mark that has been entered but not yet moderated and
+ * published is not an outcome — showing it would let a student download an
+ * "official" document carrying a grade the examination cell may still change.
+ *
+ * Each record carries the letter grade, grade point and credits, and the
+ * response carries per-semester SGPA/CGPA. The legacy version returned raw
+ * enrolment rows, and the download that consumed it printed course code, name
+ * and date per row — a "transcript" with no grades on it anywhere.
+ *
+ * Falls back to enrolments for a student with nothing published yet, labelled
+ * as provisional so the download can say so.
+ */
 router.get('/results/transcript', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
     const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    const student = {
+      name: user?.name ?? 'Student',
+      rollNumber: profile.rollNumber,
+      program: profile.program,
+      branch: profile.branch,
+      admissionYear: profile.admissionYear,
+      semester: profile.semester,
+      cgpa: profile.cgpa,
+      earnedCredits: profile.earnedCredits,
+      totalCredits: profile.totalCredits
+    };
+
+    const [published, semesterResults] = await Promise.all([
+      prisma.courseResult.findMany({
+        where: { studentProfileId: profile.id, status: { in: ['published', 'revalued'] } },
+        include: { course: { select: { code: true, name: true } } },
+        orderBy: [{ semester: 'asc' }, { attempt: 'asc' }]
+      }),
+      prisma.semesterResult.findMany({
+        where: { studentProfileId: profile.id },
+        orderBy: { semester: 'asc' }
+      })
+    ]);
+
+    if (published.length > 0) {
+      // Latest attempt per course — a revaluation or supplementary supersedes
+      // the original on the transcript, as it does in the GPA.
+      const latest = new Map<string, (typeof published)[number]>();
+      for (const r of published) {
+        const key = `${r.semester}::${r.courseId}`;
+        const existing = latest.get(key);
+        if (!existing || r.attempt > existing.attempt) latest.set(key, r);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          student,
+          official: true,
+          generatedAt: new Date(),
+          semesters: semesterResults.map((s) => ({
+            semester: s.semester,
+            academicYear: s.academicYear,
+            sgpa: s.sgpa,
+            cgpa: s.cgpa,
+            creditsRegistered: s.creditsRegistered,
+            creditsEarned: s.creditsEarned,
+            resultStatus: s.resultStatus
+          })),
+          records: [...latest.values()].map((r) => ({
+            semester: r.semester,
+            academicYear: r.academicYear,
+            courseCode: r.course.code,
+            courseName: r.course.name,
+            credits: r.credits,
+            totalMarks: r.totalMarks,
+            maxMarks: r.maxMarks,
+            letterGrade: r.letterGrade,
+            gradePoint: r.gradePoint,
+            attempt: r.attempt,
+            isPassing: r.isPassing
+          }))
+        }
+      });
+      return;
+    }
 
     const enrollments = await prisma.enrollment.findMany({
       where: { studentProfileId: profile.id },
@@ -1122,18 +1205,20 @@ router.get('/results/transcript', authenticate, async (req: Request, res: Respon
     res.json({
       success: true,
       data: {
-        student: {
-          name: user?.name ?? 'Student',
-          rollNumber: profile.rollNumber,
-          program: profile.program,
-          branch: profile.branch,
-          admissionYear: profile.admissionYear,
-          cgpa: profile.cgpa,
-          earnedCredits: profile.earnedCredits,
-          totalCredits: profile.totalCredits
-        },
+        student,
+        // Nothing published: this is a list of enrolments with working
+        // grades, and must not be presented as an official record.
+        official: false,
+        notice: 'No results have been published yet. This is a provisional summary of enrolments, not an official transcript.',
         generatedAt: new Date(),
-        records: enrollments
+        semesters: [],
+        records: enrollments.map((e) => ({
+          semester: e.semester,
+          courseCode: e.course.code,
+          courseName: e.course.name,
+          credits: e.course.credits,
+          workingGrade: e.grade
+        }))
       }
     });
   } catch (error: any) {

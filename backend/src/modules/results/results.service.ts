@@ -370,8 +370,29 @@ export async function recomputeWithin(
 
   const scale = await activeGradeScale(ctx.institutionId);
 
+  // PUBLISHED results only.
+  //
+  // This query had no status filter, so a mark that had been entered but not
+  // yet moderated or published counted towards the CGPA the moment anything
+  // triggered a recompute — a revaluation completing on a different course,
+  // a publication for a different semester. Verified against the live
+  // database: one submitted-but-unpublished F on a 3-credit course pulled a
+  // student's CGPA from 9.00 to 5.14 and manufactured a semester result with
+  // SGPA 0, for a mark the examination cell had not finished with.
+  //
+  // A CGPA is an official figure. It moves when a result is published, and
+  // not before. `revalued` is included because a completed revaluation IS a
+  // published outcome — it supersedes the original attempt.
+  //
+  // Callers that publish do so BEFORE recomputing, inside the same
+  // transaction, so the results they have just published are already visible
+  // to this filter.
   const allResults = await db.courseResult.findMany({
-    where: { studentProfileId, institutionId: ctx.institutionId },
+    where: {
+      studentProfileId,
+      institutionId: ctx.institutionId,
+      status: { in: ['published', 'revalued'] }
+    },
     orderBy: [{ semester: 'asc' }, { attempt: 'asc' }]
   });
 
@@ -458,6 +479,21 @@ export async function recomputeWithin(
   }
 
   const final = computeCgpa(computations);
+
+  // Remove DRAFT semester rows that no longer have any published result
+  // behind them. SemesterResult is derived from CourseResult; a derived row
+  // with no source is a zombie, and this loop only ever upserts, so nothing
+  // else would clear one. Published semester rows are left alone — they are
+  // an official record, and a published semester with no published courses
+  // is an inconsistency to surface, not silently delete.
+  await db.semesterResult.deleteMany({
+    where: {
+      studentProfileId,
+      institutionId: ctx.institutionId,
+      status: 'draft',
+      ...(semesters.length > 0 ? { semester: { notIn: semesters } } : {})
+    }
+  });
 
   // Refresh the cache on StudentProfile. This column is DERIVED — the only
   // writers are this function and, through it, `recomputeStudentResults`.

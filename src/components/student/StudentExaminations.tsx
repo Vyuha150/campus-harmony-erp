@@ -378,8 +378,69 @@ export default function StudentExaminations() {
     handleApiTextDownload('/students/examinations/hall-ticket', 'hall_ticket.txt', 'Campus Harmony ERP - Hall Ticket');
   };
 
-  const downloadTranscript = () => {
-    handleApiTextDownload('/students/results/transcript', 'transcript_summary.txt', 'Campus Harmony ERP - Transcript Summary');
+  /**
+   * The transcript gets its own renderer.
+   *
+   * It previously went through the hall-ticket formatter above, which prints
+   * course code, name and date per row — so the file a student downloaded as
+   * their "transcript" carried no grade, no credits and no CGPA anywhere on it.
+   */
+  const downloadTranscript = async () => {
+    try {
+      const payload = await fetchApi<any>('/students/results/transcript');
+      const student = payload?.student ?? {};
+      const lines: string[] = [];
+
+      lines.push(payload?.official ? 'Campus Harmony ERP - Academic Transcript' : 'Campus Harmony ERP - Provisional Summary');
+      lines.push('');
+      if (payload?.notice) {
+        lines.push(`NOTICE: ${safeString(payload.notice)}`);
+        lines.push('');
+      }
+      lines.push(`Name: ${safeString(student.name)}`);
+      lines.push(`Roll Number: ${safeString(student.rollNumber)}`);
+      lines.push(`Programme: ${safeString(student.program)}`);
+      lines.push(`Branch: ${safeString(student.branch)}`);
+      if (student.admissionYear) lines.push(`Admission Year: ${safeString(student.admissionYear)}`);
+      lines.push('');
+
+      const semesters = safeArray<any>(payload?.semesters);
+      const records = safeArray<any>(payload?.records);
+
+      if (payload?.official && semesters.length > 0) {
+        for (const sem of semesters) {
+          lines.push(`Semester ${safeNumber(sem.semester)} (${safeString(sem.academicYear)})`);
+          lines.push('  Course      Credits   Marks   Grade   Points');
+          for (const r of records.filter((x) => safeNumber(x.semester) === safeNumber(sem.semester))) {
+            const marks = r.totalMarks != null ? `${safeNumber(r.totalMarks)}/${safeNumber(r.maxMarks, 100)}` : '-';
+            const attempt = safeNumber(r.attempt, 1) > 1 ? ` (attempt ${safeNumber(r.attempt)})` : '';
+            lines.push(
+              `  ${safeString(r.courseCode, '-').padEnd(11)} ${String(safeNumber(r.credits)).padEnd(9)} ${marks.padEnd(7)} ${safeString(r.letterGrade, '-').padEnd(7)} ${safeNumber(r.gradePoint)}${attempt}`
+            );
+          }
+          lines.push(`  SGPA: ${safeNumber(sem.sgpa).toFixed(2)}   CGPA: ${safeNumber(sem.cgpa).toFixed(2)}   Credits earned: ${safeNumber(sem.creditsEarned)}/${safeNumber(sem.creditsRegistered)}`);
+          lines.push('');
+        }
+        const last = semesters[semesters.length - 1];
+        lines.push(`Cumulative GPA: ${safeNumber(last?.cgpa).toFixed(2)}`);
+        lines.push(`Total credits earned: ${safeNumber(student.earnedCredits)}`);
+      } else {
+        lines.push('Enrolments');
+        for (const r of records) {
+          lines.push(`  Sem ${safeNumber(r.semester)}  ${safeString(r.courseCode, '-')}  ${safeString(r.courseName, 'Course')}  (${safeNumber(r.credits)} cr)${r.workingGrade ? `  working grade: ${safeString(r.workingGrade)}` : ''}`);
+        }
+      }
+
+      lines.push('');
+      lines.push(`Generated On: ${safeDate(payload?.generatedAt, new Date()).toLocaleString()}`);
+      downloadTextFile(payload?.official ? 'transcript.txt' : 'provisional_summary.txt', lines.join('\n'));
+    } catch (error: any) {
+      toast({
+        title: 'Download failed',
+        description: safeString(error?.message, 'Unable to fetch transcript.'),
+        variant: 'destructive'
+      });
+    }
   };
 
   const handleRevaluationRequest = async (exam: Exam) => {
