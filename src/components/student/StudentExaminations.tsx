@@ -329,17 +329,29 @@ export default function StudentExaminations() {
   const getExamTypeBadge = (type: string) => {
     switch (type) {
       case 'midterm':
+      // The examination engine's own vocabulary, which is what a registered
+      // student's schedule now carries. Without these cases the badge showed
+      // the raw enum, underscore and all.
+      case 'mid_semester':
         return <Badge variant="secondary">Mid-Term</Badge>;
       case 'endterm':
+      case 'end_semester':
         return <Badge>End-Term</Badge>;
       case 'internal':
         return <Badge variant="outline">Internal</Badge>;
+      case 'supplementary':
+        return <Badge variant="outline" className="border-warning/50 text-warning">Supplementary</Badge>;
+      case 'revaluation':
+        return <Badge variant="outline">Revaluation</Badge>;
+      case 'special':
+        return <Badge variant="outline">Special</Badge>;
       case 'practical':
         return <Badge variant="outline" className="border-success/50 text-success">Practical</Badge>;
       case 'viva':
         return <Badge variant="outline" className="border-info/50 text-info">Viva</Badge>;
       default:
-        return <Badge variant="outline">{type}</Badge>;
+        // Anything unrecognised still reads as words rather than an enum.
+        return <Badge variant="outline">{type.replace(/_/g, ' ')}</Badge>;
     }
   };
 

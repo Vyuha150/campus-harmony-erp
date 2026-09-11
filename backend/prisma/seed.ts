@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import bcrypt from 'bcrypt';
 import { prisma } from '../src/lib/prisma.js';
+import { runWithTenant } from '../src/lib/tenantStore.js';
+import { recomputeStudentResults } from '../src/modules/results/results.service.js';
 
 const db: any = prisma;
 
@@ -118,6 +120,13 @@ const IDS = {
   },
   results: {
     gradeScale: 'seed-grade-scale-10point',
+    examSession: 'seed-exam-session-s5',
+    examSchedule: 'seed-exam-schedule-cse501',
+    examRegistration: 'seed-exam-registration-cse501',
+    hallTicket: 'seed-hall-ticket-s5',
+    hallTicketEntry: 'seed-hall-ticket-entry-cse501',
+    examProgress: 'seed-exam-progress-s5',
+    courseResult: 'seed-course-result-cse501',
   },
 };
 
@@ -561,6 +570,9 @@ async function main() {
     },
   });
 
+  // Legacy flat exam row. Kept because the student endpoints still fall back
+  // to it for an institution that has not adopted the session workflow, and
+  // that fallback should be exercised by the seed rather than assumed.
   await upsertById(prisma.examination, IDS.core.exam, {
     courseId: IDS.core.course,
     type: 'midterm',
@@ -569,6 +581,94 @@ async function main() {
     endTime: '11:00',
     venue: 'Exam Hall A',
     maxMarks: 100,
+  });
+
+  // ── Examination session: the engine path ────────────────────────────────────
+  //
+  // Seeded so the ENGINE is what a seeded student actually sees — session,
+  // schedule, eligible registration and an issued hall ticket with a real
+  // seat allocation. Without this the whole examination module sat dormant in
+  // every fresh database, which is a large part of why it was recorded as
+  // "not built" for so long: nothing exercised it, so nothing revealed it.
+  await upsertById(prisma.examSession, IDS.results.examSession, {
+    institutionId: SEED_INSTITUTION_ID,
+    code: 'ES-2026-S5',
+    name: 'End Semester Examination — Semester 5',
+    type: 'end_semester',
+    academicYear: '2026-27',
+    semester: 5,
+    registrationStartsAt: daysFromNow(-30),
+    registrationEndsAt: daysFromNow(-10),
+    examStartsAt: daysFromNow(10),
+    examEndsAt: daysFromNow(20),
+    status: 'registration_closed',
+    createdBy: IDS.users.coe,
+  });
+
+  await upsertById(prisma.examSchedule, IDS.results.examSchedule, {
+    institutionId: SEED_INSTITUTION_ID,
+    sessionId: IDS.results.examSession,
+    courseId: IDS.core.course,
+    examDate: daysFromNow(10),
+    startTime: '10:00',
+    endTime: '13:00',
+    venue: 'Main Examination Hall',
+    maxMarks: 100,
+  });
+
+  await upsertById(prisma.examRegistration, IDS.results.examRegistration, {
+    institutionId: SEED_INSTITUTION_ID,
+    sessionId: IDS.results.examSession,
+    scheduleId: IDS.results.examSchedule,
+    studentProfileId: IDS.student.profile,
+    attendancePercentage: 86,
+    attendanceMet: true,
+    feesCleared: true,
+    isEligible: true,
+    status: 'registered',
+    registeredBy: IDS.users.coe,
+  });
+
+  await upsertById(prisma.hallTicket, IDS.results.hallTicket, {
+    institutionId: SEED_INSTITUTION_ID,
+    sessionId: IDS.results.examSession,
+    studentProfileId: IDS.student.profile,
+    ticketNumber: 'HT-2026-S5-00001',
+    verificationCode: 'CH5K2M',
+    issuedBy: IDS.users.coe,
+    status: 'valid',
+  });
+
+  await upsertById(prisma.hallTicketEntry, IDS.results.hallTicketEntry, {
+    hallTicketId: IDS.results.hallTicket,
+    scheduleId: IDS.results.examSchedule,
+    seatNumber: 'B-17',
+    roomNumber: 'Main Examination Hall',
+  });
+
+  // A CoE/Registrar oversight row POINTED AT the session above, so its
+  // progress figures are derived from real registrations and results rather
+  // than from the stored columns, which nothing ever updates.
+  //
+  // Seeded ALONGSIDE the existing unlinked "Mid Semester Exam" row rather
+  // than replacing it, so a fresh database demonstrates both behaviours: one
+  // exam whose figures come from the engine, and one that still shows what an
+  // operator typed because no session backs it. The stored figures below are
+  // deliberately wrong — nothing reads them once the link exists, and a seed
+  // that agrees with the derived answer would not prove that.
+  await upsertById(prisma.examProgress, IDS.results.examProgress, {
+    institutionId: SEED_INSTITUTION_ID,
+    examName: 'End Semester Examination — Semester 5',
+    semester: '5',
+    program: 'B.Tech CSE',
+    totalStudents: 9999,
+    marksEntered: 0,
+    resultsPublished: false,
+    examSessionId: IDS.results.examSession,
+    status: 'mark_entry',
+    startDate: daysFromNow(10),
+    endDate: daysFromNow(20),
+    coordinator: 'Controller of Examinations',
   });
 
   await upsertById(prisma.attendanceSession, IDS.core.attendanceSession, {
@@ -1989,6 +2089,103 @@ async function main() {
     notes: 'Good participation',
     sessionType: 'training',
   });
+
+  // ── A published result, and the figures derived from it ─────────────────────
+  //
+  // Seeded last, because the derived values depend on everything above.
+  //
+  // Without this, a freshly seeded database showed a student with a CGPA of
+  // zero and no published result anywhere — which is the exact state that made
+  // the results engine look unbuilt for months. A seed that never exercises a
+  // path is a path nobody notices is broken.
+  //
+  // `recomputeStudentResults` is then called rather than hardcoding cgpa and
+  // earnedCredits: those columns are DERIVED, and a seed asserting its own
+  // values for them would reintroduce the fabricated `cgpa: 8.5` this project
+  // spent real effort removing.
+  // Upserted on the NATURAL key, not the surrogate id.
+  //
+  // CourseResult is unique on (studentProfileId, courseId, attempt), so
+  // `upsertById` creates a second row for the same attempt and the constraint
+  // rejects it — which is exactly what happened the first time this ran
+  // against a database that already held a result for this course. A fresh
+  // database hid it completely.
+  const existingResult = await prisma.courseResult.findFirst({
+    where: {
+      studentProfileId: IDS.student.profile,
+      courseId: IDS.core.course,
+      attempt: 1,
+    },
+    select: { id: true },
+  });
+
+  // `institutionId` is written out at BOTH call sites rather than spread in
+  // from a shared object. seedTenancy.test.ts scans this file's source for it
+  // next to each create, and a spread hides it from that check — which matters
+  // because `upsertById` takes `delegate: any`, so a missing tenant key is
+  // invisible to tsc and only surfaces as a runtime throw partway through the
+  // seed.
+  if (existingResult) {
+    await prisma.courseResult.update({
+      where: { id: existingResult.id },
+      data: {
+        institutionId: SEED_INSTITUTION_ID,
+        studentProfileId: IDS.student.profile,
+        courseId: IDS.core.course,
+        semester: 5,
+        academicYear: '2026-27',
+        internalMarks: 34,
+        externalMarks: 51,
+        totalMarks: 85,
+        maxMarks: 100,
+        letterGrade: 'A+',
+        gradePoint: 9,
+        credits: 4,
+        isPassing: true,
+        isExcludedFromGpa: false,
+        attempt: 1,
+        status: 'published',
+        publishedAt: daysFromNow(-1),
+        publishedBy: IDS.users.coe,
+      },
+    });
+  } else {
+    await prisma.courseResult.create({
+      data: {
+        id: IDS.results.courseResult,
+        institutionId: SEED_INSTITUTION_ID,
+        studentProfileId: IDS.student.profile,
+        courseId: IDS.core.course,
+        semester: 5,
+        academicYear: '2026-27',
+        internalMarks: 34,
+        externalMarks: 51,
+        totalMarks: 85,
+        maxMarks: 100,
+        letterGrade: 'A+',
+        gradePoint: 9,
+        credits: 4,
+        isPassing: true,
+        isExcludedFromGpa: false,
+        attempt: 1,
+        status: 'published',
+        publishedAt: daysFromNow(-1),
+        publishedBy: IDS.users.coe,
+      },
+    });
+  }
+
+  await runWithTenant(
+    {
+      institutionId: SEED_INSTITUTION_ID,
+      campusId: null,
+      userId: IDS.users.coe,
+      role: 'coe',
+    } as never,
+    async () => {
+      await recomputeStudentResults(IDS.student.profile);
+    }
+  );
 
   console.log('Seed completed successfully.');
   console.log(`Default password for seeded users: ${DEFAULT_PASSWORD}`);

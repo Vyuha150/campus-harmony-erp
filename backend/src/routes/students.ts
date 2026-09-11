@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import * as libraryService from '../modules/library/library.service.js';
+import * as marks from '../modules/examination/marks.service.js';
 import {
   submitAssignmentSchema,
   revaluationSchema,
@@ -832,10 +833,86 @@ router.post('/assignments/:id/submit', authenticate, validate({ body: submitAssi
 });
 
 // Get Examinations
+/**
+ * A student's examinations.
+ *
+ * Served from the examination ENGINE (`ExamSchedule` reached through the
+ * student's own `ExamRegistration` rows) whenever they are registered for
+ * anything, and from the legacy `Examination` table otherwise.
+ *
+ * Two parallel exam schedules existed. The engine's is the one that carries
+ * eligibility, hall tickets, moderation and revaluation; the legacy table is
+ * a flat list with none of that. Serving the engine's when it has something
+ * to say, and the old one when it does not, moves students onto it as their
+ * institution adopts sessions — without the screen going blank on the day
+ * the change ships, which is what repointing it outright would have done.
+ */
 router.get('/examinations', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
+
+    const registrations = await prisma.examRegistration.findMany({
+      where: { studentProfileId: profile.id, status: { not: 'cancelled' } },
+      include: {
+        schedule: { include: { course: true, session: true } }
+      }
+    });
+
+    if (registrations.length > 0) {
+      const scheduleIds = registrations.map((r) => r.scheduleId);
+
+      const [seats, results] = await Promise.all([
+        prisma.hallTicketEntry.findMany({
+          where: { scheduleId: { in: scheduleIds }, hallTicket: { studentProfileId: profile.id } },
+          select: { scheduleId: true, seatNumber: true, roomNumber: true }
+        }),
+        prisma.courseResult.findMany({
+          where: {
+            studentProfileId: profile.id,
+            status: { in: ['published', 'revalued'] }
+          },
+          orderBy: { attempt: 'asc' }
+        })
+      ]);
+
+      const seatBySchedule = new Map(seats.map((s) => [s.scheduleId, s]));
+      const resultByCourse = new Map(results.map((r) => [r.courseId, r]));
+
+      const data = registrations
+        .map((registration) => {
+          const schedule = registration.schedule;
+          const seat = seatBySchedule.get(schedule.id);
+          const result = resultByCourse.get(schedule.courseId);
+
+          return {
+            id: schedule.id,
+            courseId: schedule.courseId,
+            courseName: schedule.course.name,
+            courseCode: schedule.course.code,
+            type: schedule.session.type,
+            date: schedule.examDate,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            venue: schedule.venue ?? seat?.roomNumber ?? '',
+            seatNumber: seat?.seatNumber ?? undefined,
+            maxMarks: schedule.maxMarks,
+            // Only a PUBLISHED result is shown. A moderated-but-unpublished
+            // mark is not the student's to see yet.
+            obtainedMarks: result?.totalMarks ?? undefined,
+            grade: result?.letterGrade ?? undefined,
+            // Ineligibility is the student's own business — they need to know
+            // before the exam, not discover it at the hall door.
+            isEligible: registration.isEligible,
+            ineligibilityReasons: registration.isEligible ? undefined : registration.ineligibilityReasons
+          };
+        })
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+      res.json({ success: true, data });
+      return;
+    }
+
     const enrollments = await prisma.enrollment.findMany({ where: { studentProfileId: profile.id } });
     const courseIds = enrollments.map(e => e.courseId);
 
@@ -851,11 +928,70 @@ router.get('/examinations', authenticate, async (req: Request, res: Response) =>
 });
 
 // Generate Hall Ticket Data
+/**
+ * A student's hall ticket.
+ *
+ * Returns the ISSUED hall ticket when one exists — with its ticket number,
+ * verification code and per-paper seat allocation, which is what makes a hall
+ * ticket a hall ticket rather than a printout of the timetable.
+ *
+ * The legacy path below produced the latter: it listed upcoming exams under a
+ * "hall ticket" heading, with no ticket number, no verification code, no seat,
+ * and no check that the student was ever ruled eligible to sit them. It is
+ * kept only for institutions that have not issued tickets through the engine
+ * yet, and says plainly that it is not an issued ticket.
+ */
 router.get('/examinations/hall-ticket', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const profile = await getStudentProfile(userId);
     const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    const student = {
+      name: user?.name ?? 'Student',
+      rollNumber: profile.rollNumber,
+      program: profile.program,
+      branch: profile.branch,
+      semester: profile.semester
+    };
+
+    const issued = await prisma.hallTicket.findFirst({
+      where: { studentProfileId: profile.id, status: 'valid' },
+      orderBy: { issuedAt: 'desc' },
+      include: {
+        entries: { include: { schedule: { include: { course: true, session: true } } } }
+      }
+    });
+
+    if (issued) {
+      res.json({
+        success: true,
+        data: {
+          student,
+          issued: true,
+          ticketNumber: issued.ticketNumber,
+          verificationCode: issued.verificationCode,
+          issuedAt: issued.issuedAt,
+          generatedAt: new Date(),
+          exams: issued.entries
+            .map((entry) => ({
+              id: entry.schedule.id,
+              courseId: entry.schedule.courseId,
+              courseCode: entry.schedule.course.code,
+              courseName: entry.schedule.course.name,
+              type: entry.schedule.session.type,
+              date: entry.schedule.examDate,
+              startTime: entry.schedule.startTime,
+              endTime: entry.schedule.endTime,
+              venue: entry.roomNumber ?? entry.schedule.venue ?? '',
+              seatNumber: entry.seatNumber ?? undefined,
+              maxMarks: entry.schedule.maxMarks
+            }))
+            .sort((a, b) => a.date.getTime() - b.date.getTime())
+        }
+      });
+      return;
+    }
 
     const enrollments = await prisma.enrollment.findMany({ where: { studentProfileId: profile.id } });
     const courseIds = enrollments.map((e) => e.courseId);
@@ -872,13 +1008,12 @@ router.get('/examinations/hall-ticket', authenticate, async (req: Request, res: 
     res.json({
       success: true,
       data: {
-        student: {
-          name: user?.name ?? 'Student',
-          rollNumber: profile.rollNumber,
-          program: profile.program,
-          branch: profile.branch,
-          semester: profile.semester
-        },
+        student,
+        // Stated, not implied: no ticket has been issued, so this is a
+        // schedule. A student must not turn up at the hall believing a
+        // timetable is an admission document.
+        issued: false,
+        notice: 'No hall ticket has been issued yet. This is your exam schedule, not an admission document.',
         generatedAt: new Date(),
         exams: upcomingExams
       }
@@ -1012,6 +1147,49 @@ router.post('/examinations/:id/revaluation', authenticate, validate({ body: reva
     const userId = (req as any).user.id;
     const examId = String(req.params.id);
     const { reason } = req.body as { reason?: string };
+
+    const profile = await getStudentProfile(userId);
+
+    // The engine path, when there is a published result to dispute.
+    //
+    // `/students/examinations` now returns ExamSchedule ids for a registered
+    // student, so resolve the id as a schedule first. A real
+    // RevaluationRequest carries a request number, a fee, an evaluation
+    // workflow, and on completion creates a NEW ATTEMPT and recomputes the
+    // CGPA — none of which the ApprovalItem below can do.
+    const schedule = await prisma.examSchedule.findFirst({
+      where: { id: examId },
+      select: { courseId: true }
+    });
+
+    if (schedule) {
+      const result = await prisma.courseResult.findFirst({
+        where: {
+          studentProfileId: profile.id,
+          courseId: schedule.courseId,
+          status: 'published'
+        },
+        orderBy: { attempt: 'desc' }
+      });
+
+      if (result) {
+        const trimmedReason = reason?.trim();
+        const created = await marks.requestRevaluation({
+          courseResultId: result.id,
+          ...(trimmedReason ? { reason: trimmedReason } : {})
+        });
+        res.json({ success: true, data: created });
+        return;
+      }
+
+      // Registered, sat the paper, but nothing published yet. Saying so is
+      // better than filing a request against a result that does not exist.
+      res.status(400).json({
+        success: false,
+        message: 'No published result for this paper yet. Revaluation opens once results are published.'
+      });
+      return;
+    }
 
     const exam = await prisma.examination.findUnique({
       where: { id: examId },
