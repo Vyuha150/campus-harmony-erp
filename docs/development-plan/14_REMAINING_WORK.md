@@ -167,35 +167,42 @@ not a missing-module problem. Rebuilding any of this would have been waste.
 | # | Module | Status 2026-09-11 |
 |---|---|---|
 | C1 | **SGPA/CGPA engine** | ✅ **Closed.** Existed and was correct; nothing called it. Publication and revaluation now recompute in the same transaction, the seed ships a grading scale (without one every marks path threw), and CI fails if publication stops recomputing |
-| C2 | **Curriculum / electives** | 🔷 Engine real and complete; no UI reaches it |
-| C3 | **Examination lifecycle** | 🔷 Engine real and complete; no UI reaches it |
+| C2 | **Curriculum / electives** | 🔷 Engine real and complete; still no UI reaches it — the one genuinely unbridged module |
+| C3 | **Examination lifecycle** | ✅ **Bridged.** Student schedule, hall tickets and revaluation served from the engine; CoE/Registrar oversight derives its figures from it |
 | C4 | **OBE (CO/PO/PSO)** | 🔷 Engine real; zero frontend calls |
-| C5 | **Transcripts** | 🔷 `getStudentTranscript` real; student download uses the legacy path |
+| C5 | **Transcripts** | 🔷 `getStudentTranscript` real; the student download still uses the legacy path, though its CGPA is now the computed one |
 | C6 | **Attendance eligibility** | ✅ Enforced by `checkEligibility` against real attendance |
 
-### C7 — the redundancy, stated plainly
+### C7 — the redundancy, and what was done about it *(2026-09-11)*
 
-Five systems overlap here. This is the thing to fix, and most of it is not a
-code change:
+Five systems overlapped. Each is now either bridged onto the engine or
+understood as complementary, using the `workflow/bridge.ts` strangler pattern
+rather than a cutover:
 
-| # | System | Backing model | Who reaches it |
-|---|---|---|---|
-| 1 | **The real engine** | `ExamSession`, `CourseResult`, `CurriculumScheme` | Now feeds student results and CGPA |
-| 2 | Faculty internal marks | `Enrollment.grade` → now also `Enrollment.internalMarks` | Faculty marks screen. **Bridged** into (1) as of 0043 |
-| 3 | Student exam view | `Examination` (unrelated model) | `StudentExaminations.tsx` |
-| 4 | COE/Registrar oversight | `ExamProgress` (status counter) | Two oversight screens |
-| 5 | Curriculum approvals | `CurriculumProposal` | Dean/HOD screens — complementary, not duplicate |
+| # | System | Status |
+|---|---|---|
+| 1 | **The engine** — `ExamSession`, `CourseResult`, `CurriculumScheme` | Source of truth. Feeds student results, CGPA, exam schedule and hall tickets |
+| 2 | Faculty internal marks — `Enrollment` | ✅ **Bridged** (0043). Internal marks got a numeric column and the exam cell inherits them instead of re-typing |
+| 3 | Student exam view — `Examination` | ✅ **Bridged.** Engine served when the student is registered; legacy table when not |
+| 4 | CoE/Registrar oversight — `ExamProgress` | ✅ **Bridged** (0044). Figures derived from a linked session; stored values kept when none |
+| 5 | Curriculum approvals — `CurriculumProposal` | Complementary, not duplicate. An approval workflow, not a scheme |
 
-**Retiring 3 and 4 is a migration, not a refactor, and it should not be done
-on code confidence alone.** Their screens work today because they read simple
-models that carry the real data. The engine only produces results once an
-institution actually runs an exam session — schedules, registration,
-eligibility, moderation, publication. Point those screens at it before that
-happens and they show nothing.
+**Nothing was deleted, deliberately.** Each legacy path stays as the fallback
+for an institution that has not adopted the session workflow, which is where
+every institution starts. The engine wins the moment there is engine data to
+serve; until then the old path answers, and the screen never goes blank.
 
-Order that works: adopt the session workflow for one cohort → migrate that
-cohort's data → repoint the screens → retire 3 and 4. The `workflow/bridge.ts`
-strangler already in this repo is the pattern to copy.
+**Retiring 3 and 4 outright remains a migration, not a refactor** — adopt the
+session workflow for a cohort, migrate that cohort's data, confirm the engine
+is answering, then drop the tables. The bridges above mean that can happen per
+institution, without a coordinated release.
+
+**The seed now walks the engine path.** A fresh database comes up with a
+session, an eligible registration, an issued hall ticket with a seat
+allocation, a published result and a CGPA of 9.00 computed by the real
+recompute. That was the missing feedback loop: the module sat dormant in every
+fresh database, so nothing exercised it, so nothing revealed it already
+worked — which is most of why this document called it unbuilt.
 
 > The browser also carried a **sixth** grading implementation — its own
 > hardcoded scale disagreeing with the institution's, so 85 marks showed a
