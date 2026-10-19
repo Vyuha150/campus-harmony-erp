@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, GraduationCap, ClipboardList, 
@@ -6,7 +6,8 @@ import {
   Building2, Award, Briefcase, MessageSquare, Library,
   ChevronDown, ChevronRight, LogOut, Bell, Search,
   Menu, X, Shield, Trophy, Users2, ShieldCheck,
-  BarChart3, Package, FileText, Megaphone
+  BarChart3, Package, FileText, Megaphone,
+  CalendarClock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -54,6 +55,7 @@ const hodMenuItems: MenuItem[] = [
   { id: 'faculty', label: 'Faculty Management', icon: Users, path: '/hod/faculty' },
   { id: 'workload', label: 'Workload & Timetable', icon: Calendar, path: '/hod/workload' },
   { id: 'course-management', label: 'Course Management', icon: BookOpen, path: '/hod/courses' },
+  { id: 'lesson-plans', label: 'Lesson Plans', icon: BookOpen, path: '/hod/lesson-plans' },
   { id: 'facility-management', label: 'Facility Management', icon: Building2, path: '/hod/facilities' },
   { id: 'students', label: 'Student Academics', icon: GraduationCap, path: '/hod/students' },
   { id: 'results', label: 'Results Analysis', icon: BarChart3, path: '/hod/results' },
@@ -83,6 +85,8 @@ const deanMenuItems: MenuItem[] = [
 const registrarMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { id: 'student-records', label: 'Student Records', icon: Users, path: '/registrar/student-records' },
+  { id: 'admissions', label: 'Admissions', icon: GraduationCap, path: '/registrar/admissions' },
+  { id: 'campus-services', label: 'Hostel & Transport', icon: Building2, path: '/registrar/campus-services' },
   { id: 'transfers', label: 'Transfers & Migration', icon: Building2, path: '/registrar/transfers' },
   { id: 'certificates', label: 'Degree Certificates', icon: Award, path: '/registrar/certificates' },
   { id: 'exam-oversight', label: 'Exam Oversight', icon: ClipboardList, path: '/registrar/exam-oversight' },
@@ -96,6 +100,7 @@ const registrarMenuItems: MenuItem[] = [
 const coeMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { id: 'exam-oversight', label: 'Exam Oversight', icon: ClipboardList, path: '/coe/exam-oversight' },
+  { id: 'exam-sessions', label: 'Exam Timetable & Registration', icon: CalendarClock, path: '/coe/exam-sessions' },
   { id: 'results', label: 'Result Submission', icon: ClipboardList, path: '/coe/results' },
   { id: 'submissions', label: 'Submission Tracker', icon: FileText, path: '/coe/submissions' },
 ];
@@ -220,6 +225,39 @@ const librarianMenuItems: MenuItem[] = [
 ];
 
 // Super Admin menu items
+/**
+ * Principal and Auditor fell through to the generic menu, whose links
+ * (/academics, /examinations, /research …) all lead to a page with nothing on
+ * it. Both roles are authorised for real modules — see PATH_ROLE_RULES in
+ * App.tsx, which mirrors the backend — so their menus now point at those.
+ */
+const principalMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'academics', label: 'Academic Oversight', icon: GraduationCap, path: '/dean/academics' },
+  { id: 'faculty-hr', label: 'Faculty HR', icon: Users, path: '/dean/faculty-hr' },
+  { id: 'student-affairs', label: 'Student Affairs', icon: Shield, path: '/dean/student-affairs' },
+  { id: 'results', label: 'Exams & Results', icon: BarChart3, path: '/dean/results' },
+  { id: 'student-records', label: 'Student Records', icon: Users, path: '/registrar/student-records' },
+  { id: 'exam-oversight', label: 'Exam Oversight', icon: ClipboardList, path: '/registrar/exam-oversight' },
+  { id: 'fees', label: 'Fee Management', icon: Wallet, path: '/finance/fees' },
+  { id: 'budgets', label: 'Budgets', icon: BarChart3, path: '/finance/budgets' },
+  { id: 'accreditation', label: 'Accreditation', icon: Award, path: '/dean/accreditation' },
+];
+
+/** Read-only by role: the backend refuses every write an auditor attempts. */
+const auditorMenuItems: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3, path: '/vc/analytics' },
+  { id: 'vc-finance', label: 'Financial Overview', icon: Wallet, path: '/vc/finance' },
+  { id: 'accounting', label: 'Accounting & Ledger', icon: BookOpen, path: '/finance/accounting' },
+  { id: 'finance-reports', label: 'Finance Reports & Audits', icon: FileBarChart, path: '/finance/reports' },
+  { id: 'fees', label: 'Fee Management', icon: Wallet, path: '/finance/fees' },
+  { id: 'exam-oversight', label: 'Exam Oversight', icon: ClipboardList, path: '/registrar/exam-oversight' },
+  { id: 'results', label: 'Result Submissions', icon: FileText, path: '/coe/submissions' },
+  { id: 'compliance', label: 'Compliance & Accreditation', icon: Award, path: '/vc/compliance' },
+  { id: 'iqac', label: 'NAAC Criteria', icon: Award, path: '/iqac/criteria' },
+];
+
 const superAdminMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { id: 'users', label: 'User Management', icon: Users, path: '/admin/users' },
@@ -233,12 +271,15 @@ const studentMenuItems: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { id: 'profile', label: 'My Profile', icon: Users, path: '/student/profile' },
   { id: 'mentoring', label: 'Mentoring', icon: Users2, path: '/student/mentoring' },
+  { id: 'timetable', label: 'Timetable', icon: CalendarClock, path: '/student/timetable' },
   { id: 'courses', label: 'My Courses', icon: BookOpen, path: '/student/courses' },
   { id: 'assignments', label: 'Assignments', icon: ClipboardList, path: '/student/assignments' },
   { id: 'attendance', label: 'Attendance', icon: Calendar, path: '/student/attendance' },
+  { id: 'leave', label: 'Leave & On-duty', icon: CalendarClock, path: '/student/leave' },
   { id: 'examinations', label: 'Examinations', icon: GraduationCap, path: '/student/examinations' },
   { id: 'fees', label: 'Fees & Payments', icon: Wallet, path: '/student/fees' },
   { id: 'library', label: 'Library', icon: Library, path: '/student/library' },
+  { id: 'services', label: 'Hostel & Transport', icon: Building2, path: '/student/services' },
   { id: 'placements', label: 'Placements', icon: Briefcase, path: '/student/placements' },
   { id: 'communication', label: 'Communication', icon: Megaphone, path: '/student/communication' },
   { id: 'grievances', label: 'Grievances', icon: MessageSquare, path: '/student/grievances' },
@@ -329,6 +370,18 @@ const iconMap: Record<string, React.ElementType> = {
   Users2, Trophy, MessageSquare, ShieldCheck, Library
 };
 
+/**
+ * Every page renders its own DashboardLayout, so the sidebar is rebuilt on each
+ * navigation — it jumped back to the top of the menu, re-expanded and
+ * re-collapsed after every click. What the user set is kept here, outside the
+ * component, for as long as the app is open.
+ */
+const sidebarMemory: { scrollTop: number; collapsed: boolean | null; expanded: string[] | null } = {
+  scrollTop: 0,
+  collapsed: null,
+  expanded: null
+};
+
 export function Sidebar() {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -336,10 +389,35 @@ export function Sidebar() {
     typeof window !== 'undefined' ? window.innerWidth < 1024 : false,
   );
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < 1024 : false,
+  const [isCollapsed, setIsCollapsedState] = useState(
+    sidebarMemory.collapsed ?? (typeof window !== 'undefined' ? window.innerWidth < 1024 : false),
   );
-  const [expandedItems, setExpandedItems] = useState<string[]>(['academics']);
+  const setIsCollapsed = (value: boolean) => { sidebarMemory.collapsed = value; setIsCollapsedState(value); };
+  const [expandedItems, setExpandedItemsState] = useState<string[]>(sidebarMemory.expanded ?? ['academics']);
+  const setExpandedItems = (update: string[] | ((prev: string[]) => string[])) => {
+    setExpandedItemsState((prev) => {
+      const next = typeof update === 'function' ? update(prev) : update;
+      sidebarMemory.expanded = next;
+      return next;
+    });
+  };
+
+  // Restore the menu's scroll position before paint, then keep it up to date.
+  const navScrollRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const viewport = navScrollRef.current?.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]');
+    if (!viewport) return;
+    viewport.scrollTop = sidebarMemory.scrollTop;
+    // If the page just opened is not visible in the menu, bring it into view.
+    const active = viewport.querySelector<HTMLElement>('[aria-current="page"]');
+    if (active) {
+      const top = active.offsetTop, bottom = top + active.offsetHeight;
+      if (top < viewport.scrollTop || bottom > viewport.scrollTop + viewport.clientHeight) active.scrollIntoView({ block: 'nearest' });
+    }
+    const onScroll = () => { sidebarMemory.scrollTop = viewport.scrollTop; };
+    viewport.addEventListener('scroll', onScroll, { passive: true });
+    return () => viewport.removeEventListener('scroll', onScroll);
+  }, []);
   const isDesktopCollapsed = !isMobile && isCollapsed;
 
   if (!user) return null;
@@ -348,7 +426,7 @@ export function Sidebar() {
   const RoleIcon = iconMap[roleInfo.icon] || Shield;
 
   // Use role-specific menus
-  const filteredMenuItems = user.role === 'super_admin'
+  const roleMenuItems = user.role === 'super_admin'
     ? superAdminMenuItems
     : user.role === 'student' 
     ? studentMenuItems 
@@ -380,10 +458,21 @@ export function Sidebar() {
     ? securityMenuItems
     : user.role === 'librarian'
     ? librarianMenuItems
+    : user.role === 'principal'
+    ? principalMenuItems
+    : user.role === 'auditor'
+    ? auditorMenuItems
     : menuItems.filter(item => {
         if (!item.roles) return true;
         return item.roles.includes(user.role);
       });
+
+  // Staff approve things or ask for them to be approved. Students do not
+  // approve anything; their requests (certificates, leave) show their status
+  // on the page where they raised them.
+  const filteredMenuItems: MenuItem[] = user.role === 'student'
+    ? roleMenuItems
+    : [...roleMenuItems, { id: 'workflows', label: 'Approvals & Workflows', icon: ClipboardList, path: '/workflows' }];
 
   // Auto-expand parent items when navigating to their children
   useEffect(() => {
@@ -519,7 +608,7 @@ export function Sidebar() {
       )}
 
       {/* Navigation */}
-      <ScrollArea className="flex-1 px-2 py-4">
+      <ScrollArea ref={navScrollRef} className="flex-1 px-2 py-4">
         <nav className="space-y-1">
           {filteredMenuItems.map((item) => {
             const Icon = item.icon;
@@ -554,6 +643,7 @@ export function Sidebar() {
                 ) : (
                   <Link
                     to={item.path}
+                    aria-current={isActive ? 'page' : undefined}
                     className={cn(
                       'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                       isActive
@@ -577,6 +667,7 @@ export function Sidebar() {
                         <Link
                           key={child.id}
                           to={child.path}
+                          aria-current={isChildActive ? 'page' : undefined}
                           className={cn(
                             'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
                             isChildActive

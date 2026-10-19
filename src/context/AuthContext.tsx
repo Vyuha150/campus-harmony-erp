@@ -28,16 +28,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    try {
-      const { data } = await api.get('/auth/me');
-      setUser(data.data);
-    } catch {
-      // The 401 interceptor has already cleared the token.
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-      setUser(null);
-    } finally {
-      setIsLoading(false);
+    // Only a 401 means the session is over, and the interceptor in lib/api.ts
+    // has already cleared the token by then. Any other failure — the server
+    // restarting, the database briefly unreachable — says nothing about the
+    // session. Discarding the token on those signed every user out whenever the
+    // backend hiccupped, so it is retried instead, and kept if it never answers.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const { data } = await api.get('/auth/me');
+        setUser(data.data);
+        setIsLoading(false);
+        return;
+      } catch (error) {
+        const status = (error as { status?: number })?.status;
+        if (status === 401 || localStorage.getItem(TOKEN_STORAGE_KEY) === null) break;
+        await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
+      }
     }
+    setUser(null);
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {

@@ -137,10 +137,22 @@ export function promptForDeleteReason(subject: string): string | null {
   return trimmed;
 }
 
-export async function uploadApi<T = any>(file: File, module: string): Promise<T> {
+/** Who may read an uploaded file, and what it belongs to. Defaults: private to the uploader. */
+export interface UploadOptions {
+  visibility?: 'private' | 'role_restricted' | 'institution';
+  allowedRoles?: string[];
+  relatedEntityType?: string;
+  relatedEntityId?: string;
+}
+
+export async function uploadApi<T = any>(file: File, module: string, options: UploadOptions = {}): Promise<T> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('module', module);
+  if (options.visibility) formData.append('visibility', options.visibility);
+  if (options.allowedRoles) formData.append('allowedRoles', JSON.stringify(options.allowedRoles));
+  if (options.relatedEntityType) formData.append('relatedEntityType', options.relatedEntityType);
+  if (options.relatedEntityId) formData.append('relatedEntityId', options.relatedEntityId);
 
   const { data } = await api.post('/uploads', formData, {
     headers: {
@@ -149,4 +161,27 @@ export async function uploadApi<T = any>(file: File, module: string): Promise<T>
   });
   if (data.success === false) throw new Error(data.message || 'Upload failed');
   return data.data as T;
+}
+
+/**
+ * Download a stored file through the signed-in session.
+ *
+ * Uploaded files are served from `/api/uploads/:id`, which requires the user's
+ * token. Opening that URL in a new tab (what the download buttons did) sends no
+ * token, so every download was refused. This fetches the file with the token
+ * and saves it.
+ */
+export async function downloadUpload(url: string, filename = 'download'): Promise<void> {
+  const path = url.replace(/^.*?\/api(?=\/)/, '');
+  const response = await api.get(path, { responseType: 'blob' });
+  const disposition = String(response.headers['content-disposition'] ?? '');
+  const named = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)?.[1];
+  const link = document.createElement('a');
+  const objectUrl = URL.createObjectURL(response.data as Blob);
+  link.href = objectUrl;
+  link.download = named ? decodeURIComponent(named) : filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
 }

@@ -37,6 +37,7 @@ const routeLabels: Record<string, string> = {
   hod: 'HOD Portal',
   profile: 'Profile',
   courses: 'Courses',
+  timetable: 'Timetable',
   assignments: 'Assignments',
   attendance: 'Attendance',
   examinations: 'Examinations',

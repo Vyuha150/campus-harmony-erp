@@ -39,6 +39,9 @@ export interface Assignment {
   obtainedMarks?: number;
   feedback?: string;
   attachments?: string[];
+  /** The question paper / brief the teacher attached. */
+  attachmentUrl?: string;
+  attachmentName?: string;
   submissionUrl?: string;
 }
 

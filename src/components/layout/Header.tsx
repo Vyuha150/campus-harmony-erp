@@ -1,3 +1,4 @@
+import { notificationLink } from '@/lib/notificationLink';
 import { Bell, Search, HelpCircle, Settings, ChevronDown, Menu } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { ROLE_INFO } from '@/types/erp';
@@ -6,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useApiData } from '@/hooks/useApiData';
+import { postApi } from '@/lib/apiService';
+import { useState } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,25 +22,9 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { firstName } from '@/lib/names';
+import { useNavigate } from 'react-router-dom';
 
-const notificationEndpointByRole: Record<string, string | null> = {
-  super_admin: '/admin/notifications',
-  vice_chancellor: '/vc/messages',
-  pro_vc: '/vc/messages',
-  hod: '/hod/messages',
-  faculty: '/faculty/messages',
-  alumni_officer: '/alumni/communications',
-  placement_officer: '/placements/messages',
-  iqac_coordinator: '/iqac/meetings',
-  grievance_officer: '/grievances/cases',
-  security_officer: '/security/incidents',
-  student: null,
-  registrar: null,
-  dean: null,
-  finance_officer: null,
-  sports_director: null,
-  librarian: null,
-};
 
 function formatRelativeTime(value?: string | Date): string {
   if (!value) return 'Just now';
@@ -51,21 +38,32 @@ function formatRelativeTime(value?: string | Date): string {
 }
 
 export function Header() {
+  const navigate = useNavigate();
   const { user } = useAuth();
+  // Hooks run before the early return below — calling them after it broke the
+  // rules of hooks whenever the user signed in or out.
+  const { data: inbox, refetch: refetchInbox } = useApiData<any[]>(user ? '/notifications/inbox' : '/health', []);
+  const [showAll, setShowAll] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
 
   if (!user) return null;
 
   const roleInfo = ROLE_INFO[user.role];
-  const notificationsEndpoint = notificationEndpointByRole[user.role] || null;
-  const { data: notificationData } = useApiData<any[]>(notificationsEndpoint || '/health', []);
-  const notifications = (notificationsEndpoint ? notificationData : []).slice(0, 8).map((item: any) => ({
+  const allNotifications = (Array.isArray(inbox) ? inbox : []).map((item: any) => ({
     id: item.id,
-    title: item.title || item.subject || item.type || 'Update',
-    message: item.message || item.description || item.content || 'No additional details',
-    time: formatRelativeTime(item.createdAt || item.sentAt || item.date || item.submittedAt),
-    unread: item.read === false || item.status === 'pending',
+    title: item.subject || item.eventType || 'Update',
+    message: item.body || '',
+    time: formatRelativeTime(item.sentAt || item.createdAt),
+    unread: !item.readAt,
+    link: notificationLink(item, user.role),
   }));
-  const unreadCount = notifications.filter((n: any) => n.unread).length;
+  const notifications = showAll ? allNotifications : allNotifications.slice(0, 8);
+  const unreadCount = allNotifications.filter((n) => n.unread).length;
+
+  const markRead = async (ids: string[]) => {
+    await Promise.all(ids.map((id) => postApi(`/notifications/inbox/${id}/read`, {}).catch(() => undefined)));
+    refetchInbox();
+  };
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
@@ -99,12 +97,12 @@ export function Header() {
       {/* Right Section */}
       <div className="flex items-center gap-1.5 sm:gap-3">
         {/* Quick Actions */}
-        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
+        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" title="Help & Support" onClick={() => navigate('/account?tab=support')}>
           <HelpCircle className="h-5 w-5" />
         </Button>
 
         {/* Notifications */}
-        <Popover>
+        <Popover open={bellOpen} onOpenChange={setBellOpen}>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
               <Bell className="h-5 w-5" />
@@ -118,7 +116,8 @@ export function Header() {
           <PopoverContent className="w-80 p-0" align="end">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <h4 className="font-semibold">Notifications</h4>
-              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" disabled={unreadCount === 0}
+                onClick={() => markRead(allNotifications.filter((n) => n.unread).map((n) => n.id))}>
                 Mark all read
               </Button>
             </div>
@@ -126,7 +125,16 @@ export function Header() {
               {notifications.map((notification: any) => (
                 <div
                   key={notification.id}
-                  className={`border-b px-4 py-3 transition-colors hover:bg-muted/50 ${
+                  role="button"
+                  // Opens the page where the notification is acted on.
+                  onClick={() => {
+                    if (notification.unread) markRead([notification.id]);
+                    if (notification.link) {
+                      setBellOpen(false);
+                      navigate(notification.link);
+                    }
+                  }}
+                  className={`cursor-pointer border-b px-4 py-3 transition-colors hover:bg-muted/50 ${
                     notification.unread ? 'bg-muted/30' : ''
                   }`}
                 >
@@ -137,7 +145,7 @@ export function Header() {
                     <div className="flex-1">
                       <p className="text-sm font-medium">{notification.title}</p>
                       <p className="text-xs text-muted-foreground">{notification.message}</p>
-                      <p className="mt-1 text-xs text-muted-foreground/60">{notification.time}</p>
+                      <p className="mt-1 text-xs text-muted-foreground/60">{notification.time}{notification.link ? ' · Open →' : ''}</p>
                     </div>
                   </div>
                 </div>
@@ -147,8 +155,9 @@ export function Header() {
               )}
             </div>
             <div className="border-t p-2">
-              <Button variant="ghost" className="w-full text-sm">
-                View all notifications
+              <Button variant="ghost" className="w-full text-sm" disabled={allNotifications.length <= 8}
+                onClick={() => setShowAll((v) => !v)}>
+                {showAll ? 'Show recent only' : `View all notifications (${allNotifications.length})`}
               </Button>
             </div>
           </PopoverContent>
@@ -166,7 +175,7 @@ export function Header() {
                 </AvatarFallback>
               </Avatar>
               <div className="hidden text-left md:block">
-                <p className="text-sm font-medium">{user.name.split(' ')[0]}</p>
+                <p className="text-sm font-medium">{firstName(user.name)}</p>
               </div>
               <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </Button>
@@ -179,11 +188,13 @@ export function Header() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            {/* Both items had no handler and nothing behind them; they now open
+                the account page (pages/AccountSettings.tsx). */}
+            <DropdownMenuItem onSelect={() => navigate('/account?tab=profile')}>
               <Settings className="mr-2 h-4 w-4" />
               Profile Settings
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => navigate('/account?tab=support')}>
               <HelpCircle className="mr-2 h-4 w-4" />
               Help & Support
             </DropdownMenuItem>
