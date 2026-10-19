@@ -29,6 +29,7 @@
  */
 
 import { basePrisma } from '../../lib/prisma.js';
+import { publishedOutcomes, outcomeFor, combineOutcomes, passPercentage } from '../../lib/courseOutcomes.js';
 import { toSkipTake, paginated, type PageRequest, type Paginated } from '../../lib/service.js';
 import type { TenantContext } from '../../lib/tenant.js';
 
@@ -156,6 +157,7 @@ export async function departmentResults(
       where: scope,
       include: {
         courses: { include: { enrollments: { select: { grade: true } } } },
+        users: { where: { role: 'student' }, select: { id: true } },
         // Department -> Programme -> StudentProfile -> SemesterResult is the
         // path to a real average. It replaces the literal 7.2.
         programmes: {
@@ -177,18 +179,17 @@ export async function departmentResults(
     basePrisma.approvalItem.findMany({ where: { ...scope, type: RESULT_PUBLICATION } })
   ]);
 
+  const published = await publishedOutcomes(departments.flatMap((d) => d.courses.map((c) => c.id)));
+
   const approvalByDept = new Map<string, { status: string }>();
   for (const a of approvals) {
     if (a.details) approvalByDept.set(String(a.details), { status: a.status });
   }
 
   return departments.map((d) => {
-    const enrolments = d.courses.flatMap((c) => c.enrollments);
-    const total = enrolments.length;
-    // A grade of F or I is a fail; an ungraded enrolment is neither, and counting
-    // it as a pass would inflate the figure the CoE publishes on.
-    const graded = enrolments.filter((e) => e.grade != null && e.grade !== '');
-    const passed = graded.filter((e) => !['F', 'I'].includes(String(e.grade))).length;
+    // Published results where they exist, legacy grades otherwise — the same
+    // source as the HOD and Dean screens (lib/courseOutcomes.ts).
+    const outcome = combineOutcomes(d.courses.map((c) => outcomeFor(c, published)));
 
     const cgpas = d.programmes
       .flatMap((p) => p.studentProfiles)
@@ -203,12 +204,14 @@ export async function departmentResults(
     return {
       departmentId: d.id,
       department: d.name,
-      totalStudents: total,
-      passed,
-      failed: graded.length - passed,
+      // Students in the department — not course enrolments, which count each
+      // student once per subject.
+      totalStudents: d.users.length,
+      passed: outcome.passed,
+      failed: outcome.failed,
       // `null`, not 0: no graded enrolments means there is no pass rate, which
       // is different from a pass rate of zero.
-      passPercentage: graded.length > 0 ? Math.round((passed / graded.length) * 100) : null,
+      passPercentage: outcome.passPercentage,
       avgGPA:
         cgpas.length > 0
           ? Number((cgpas.reduce((a, b) => a + b, 0) / cgpas.length).toFixed(2))
