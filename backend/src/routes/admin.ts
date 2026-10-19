@@ -1,10 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
-import { prisma } from '../lib/prisma.js';
+import { prisma, pingDatabase } from '../lib/prisma.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.js';
 import { hashPassword } from '../lib/password.js';
 import { NotFoundError, sendError } from '../lib/errors.js';
 import { recordFromRequest } from '../lib/audit.js';
+import { notifyInApp } from '../lib/inAppNotify.js';
 import * as adminService from '../modules/admin/admin.service.js';
 import {
   getTenantContext,
@@ -53,7 +54,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
     // same defect with a decimal point added for plausibility.
     let dbConnected = true;
     try {
-      await prisma.$queryRaw`SELECT 1`;
+      await pingDatabase();
     } catch {
       dbConnected = false;
     }
@@ -97,7 +98,7 @@ router.get('/users', authenticate, async (req: Request, res: Response) => {
     const users = await prisma.user.findMany({
       where,
       include: { department: true },
-      take: 100,
+      take: 2000,
       orderBy: { name: 'asc' }
     });
 
@@ -124,6 +125,10 @@ router.post('/users', authenticate, validate({ body: adminUserCreateSchema }), a
     // public repository. hashPassword() requires and validates it instead.
     // Reject an unrecognised role before the account exists, rather than after.
     adminService.assertKnownRole(String(role));
+    if (role === 'hod') {
+      res.status(409).json({ success: false, message: 'Create the account as faculty, then appoint them from System Configuration → Departments → Change HOD.' });
+      return;
+    }
 
     const hashedPassword = await hashPassword(password);
 
@@ -197,6 +202,13 @@ router.put('/users/:id', authenticate, validate({ body: adminUserUpdateSchema })
     // change that would leave the institution with no administrator.
     if (typeof data.role === 'string') {
       await adminService.assertRoleChangeAllowed(getTenantContext(req), id, data.role);
+      // Making someone HOD (or un-making one) here left two HODs in a department,
+      // or a department with none and Department.hodUserId pointing at a faculty
+      // member. It is done from System Configuration -> Departments -> Change HOD.
+      if ((data.role === 'hod') !== (existing.role === 'hod')) {
+        res.status(409).json({ success: false, message: 'HOD is a department position. Use System Configuration → Departments → Change HOD.' });
+        return;
+      }
     }
 
     const updated = await prisma.user.update({ where: { id }, data });
@@ -268,32 +280,73 @@ router.get(
       db.academicYear.findMany({ orderBy: { year: 'desc' }, take: 100 })
     ]);
 
-    res.json({ success: true, data: { institution, departments, academicYears } });
+    const full: any = await prisma.institution.findFirst({ where: { id: ctx.institutionId } });
+    // The page reads `university`; it received `institution` and showed blanks.
+    const university = {
+      name: full?.name ?? '', code: full?.code ?? '', type: full?.type ?? '', accreditation: full?.naacGrade ?? '',
+      website: full?.website ?? '', email: full?.email ?? '', phone: full?.phone ?? '',
+      established: full?.establishedAt ? String(new Date(full.establishedAt).getFullYear()) : '',
+      // Street only: city, state and PIN are their own columns. Joining them here
+      // and saving the joined text back duplicated them on every save.
+      address: full?.addressLine ?? '',
+      aisheCode: full?.aisheCode ?? '', nirfId: full?.nirfId ?? ''
+    };
+    res.json({ success: true, data: { institution, university, departments, academicYears } });
   })
 );
 
-router.put('/config', authenticate, async (_req: Request, res: Response) => {
-  try {
-    res.json({ success: true, message: 'Configuration updated' });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+const configSchema = z.object({
+  university: z.object({
+    name: z.string().trim().min(2).max(200).optional(),
+    type: z.string().trim().max(60).optional(),
+    accreditation: z.string().trim().max(20).optional(),
+    website: z.string().trim().max(200).optional(),
+    email: z.string().trim().max(200).optional(),
+    phone: z.string().trim().max(40).optional(),
+    established: z.union([z.string(), z.number()]).optional(),
+    address: z.string().trim().max(500).optional(),
+    aisheCode: z.string().trim().max(40).optional(),
+    nirfId: z.string().trim().max(40).optional()
+  }).passthrough()
+}).passthrough();
+
+/** Was a no-op that answered "Configuration updated" and saved nothing. */
+router.put('/config', authenticate, validate({ body: configSchema }), asyncHandler(async (req: Request, res: Response) => {
+  const ctx = getTenantContext(req);
+  const u = req.body.university as Record<string, any>;
+  const data: Record<string, unknown> = {};
+  if (u.name) data.name = u.name;
+  if (u.type !== undefined) data.type = u.type;
+  if (u.accreditation !== undefined) data.naacGrade = u.accreditation || null;
+  for (const k of ['website', 'email', 'phone', 'aisheCode', 'nirfId']) if (u[k] !== undefined) data[k] = u[k] || null;
+  if (u.address !== undefined) data.addressLine = u.address || null;
+  const year = Number(u.established);
+  if (Number.isInteger(year) && year > 1800 && year <= new Date().getFullYear()) data.establishedAt = new Date(Date.UTC(year, 0, 1));
+  const before = await prisma.institution.findFirst({ where: { id: ctx.institutionId } });
+  await prisma.institution.updateMany({ where: { id: ctx.institutionId }, data });
+  await recordFromRequest(req, { action: 'UPDATE', module: 'admin', resource: `Institution:${ctx.institutionId}`, details: 'Updated the institution profile', oldValue: before as never, newValue: data as never, severity: 'warning' });
+  res.json({ success: true, data });
+}));
 
 // ─── Departments ───
 router.get('/departments', authenticate, async (req: Request, res: Response) => {
   try {
     const departments = await prisma.department.findMany({
-      include: { users: { select: { role: true } }, courses: true }
+      include: { users: { select: { id: true, name: true, email: true, role: true, designation: true } }, courses: { select: { id: true } }, programmes: { select: { id: true } } },
+      orderBy: { name: 'asc' }
     });
     res.json({
       success: true,
-      data: departments.map((d: any) => ({
-        id: d.id, name: d.name, code: d.code,
-        faculty: d.users.filter((u: any) => u.role === 'faculty').length,
-        students: d.users.filter((u: any) => u.role === 'student').length,
-        courses: d.courses.length
-      }))
+      data: departments.map((d: any) => {
+        const hod = d.users.find((u: any) => u.role === 'hod') ?? null;
+        return {
+          id: d.id, name: d.name, code: d.code, isActive: d.isActive !== false, status: d.isActive === false ? 'inactive' : 'active',
+          hod: hod ? hod.name : null, hodUserId: hod?.id ?? null, hodEmail: hod?.email ?? null,
+          faculty: d.users.filter((u: any) => u.role === 'faculty').length,
+          students: d.users.filter((u: any) => u.role === 'student').length,
+          courses: d.courses.length, programs: d.programmes.length
+        };
+      })
     });
   } catch (error: any) {
     sendError(res, error);
@@ -360,6 +413,131 @@ router.post(
     });
 
     res.status(201).json({ success: true, data: dept });
+  })
+);
+
+// ─── Department leadership ───
+const deptParams = z.object({ id: entityId });
+
+/** Rename, recode, or activate / deactivate a department (the toggle only changed the screen). */
+router.put(
+  '/departments/:id',
+  authenticate,
+  validate({ params: deptParams, body: z.object({ name: z.string().trim().min(2).max(160).optional(), code: z.string().trim().min(1).max(20).optional(), isActive: z.boolean().optional() }).strict() }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = getTenantContext(req);
+    const dept: any = await prisma.department.findFirst({ where: { id: String(req.params.id), institutionId: ctx.institutionId } });
+    if (!dept) throw new NotFoundError('Department');
+    await prisma.department.updateMany({ where: { id: dept.id }, data: req.body });
+    await recordFromRequest(req, { action: 'UPDATE', module: 'admin', resource: `Department:${dept.id}`, details: `Updated department ${dept.code}`, oldValue: { name: dept.name, code: dept.code, isActive: dept.isActive }, newValue: req.body, severity: 'warning' });
+    res.json({ success: true, data: { ...dept, ...req.body } });
+  })
+);
+
+/** Staff of a department — the people who can be appointed HOD. */
+router.get(
+  '/departments/:id/staff',
+  authenticate,
+  validate({ params: deptParams }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = getTenantContext(req);
+    const staff = await prisma.user.findMany({
+      where: { institutionId: ctx.institutionId, departmentId: String(req.params.id), role: { in: ['faculty', 'hod'] } },
+      select: { id: true, name: true, email: true, role: true, designation: true },
+      orderBy: { name: 'asc' }
+    });
+    res.json({ success: true, data: staff });
+  })
+);
+
+/**
+ * Appoint, replace or remove a department's HOD.
+ *
+ * HOD is a POSITION held by a faculty member, not a separate person: the
+ * outgoing HOD returns to the faculty role (keeping their profile, courses and
+ * history), the incoming one gains the HOD role, and Department.hodUserId
+ * follows. Requests already waiting at the HOD step move to the new HOD,
+ * because the HOD inbox is the department's, not the person's. Access changes on
+ * the very next request — roles are read from the database, not the token.
+ */
+router.put(
+  '/departments/:id/hod',
+  authenticate,
+  validate({ params: deptParams, body: z.object({ userId: entityId.nullable(), reason: z.string().trim().min(10).max(500) }).strict() }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = getTenantContext(req);
+    const dept: any = await prisma.department.findFirst({ where: { id: String(req.params.id), institutionId: ctx.institutionId } });
+    if (!dept) throw new NotFoundError('Department');
+    const outgoing: any = await prisma.user.findFirst({ where: { institutionId: ctx.institutionId, departmentId: dept.id, role: 'hod' }, include: { facultyProfile: true } });
+    const { userId, reason } = req.body as { userId: string | null; reason: string };
+
+    let incoming: any = null;
+    if (userId) {
+      incoming = await prisma.user.findFirst({ where: { id: userId, institutionId: ctx.institutionId }, include: { facultyProfile: true } });
+      if (!incoming) throw new NotFoundError('User');
+      if (incoming.role === 'hod' && incoming.departmentId === dept.id) {
+        res.status(409).json({ success: false, message: `${incoming.name} is already the HOD of ${dept.name}.` });
+        return;
+      }
+      if (incoming.role !== 'faculty' || incoming.departmentId !== dept.id) {
+        res.status(400).json({ success: false, message: `Only a faculty member of ${dept.name} can be appointed its HOD.` });
+        return;
+      }
+    } else if (!outgoing) {
+      res.status(409).json({ success: false, message: `${dept.name} has no HOD to remove.` });
+      return;
+    }
+
+    // Every HOD must be able to work as faculty again; the seed CSE HOD had no profile.
+    const ensureFacultyProfile = async (u: any) => {
+      if (u.facultyProfile) return;
+      await prisma.facultyProfile.create({ data: { institutionId: ctx.institutionId, userId: u.id, employeeId: `EMP-${u.id.slice(-6).toUpperCase()}` } as never });
+    };
+
+    if (outgoing) {
+      await ensureFacultyProfile(outgoing);
+      await prisma.user.updateMany({
+        where: { id: outgoing.id },
+        // "Head of Department" is the position, not a cadre; they keep their cadre.
+        data: { role: 'faculty', ...(outgoing.designation === 'Head of Department' ? { designation: 'Professor' } : {}) }
+      });
+    }
+    if (incoming) {
+      await ensureFacultyProfile(incoming);
+      await prisma.user.updateMany({ where: { id: incoming.id }, data: { role: 'hod' } });
+    }
+    await prisma.department.updateMany({ where: { id: dept.id }, data: { hodUserId: incoming?.id ?? null } });
+
+    await recordFromRequest(req, {
+      action: 'UPDATE', module: 'admin', resource: `Department:${dept.id}`,
+      details: incoming ? `${dept.code} HOD: ${outgoing?.name ?? 'vacant'} → ${incoming.name}` : `${dept.code} HOD ${outgoing.name} removed; post vacant`,
+      oldValue: { hodUserId: outgoing?.id ?? null }, newValue: { hodUserId: incoming?.id ?? null }, reason, severity: 'critical'
+    });
+
+    if (outgoing) {
+      await notifyInApp(ctx.institutionId, { userIds: [outgoing.id] }, {
+        eventType: 'department.hod_changed', subject: `You are no longer HOD of ${dept.name}`,
+        body: incoming ? `${incoming.name} takes over. You continue as faculty.` : 'The post is vacant for now. You continue as faculty.',
+        relatedEntityType: 'Department', relatedEntityId: dept.id
+      });
+    }
+    if (incoming) {
+      await notifyInApp(ctx.institutionId, { userIds: [incoming.id] }, {
+        eventType: 'department.hod_changed', subject: `You are now HOD of ${dept.name}`,
+        body: 'Sign in again to see the HOD dashboard. Requests waiting at the HOD step are now yours.',
+        relatedEntityType: 'Department', relatedEntityId: dept.id
+      });
+    }
+    const announcement = {
+      eventType: 'department.hod_changed', subject: incoming ? `${dept.code}: ${incoming.name} appointed HOD` : `${dept.code}: HOD post vacant`,
+      body: reason, relatedEntityType: 'Department', relatedEntityId: dept.id
+    };
+    const informed = [outgoing?.id, incoming?.id].filter(Boolean) as string[];
+    const colleagues = await prisma.user.findMany({ where: { institutionId: ctx.institutionId, departmentId: dept.id, role: 'faculty', id: { notIn: informed } }, select: { id: true } });
+    if (colleagues.length) await notifyInApp(ctx.institutionId, { userIds: colleagues.map((c: any) => c.id) }, announcement);
+    await notifyInApp(ctx.institutionId, { roles: ['dean', 'principal', 'registrar'], excludeUserId: ctx.userId }, announcement);
+
+    res.json({ success: true, data: { departmentId: dept.id, outgoing: outgoing ? { id: outgoing.id, name: outgoing.name } : null, incoming: incoming ? { id: incoming.id, name: incoming.name } : null } });
   })
 );
 
