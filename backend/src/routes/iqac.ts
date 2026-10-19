@@ -1,7 +1,8 @@
+import * as naac from '../modules/iqac/naacReadiness.js';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, authorizeRoles } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
 import { z } from 'zod';
 import { getTenantContext } from '../lib/tenant.js';
@@ -99,13 +100,9 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
 // ─── Criteria ───
 router.get('/criteria', authenticate, async (req: Request, res: Response) => {
   try {
-    const metrics = await prisma.qualityMetric.findMany();
-    const grouped: any = {};
-    metrics.forEach(m => {
-      if (!grouped[m.category]) grouped[m.category] = [];
-      grouped[m.category].push(m);
-    });
-    res.json({ success: true, data: grouped });
+    // Current values come live from the ERP where it can compute them; they
+    // were stored figures that drifted from the Dean's and HODs' pages.
+    res.json({ success: true, data: await naac.liveCriteria(getTenantContext(req)) });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -415,5 +412,17 @@ router.put('/meetings/:id', authenticate, validate({ params: z.object({ id: enti
     sendError(res, error);
   }
 });
+
+// ─── NAAC readiness, criterion sign-off, AQAR approval ───
+const IQAC_ONLY = authorizeRoles('iqac_coordinator', 'super_admin');
+router.get('/readiness', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await naac.readiness(getTenantContext(req)) });
+}));
+router.post('/checklist/:id/signoff', authenticate, IQAC_ONLY, validate({ params: z.object({ id: entityId }) }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await naac.requestSignoff(getTenantContext(req), String(req.params.id)) });
+}));
+router.post('/reports/:id/submit', authenticate, IQAC_ONLY, validate({ params: z.object({ id: entityId }) }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await naac.submitAqar(getTenantContext(req), String(req.params.id)) });
+}));
 
 export default router;
