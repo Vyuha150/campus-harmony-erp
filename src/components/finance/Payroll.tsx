@@ -1,3 +1,5 @@
+import { SalaryStructures } from '@/components/finance/SalaryStructures';
+import { downloadCsv } from '@/lib/download';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -51,9 +53,13 @@ export default function Payroll() {
 
   const disbursePayroll = async () => {
     try {
-      await postApi('/finance/payroll/disburse', { month: 'March', year: 2026 });
+      // Was hard-coded to March 2026, whatever month it was.
+      const now = new Date();
+      const month = now.toLocaleString('en-IN', { month: 'long' });
+      if (!window.confirm(`Disburse approved payroll for ${month} ${now.getFullYear()}?`)) return;
+      await postApi('/finance/payroll/disburse', { month, year: now.getFullYear() });
       await loadPayrollData();
-      toast({ title: 'Payroll disbursed', description: 'Eligible payroll records marked as paid.' });
+      toast({ title: 'Payroll disbursed', description: `Approved ${month} ${now.getFullYear()} payroll marked as paid.` });
     } catch (error) {
       console.error('Failed to disburse payroll', error);
       toast({ title: 'Disbursement failed', description: 'Could not disburse payroll.', variant: 'destructive' });
@@ -103,13 +109,30 @@ export default function Payroll() {
     }
   };
 
-  const exportBankFile = async () => {
+  const thisMonth = { month: new Date().toLocaleString('en-IN', { month: 'long' }), year: new Date().getFullYear() };
+  const generateMonth = async () => {
     try {
-      await postApi('/finance/reports/generate', { type: 'bank_transfer_file' });
-      toast({ title: 'Bank file generated', description: 'Bank transfer file has been generated.' });
+      const r: any = await postApi('/finance/payroll/generate', thisMonth);
+      await loadPayrollData();
+      toast({ title: `${thisMonth.month} payroll generated`, description: `${r.created} draft record(s)${r.alreadyThere ? `; ${r.alreadyThere} already existed` : ''}. Review, then approve.` });
     } catch (error: any) {
-      toast({ title: 'Export failed', description: error.message || 'Could not generate bank file.', variant: 'destructive' });
+      toast({ title: 'Could not generate', description: error.message, variant: 'destructive' });
     }
+  };
+  const approveMonth = async () => {
+    try {
+      const r: any = await postApi('/finance/payroll/approve', thisMonth);
+      await loadPayrollData();
+      toast({ title: `Approved ${r.approved} record(s)`, description: 'Disburse when the bank transfer is made.' });
+    } catch (error: any) {
+      toast({ title: 'Could not approve', description: error.message, variant: 'destructive' });
+    }
+  };
+  // Bank upload file: employee, net pay — for the bank's bulk-transfer portal.
+  const exportBankFile = () => {
+    const due = payrollRecords.filter((r: any) => r.month === thisMonth.month && r.year === thisMonth.year && r.status === 'approved');
+    if (!due.length) { toast({ title: 'Nothing approved this month', description: 'Approve the drafts first.' }); return; }
+    downloadCsv(`bank-transfer-${thisMonth.month}-${thisMonth.year}.csv`, ['Employee ID', 'Name', 'Department', 'Net pay'], due.map((r: any) => [r.employeeId, r.employeeName, r.department, Number(r.netSalary).toFixed(2)]));
   };
 
   const filteredPayroll = payrollRecords.filter((record: any) => {
@@ -137,12 +160,13 @@ export default function Payroll() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Payroll Processing</h1>
-            <p className="text-muted-foreground">March 2026 payroll – Review, approve, and disburse salaries</p>
+            <p className="text-muted-foreground">{new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} payroll – Review, approve, and disburse salaries</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={exportBankFile}><Download className="mr-2 h-4 w-4" />Bank File</Button>
-            <Button variant="outline" size="sm" onClick={processPayrollRecord}><Calculator className="mr-2 h-4 w-4" />Process Record</Button>
-            <Button size="sm" onClick={disbursePayroll}><Lock className="mr-2 h-4 w-4" />Lock & Disburse</Button>
+            <Button variant="outline" size="sm" onClick={generateMonth}><Calculator className="mr-2 h-4 w-4" />Generate {thisMonth.month}</Button>
+            <Button variant="outline" size="sm" onClick={approveMonth} disabled={!draftCount}>Approve drafts</Button>
+            <Button variant="outline" size="sm" onClick={exportBankFile}><Download className="mr-2 h-4 w-4" />Bank file</Button>
+            <Button size="sm" onClick={disbursePayroll} disabled={!approvedCount}><Lock className="mr-2 h-4 w-4" />Disburse approved</Button>
           </div>
         </div>
 
@@ -158,7 +182,7 @@ export default function Payroll() {
           <TabsList>
             <TabsTrigger value="register">Payroll Register</TabsTrigger>
             <TabsTrigger value="history">Payment History</TabsTrigger>
-            <TabsTrigger value="settings">Payroll Settings</TabsTrigger>
+            <TabsTrigger value="settings">Salary structures</TabsTrigger>
           </TabsList>
 
           <TabsContent value="register" className="space-y-4">
@@ -206,20 +230,23 @@ export default function Payroll() {
           </TabsContent>
 
           <TabsContent value="history">
-            <Card><CardContent className="flex flex-col items-center justify-center py-16">
-              <FileText className="h-16 w-16 text-muted-foreground/30" />
-              <h3 className="mt-4 text-lg font-semibold">Payment History</h3>
-              <p className="text-sm text-muted-foreground">View past payroll cycles, payment details, and tax computations</p>
+            <Card><CardContent className="space-y-2 p-4">
+              {!payrollRecords.some((r: any) => r.status === 'paid') && <p className="py-8 text-center text-sm text-muted-foreground">No salaries disbursed yet.</p>}
+              {Array.from(new Set(payrollRecords.filter((r: any) => r.status === 'paid').map((r: any) => `${r.month} ${r.year}`))).map((m: any) => {
+                const rs = payrollRecords.filter((r: any) => r.status === 'paid' && `${r.month} ${r.year}` === m);
+                return (
+                  <details key={m} className="rounded-lg border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">{m} — {rs.length} paid · net {formatCurrency(rs.reduce((a: number, r: any) => a + Number(r.netSalary || 0), 0))}</summary>
+                    <div className="mt-2 space-y-1">{rs.map((r: any) => (
+                      <div key={r.id} className="flex items-center justify-between text-sm"><span>{r.employeeName} · {r.designation}</span><span className="flex items-center gap-2">{formatCurrency(r.netSalary)}<Button size="sm" variant="ghost" onClick={() => window.open(`/print/payslip/${r.id}?as=finance`, '_blank', 'noopener')}>Payslip</Button></span></div>
+                    ))}</div>
+                  </details>
+                );
+              })}
             </CardContent></Card>
           </TabsContent>
 
-          <TabsContent value="settings">
-            <Card><CardContent className="flex flex-col items-center justify-center py-16">
-              <Calculator className="h-16 w-16 text-muted-foreground/30" />
-              <h3 className="mt-4 text-lg font-semibold">Payroll Configuration</h3>
-              <p className="text-sm text-muted-foreground">Manage salary components, tax slabs, PF rates, and payment schedules</p>
-            </CardContent></Card>
-          </TabsContent>
+          <TabsContent value="settings"><SalaryStructures /></TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>

@@ -1,3 +1,4 @@
+import { downloadFinanceReport, downloadTallyExport } from '@/lib/financeReports';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -88,7 +89,7 @@ export default function Accounting() {
 
     const generateAccountingReport = async (type: string) => {
       try {
-        await postApi('/finance/reports/generate', { type });
+        await downloadFinanceReport(type);
         toast({ title: 'Report generated', description: `${type} generated successfully.` });
       } catch (error: any) {
         toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });
@@ -133,6 +134,17 @@ export default function Accounting() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => generateAccountingReport('ledger_export')}><Download className="mr-2 h-4 w-4" />Export Ledger</Button>
+            <Button variant="outline" size="sm" onClick={async () => {
+              const from = window.prompt('Tally export — from date (YYYY-MM-DD)', `${new Date().getFullYear()}-04-01`);
+              const to = from && window.prompt('To date (YYYY-MM-DD)', new Date().toISOString().slice(0, 10));
+              if (!from || !to) return;
+              try {
+                const c = await downloadTallyExport(from, to);
+                toast({ title: 'Tally file downloaded', description: `${c.receipts} receipt, ${c.journals} journal and ${c.payments} salary voucher(s). Import in Tally: Gateway → Import → Vouchers.` });
+              } catch (error: any) {
+                toast({ title: 'Export failed', description: error?.message, variant: 'destructive' });
+              }
+            }}><Download className="mr-2 h-4 w-4" />Tally export</Button>
             <Button size="sm" onClick={createJournalEntry}><Plus className="mr-2 h-4 w-4" />New Journal Entry</Button>
           </div>
         </div>
@@ -245,7 +257,7 @@ export default function Accounting() {
               <h3 className="mt-4 text-lg font-semibold">Book Closing</h3>
               <p className="text-sm text-muted-foreground">Close monthly/annual books and freeze period entries</p>
               <div className="mt-4 flex gap-2">
-                <Button variant="outline" disabled>Close March 2026</Button>
+                <Button variant="outline" disabled>Close {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</Button>
                 <Button disabled>Annual Closing (FY 2025-26)</Button>
               </div>
             </CardContent></Card>

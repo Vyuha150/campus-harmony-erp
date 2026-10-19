@@ -1,3 +1,4 @@
+import { downloadFinanceReport } from '@/lib/financeReports';
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -90,7 +91,7 @@ export default function FinanceBudgets() {
 
   const generateBudgetReport = async (type: string) => {
     try {
-      await postApi('/finance/reports/generate', { type });
+      await downloadFinanceReport(type);
       toast({ title: 'Report generated', description: `${type} generated successfully.` });
     } catch (error: any) {
       toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });

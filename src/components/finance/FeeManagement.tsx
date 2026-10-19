@@ -1,3 +1,5 @@
+import { downloadFinanceReport } from '@/lib/financeReports';
+import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -52,6 +54,7 @@ const normalizeFeeComponents = (value: any) => {
 };
 
 export default function FeeManagement() {
+  const [details, setDetails] = useState<Details | null>(null);
   const [feePayments, setFeePayments] = useState<any>([]);
   const [feeStructures, setFeeStructures] = useState<any>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -109,7 +112,7 @@ export default function FeeManagement() {
 
   const generateFeeReport = async (type: string) => {
     try {
-      await postApi('/finance/reports/generate', { type });
+      await downloadFinanceReport(type);
       toast({ title: 'Report generated', description: `${type} generated successfully.` });
     } catch (error: any) {
       toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });
@@ -171,10 +174,19 @@ export default function FeeManagement() {
     return matchesMethod && matchesStatus && matchesSearch;
   });
 
-  const viewPayment = async (payment: any) => {
-    toast({
-      title: `${payment.studentName} - ${payment.studentId}`,
-      description: `Amount: ${formatCurrency(Number(payment.amount || 0))} | Method: ${payment.paymentMethod} | Status: ${payment.status}`
+  const viewPayment = (payment: any) => {
+    setDetails({
+      title: `Payment — ${payment.studentName}`,
+      description: payment.studentId,
+      rows: [
+        ['Programme', payment.program],
+        ['Amount', formatCurrency(Number(payment.amount || 0))],
+        ['Method', String(payment.paymentMethod || '').replace('_', ' ')],
+        ['Date', formatDate(payment.paymentDate)],
+        ['Status', payment.status],
+        ['Transaction / receipt', payment.transactionId || payment.receiptNumber],
+        ['Fee type', payment.feeType]
+      ]
     });
   };
 
@@ -299,6 +311,7 @@ export default function FeeManagement() {
           </TabsContent>
         </Tabs>
       </div>
+      <DetailsDialog details={details} onClose={() => setDetails(null)} />
     </DashboardLayout>
   );
 }

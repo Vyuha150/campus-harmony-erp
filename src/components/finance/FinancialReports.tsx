@@ -1,3 +1,4 @@
+import { downloadFinanceReport } from '@/lib/financeReports';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -55,7 +56,7 @@ export default function FinancialReports() {
   const generateReport = async (type: string) => {
     try {
       const { startDate, endDate } = getFiscalYearRange(fiscalYear);
-      await postApi('/finance/reports/generate', { type, startDate, endDate });
+      await downloadFinanceReport(type, startDate, endDate);
       toast({ title: 'Report request submitted', description: `${type} generated for ${fiscalYear}.` });
     } catch (error) {
       console.error('Failed to generate report', error);

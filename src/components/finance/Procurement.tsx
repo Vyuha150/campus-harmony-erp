@@ -1,3 +1,4 @@
+import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +21,7 @@ const formatCurrency = (amount: unknown) => `₹${toNumber(amount).toLocaleStrin
 const statusColor = (s: string) => s === 'paid' ? 'default' : s === 'delivered' ? 'default' : s === 'pending' ? 'secondary' : 'outline';
 
 export default function Procurement() {
+  const [details, setDetails] = useState<Details | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<any>([]);
   const [vendors, setVendors] = useState<any>([]);
   const [activeTab, setActiveTab] = useState('orders');
@@ -148,8 +150,32 @@ export default function Procurement() {
   };
 
   const viewVendorLedger = (vendor: any) => {
-    const poCount = Array.isArray(vendor.purchaseOrders) ? vendor.purchaseOrders.length : 0;
-    toast({ title: vendor.name, description: `Recent purchase orders: ${poCount}` });
+    const orders = purchaseOrders.filter((po: any) => po.vendorId === vendor.id || po.vendorName === vendor.name);
+    const total = orders.reduce((sum: number, po: any) => sum + Number(po.totalAmount || 0), 0);
+    setDetails({
+      title: `Ledger — ${vendor.name}`,
+      description: `${orders.length} purchase order(s), ${formatCurrency(total)} in total`,
+      rows: [
+        ['Contact', vendor.contactPerson],
+        ['Email', vendor.email],
+        ['GST number', vendor.gstNumber],
+        ['Payment terms', vendor.paymentTerms],
+        ['Status', vendor.status]
+      ],
+      footer: orders.length === 0
+        ? <p className="text-sm text-muted-foreground">No purchase orders with this vendor yet.</p>
+        : (
+          <div className="max-h-56 space-y-2 overflow-y-auto">
+            {orders.map((po: any) => (
+              <div key={po.id} className="flex items-center justify-between rounded border p-2 text-sm">
+                <span className="font-mono text-xs">{po.poNumber}</span>
+                <span className="capitalize text-muted-foreground">{String(po.status || '').replace('_', ' ')}</span>
+                <span className="font-medium">{formatCurrency(po.totalAmount)}</span>
+              </div>
+            ))}
+          </div>
+        )
+    });
   };
 
   const filteredOrders = purchaseOrders.filter((po: any) => {
@@ -216,8 +242,8 @@ export default function Procurement() {
                   <table className="w-full text-sm">
                     <thead><tr className="border-b"><th className="py-1.5 text-left text-xs text-muted-foreground">Item</th><th className="py-1.5 text-right text-xs text-muted-foreground">Qty</th><th className="py-1.5 text-right text-xs text-muted-foreground">Unit Price</th><th className="py-1.5 text-right text-xs text-muted-foreground">Total</th></tr></thead>
                     <tbody>
-                      {toArray(po.items).map((item: any) => (
-                        <tr key={item.id} className="border-b last:border-0">
+                      {toArray(po.items).map((item: any, index: number) => (
+                        <tr key={item.id ?? index} className="border-b last:border-0">
                           <td className="py-1.5 text-foreground">{item.description}</td>
                           <td className="py-1.5 text-right text-muted-foreground">{item.quantity}</td>
                           <td className="py-1.5 text-right text-muted-foreground">{formatCurrency(item.unitPrice)}</td>
@@ -282,6 +308,7 @@ export default function Procurement() {
           </TabsContent>
         </Tabs>
       </div>
+      <DetailsDialog details={details} onClose={() => setDetails(null)} />
     </DashboardLayout>
   );
 }
