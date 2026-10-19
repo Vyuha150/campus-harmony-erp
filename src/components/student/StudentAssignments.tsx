@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { 
   FileText, Upload, Clock, CheckCircle, AlertCircle, 
   Calendar, Filter, Search, Eye, Download, MessageSquare
@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { UploadField } from '@/components/ui/upload-field';
-import { fetchApi, postApi, uploadApi } from '@/lib/apiService';
+import { downloadUpload, fetchApi, postApi, uploadApi } from '@/lib/apiService';
 import { Assignment } from '@/types/student';
 import { cn } from '@/lib/utils';
 import { safeArray, safeDate, safeNumber, safeString } from '@/lib/normalize';
@@ -35,8 +35,26 @@ function normalizeAssignment(raw: any): Assignment {
     obtainedMarks: raw?.obtainedMarks != null ? safeNumber(raw.obtainedMarks) : undefined,
     feedback: raw?.feedback ? safeString(raw.feedback) : undefined,
     attachments: safeArray(raw?.attachments).map((a) => safeString(a)),
+    attachmentUrl: raw?.attachmentUrl ? safeString(raw.attachmentUrl) : undefined,
+    attachmentName: raw?.attachmentName ? safeString(raw.attachmentName) : undefined,
     submissionUrl: raw?.submissionUrl ? safeString(raw.submissionUrl) : undefined,
   };
+}
+
+/** The teacher's question paper / brief, downloaded with the student's own session. */
+function AttachmentLink({ url, name }: { url: string; name?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => downloadUpload(url, name || 'assignment').catch((error) =>
+        toast({ title: 'Download failed', description: safeString(error?.message, 'Unable to download the file.'), variant: 'destructive' }))}
+      className="flex w-full items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-left text-sm hover:bg-muted"
+    >
+      <FileText className="h-4 w-4 shrink-0 text-primary" />
+      <span className="truncate font-medium">{name || 'Assignment brief'}</span>
+      <Download className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />
+    </button>
+  );
 }
 
 export default function StudentAssignments() {
@@ -135,7 +153,14 @@ export default function StudentAssignments() {
       setSubmittingId(assignment.id);
       let fileUrl = fallbackUrl;
       if (selectedFile) {
-        const uploaded: any = await uploadApi(selectedFile, 'student-assignments');
+        // Readable by the teachers who grade it; private to everyone else. Uploaded
+        // as private (the default), the faculty download was refused.
+        const uploaded: any = await uploadApi(selectedFile, 'student-assignments', {
+          visibility: 'role_restricted',
+          allowedRoles: ['faculty', 'hod'],
+          relatedEntityType: 'Assignment',
+          relatedEntityId: assignment.id
+        });
         fileUrl = safeString(uploaded?.url || uploaded?.storagePath);
       }
 
@@ -178,7 +203,11 @@ export default function StudentAssignments() {
     }
   };
 
-  const AssignmentCard = ({ assignment }: { assignment: Assignment }) => {
+  // Called as a function, not rendered as <AssignmentCard />. Defined inside the
+  // page, a component gets a new identity on every render, so React remounts
+  // it — closing any dialog it holds the moment the page's state changes (e.g.
+  // when a file is chosen in the submit dialog).
+  const renderAssignmentCard = ({ assignment }: { assignment: Assignment }) => {
     const dueDate = safeDate(assignment.dueDate);
     const submittedAt = assignment.submittedAt ? safeDate(assignment.submittedAt) : undefined;
     const daysRemaining = getDaysRemaining(dueDate);
@@ -203,11 +232,12 @@ export default function StudentAssignments() {
           <p className="text-sm text-muted-foreground line-clamp-2">
             {assignment.description}
           </p>
+          {assignment.attachmentUrl && <AttachmentLink url={assignment.attachmentUrl} name={assignment.attachmentName} />}
 
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Calendar className="h-4 w-4" />
-              Due: {dueDate.toLocaleDateString()}
+              Due: {dueDate.toLocaleDateString('en-IN')}
             </div>
             {assignment.status === 'pending' && (
               <span className={cn(
@@ -242,7 +272,7 @@ export default function StudentAssignments() {
           {assignment.status === 'submitted' && (
             <div className="flex items-center gap-2 rounded-lg bg-info/10 p-3 text-sm text-info">
               <CheckCircle className="h-4 w-4" />
-              Submitted on {submittedAt ? submittedAt.toLocaleDateString() : '-'}
+              Submitted on {submittedAt ? submittedAt.toLocaleDateString('en-IN') : '-'}
             </div>
           )}
 
@@ -272,13 +302,14 @@ export default function StudentAssignments() {
                 <div className="space-y-4 py-4">
                   <div>
                     <h4 className="font-medium">Description</h4>
-                    <p className="mt-1 text-sm text-muted-foreground">{assignment.description}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{assignment.description || 'See the attached brief.'}</p>
+                    {assignment.attachmentUrl && <div className="mt-2"><AttachmentLink url={assignment.attachmentUrl} name={assignment.attachmentName} /></div>}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="rounded-lg bg-muted/50 p-3">
                       <p className="text-xs text-muted-foreground">Due Date</p>
-                      <p className="font-medium">{dueDate.toLocaleDateString()}</p>
+                      <p className="font-medium">{dueDate.toLocaleDateString('en-IN')}</p>
                     </div>
                     <div className="rounded-lg bg-muted/50 p-3">
                       <p className="text-xs text-muted-foreground">Maximum Marks</p>
@@ -452,8 +483,13 @@ export default function StudentAssignments() {
 
           <TabsContent value="all">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {/* While the first request is in flight this page showed "0" everywhere,
+                  which reads as "you have none" rather than "still loading". */}
+              {_apiLoading && (
+                <p className="col-span-full py-8 text-center text-sm text-muted-foreground">Loading your assignments…</p>
+              )}
               {filteredAssignments.map((assignment) => (
-                <AssignmentCard key={assignment.id} assignment={assignment} />
+                <Fragment key={assignment.id}>{renderAssignmentCard({ assignment: assignment })}</Fragment>
               ))}
             </div>
           </TabsContent>
@@ -461,7 +497,7 @@ export default function StudentAssignments() {
           <TabsContent value="pending">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {[...overdueAssignments, ...pendingAssignments].map((assignment) => (
-                <AssignmentCard key={assignment.id} assignment={assignment} />
+                <Fragment key={assignment.id}>{renderAssignmentCard({ assignment: assignment })}</Fragment>
               ))}
             </div>
           </TabsContent>
@@ -469,7 +505,7 @@ export default function StudentAssignments() {
           <TabsContent value="submitted">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {submittedAssignments.map((assignment) => (
-                <AssignmentCard key={assignment.id} assignment={assignment} />
+                <Fragment key={assignment.id}>{renderAssignmentCard({ assignment: assignment })}</Fragment>
               ))}
             </div>
           </TabsContent>
@@ -477,7 +513,7 @@ export default function StudentAssignments() {
           <TabsContent value="graded">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {gradedAssignments.map((assignment) => (
-                <AssignmentCard key={assignment.id} assignment={assignment} />
+                <Fragment key={assignment.id}>{renderAssignmentCard({ assignment: assignment })}</Fragment>
               ))}
             </div>
           </TabsContent>

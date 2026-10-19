@@ -1,3 +1,4 @@
+import { useTabParam } from '@/hooks/useTabParam';
 import { useState, useEffect } from 'react';
 import { 
   Wallet, CreditCard, Download, CheckCircle, AlertCircle, 
@@ -17,8 +18,10 @@ import { fetchApi, postApi } from '@/lib/apiService';
 import { cn } from '@/lib/utils';
 import { safeArray, safeBoolean, safeDate, safeNumber, safeString } from '@/lib/normalize';
 import { toast } from '@/hooks/use-toast';
+import { FeeWaivers } from './FeeWaivers';
 
 export default function StudentFees() {
+  const tabParam = useTabParam('pending');
   const [feeRecords, setFeeRecords] = useState<any[]>([]);
   const [studentProfile, setStudentProfile] = useState<any>({});
   const [_apiLoading, _setApiLoading] = useState(true);
@@ -33,12 +36,18 @@ export default function StudentFees() {
     status: safeString(raw?.status),
     semester: safeNumber(raw?.semester),
     transactionId: raw?.transactionId ? safeString(raw.transactionId) : undefined,
+    // What is still owed after payments and any granted waiver.
+    outstanding: raw?.outstanding != null ? safeNumber(raw.outstanding) : safeNumber(raw?.amount),
+    waivedAmount: safeNumber(raw?.waivedAmount),
+    academicYear: safeString(raw?.academicYear),
   });
 
+  const loadFees = () => fetchApi('/students/fees')
+    .then((d) => setFeeRecords(safeArray(d).map(normalizeFee)))
+    .catch((error) => { console.error('API request failed', error); });
+
   useEffect(() => {
-    fetchApi('/students/fees')
-      .then((d) => setFeeRecords(safeArray(d).map(normalizeFee)))
-      .catch((error) => { console.error('API request failed', error); });
+    loadFees();
 
     fetchApi('/students/profile')
       .then((d) => setStudentProfile({
@@ -52,20 +61,16 @@ export default function StudentFees() {
   }, []);
 
   const [yearFilter, setYearFilter] = useState('all');
-  const [isPayingAll, setIsPayingAll] = useState(false);
-  const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
   const profile = studentProfile;
 
-  const pendingFees = feeRecords.filter(f => f.status === 'pending' || f.status === 'overdue');
+  // `partial` was missing, so a part-paid fee vanished from "Pending".
+  const pendingFees = feeRecords.filter(f => ['pending', 'overdue', 'partial'].includes(f.status) && f.outstanding > 0);
   const paidFees = feeRecords.filter(f => f.status === 'paid');
   const filteredPaidFees = paidFees.filter((fee) => {
     if (yearFilter === 'all') return true;
-    if (!fee.paidDate) return false;
-    const startYear = Number.parseInt(yearFilter.split('-')[0], 10);
-    const paidYear = fee.paidDate.getFullYear();
-    return paidYear === startYear || paidYear === startYear + 1;
+    return fee.academicYear === yearFilter;
   });
-  const totalPending = pendingFees.reduce((sum, f) => sum + f.amount, 0);
+  const totalPending = pendingFees.reduce((sum, f) => sum + f.outstanding, 0);
   const totalPaid = paidFees.reduce((sum, f) => sum + f.amount, 0);
 
   const getStatusBadge = (status: string) => {
@@ -98,76 +103,9 @@ export default function StudentFees() {
     }
   };
 
+  // A printable receipt with the college letterhead (Save as PDF from the print dialog).
   const downloadReceipt = (fee: any) => {
-    const receipt = [
-      'Campus Harmony ERP - Fee Receipt',
-      '',
-      `Description: ${fee.description}`,
-      `Type: ${fee.type}`,
-      `Amount: INR ${fee.amount}`,
-      `Status: ${fee.status}`,
-      `Paid Date: ${fee.paidDate ? fee.paidDate.toLocaleDateString() : '-'}`,
-      `Transaction ID: ${fee.transactionId || '-'}`,
-      `Generated On: ${new Date().toLocaleString()}`
-    ].join('\n');
-
-    const blob = new Blob([receipt], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `receipt_${fee.id}.txt`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  };
-
-  const handlePayFee = async (feeId: string, description: string) => {
-    // The transaction id used to be MADE UP HERE — `TXN-${Date.now()}-${random}`
-    // — posted to the server, which marked the fee paid and returned success.
-    // Nothing moved money. The screen told students their fees were settled.
-    //
-    // The server now refuses, because no payment gateway is configured. This
-    // surfaces that answer instead of inventing one.
-    try {
-      setPayingFeeId(feeId);
-      await postApi('/students/fees/pay', { feeRecordId: feeId });
-      // Unreachable while the server returns 501; kept so that wiring a real
-      // gateway later does not require rewriting this handler.
-      toast({ title: 'Payment recorded', description: `Paid ${description}.` });
-    } catch (error: any) {
-      toast({
-        title: 'Online payment unavailable',
-        description: safeString(
-          error?.message,
-          'Payment must be made through the finance office, which records it and issues a receipt.'
-        )
-      });
-    } finally {
-      setPayingFeeId(null);
-    }
-  };
-
-  const handlePayAllPending = async () => {
-    // Was a loop that posted a fabricated transaction id per fee and then set
-    // every pending row to `paid` in local state — so the screen showed a
-    // settled account even when the requests had failed.
-    if (!pendingFees.length) return;
-    try {
-      setIsPayingAll(true);
-      await postApi('/students/fees/pay', { feeRecordId: pendingFees[0]?.id });
-      toast({ title: 'Payments recorded' });
-    } catch (error: any) {
-      toast({
-        title: 'Online payment unavailable',
-        description: safeString(
-          error?.message,
-          'Payment must be made through the finance office, which records it and issues a receipt.'
-        )
-      });
-    } finally {
-      setIsPayingAll(false);
-    }
+    window.open(`/print/fee-receipt/${fee.id}`, '_blank', 'noopener');
   };
 
   return (
@@ -177,7 +115,7 @@ export default function StudentFees() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="page-title">Fees & Payments</h1>
-            <p className="page-description">View and pay your fees, download receipts</p>
+            <p className="page-description">Your dues, payments and receipts</p>
           </div>
         </div>
 
@@ -243,57 +181,16 @@ export default function StudentFees() {
                     </p>
                   </div>
                 </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Pay Now
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-lg">
-                    <DialogHeader>
-                      <DialogTitle>Make Payment</DialogTitle>
-                      <DialogDescription>Select fees to pay</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      {pendingFees.map((fee) => (
-                        <div key={fee.id} className="flex items-center justify-between rounded-lg border p-4">
-                          <div>
-                            <p className="font-medium">{fee.description}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Due: {fee.dueDate.toLocaleDateString()}
-                            </p>
-                          </div>
-                          <p className="text-lg font-bold">₹{fee.amount.toLocaleString()}</p>
-                        </div>
-                      ))}
-                      <Separator />
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">Total Amount</span>
-                        <span className="text-xl font-bold text-primary">
-                          ₹{totalPending.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button
-                        className="w-full"
-                        onClick={handlePayAllPending}
-                        disabled={isPayingAll}
-                      >
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        {isPayingAll ? 'Processing Payment...' : 'Proceed to Payment Gateway'}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                <p className="max-w-sm text-sm text-muted-foreground">
+                  Pay at the Finance office (cash, DD or bank transfer). Finance records the payment and your receipt appears under Payment History.
+                </p>
               </div>
             </CardContent>
           </Card>
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue="pending" className="space-y-6">
+        <Tabs key={tabParam.key} defaultValue={tabParam.defaultValue} className="space-y-6">
           <TabsList>
             <TabsTrigger value="pending" className="relative">
               Pending
@@ -305,7 +202,12 @@ export default function StudentFees() {
             </TabsTrigger>
             <TabsTrigger value="history">Payment History</TabsTrigger>
             <TabsTrigger value="structure">Fee Structure</TabsTrigger>
+            <TabsTrigger value="waivers">Waivers & Scholarships</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="waivers">
+            <FeeWaivers fees={feeRecords} onChanged={loadFees} />
+          </TabsContent>
 
           {/* Pending Fees */}
           <TabsContent value="pending" className="space-y-4">
@@ -328,7 +230,7 @@ export default function StudentFees() {
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
-                              Due: {fee.dueDate.toLocaleDateString()}
+                              Due: {fee.dueDate.toLocaleDateString('en-IN')}
                             </span>
                             {fee.semester && (
                               <span>Semester {fee.semester}</span>
@@ -338,13 +240,12 @@ export default function StudentFees() {
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-right">
-                          <p className="text-2xl font-bold">₹{fee.amount.toLocaleString()}</p>
+                          <p className="text-2xl font-bold">₹{fee.outstanding.toLocaleString()}</p>
+                          {fee.outstanding !== fee.amount && (
+                            <p className="text-xs text-muted-foreground">of ₹{fee.amount.toLocaleString()}{fee.waivedAmount > 0 ? ` · ₹${fee.waivedAmount.toLocaleString()} waived` : ''}</p>
+                          )}
                           {getStatusBadge(fee.status)}
                         </div>
-                        <Button onClick={() => handlePayFee(fee.id, fee.description)} disabled={payingFeeId === fee.id}>
-                          Pay Now
-                          <ArrowRight className="ml-2 h-4 w-4" />
-                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -374,8 +275,7 @@ export default function StudentFees() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Years</SelectItem>
-                      <SelectItem value="2024-25">2024-25</SelectItem>
-                      <SelectItem value="2023-24">2023-24</SelectItem>
+                      {[...new Set(paidFees.map((f: any) => f.academicYear).filter(Boolean))].sort().reverse().map((y: any) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -398,7 +298,7 @@ export default function StudentFees() {
                       <TableRow key={fee.id}>
                         <TableCell className="font-medium">{fee.description}</TableCell>
                         <TableCell className="capitalize">{fee.type}</TableCell>
-                        <TableCell>{fee.paidDate ? fee.paidDate.toLocaleDateString() : '-'}</TableCell>
+                        <TableCell>{fee.paidDate ? fee.paidDate.toLocaleDateString('en-IN') : '-'}</TableCell>
                         <TableCell>
                           <code className="text-xs">{fee.transactionId || '-'}</code>
                         </TableCell>
@@ -422,7 +322,7 @@ export default function StudentFees() {
             <Card>
               <CardHeader>
                 <CardTitle>Fee Structure - {profile.program} {profile.branch}</CardTitle>
-                <CardDescription>Academic Year 2024-25</CardDescription>
+                <CardDescription>Fees on your account, by type</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>

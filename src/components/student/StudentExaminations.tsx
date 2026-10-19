@@ -1,3 +1,6 @@
+import { useNavigate } from 'react-router-dom';
+import { ExamRegistration } from '@/components/student/ExamRegistration';
+import { useTabParam } from '@/hooks/useTabParam';
 import { useState, useEffect } from 'react';
 import {
   GraduationCap, Calendar, Clock, MapPin, Download,
@@ -212,16 +215,18 @@ function buildSemesterResults(enrollments: any[], profileCgpa: number): Semester
       // nothing more. This used to invent an internal/external split by
       // multiplying the total by 0.4 and 0.6, showing students a breakdown of
       // marks that nobody had awarded and that exists nowhere in the system.
-      const metrics = resolveGradeMetrics(safeString(row?.grade, 'NA'));
+      // The "working grade" was the internal-marks total (e.g. "100"), which
+      // this turned into a letter grade and an SGPA before any result existed.
+      // Until publication only the internal marks are real.
       return {
         courseId: safeString(row?.courseId),
         courseCode: safeString(row?.course?.code, '-'),
         courseName: safeString(row?.course?.name, 'Course'),
         credits,
-        internalMarks: null,
+        internalMarks: row?.internalMarks ?? null,
         externalMarks: null,
-        totalMarks: metrics.totalMarks,
-        grade: metrics.grade,
+        totalMarks: Number.NaN,
+        grade: 'Awaited',
       };
     });
 
@@ -239,7 +244,8 @@ function buildSemesterResults(enrollments: any[], profileCgpa: number): Semester
       ? backendSgpa
       : (totalCredits > 0 ? weightedPoints / totalCredits : 0);
 
-    return normalizeSemesterResult({
+    const anyPublished = rows.some((r: any) => r?.result);
+    const normalized = normalizeSemesterResult({
       semester,
       year: `${new Date().getFullYear() - index}`,
       sgpa,
@@ -248,10 +254,13 @@ function buildSemesterResults(enrollments: any[], profileCgpa: number): Semester
       totalCredits,
       courses,
     });
+    // No SGPA for a semester whose results are not out.
+    return anyPublished ? normalized : { ...normalized, sgpa: Number.NaN, earnedCredits: 0 };
   });
 }
 
 export default function StudentExaminations() {
+  const tabParam = useTabParam('schedule');
   const [examinations, setExaminations] = useState<Exam[]>([]);
   const [semesterResults, setSemesterResults] = useState<SemesterResult[]>([]);
   const [studentProfile, setStudentProfile] = useState<StudentProfileState>({ cgpa: 0, earnedCredits: 0, semester: 1 });
@@ -310,7 +319,7 @@ export default function StudentExaminations() {
       const records = safeArray<any>(payload?.exams ?? payload?.records);
       records.forEach((record: any) => {
         lines.push(
-          `${safeString(record?.course?.code ?? record?.courseCode, '-')} | ${safeString(record?.course?.name ?? record?.courseName, 'Course')} | ${safeDate(record?.date ?? record?.courseDate).toLocaleDateString()}`
+          `${safeString(record?.course?.code ?? record?.courseCode, '-')} | ${safeString(record?.course?.name ?? record?.courseName, 'Course')} | ${safeDate(record?.date ?? record?.courseDate).toLocaleDateString('en-IN')}`
         );
       });
 
@@ -374,9 +383,10 @@ export default function StudentExaminations() {
     URL.revokeObjectURL(url);
   };
 
-  const downloadHallTicket = () => {
-    handleApiTextDownload('/students/examinations/hall-ticket', 'hall_ticket.txt', 'Campus Harmony ERP - Hall Ticket');
-  };
+  // The hall ticket is the one the CoE issues (Registration & hall ticket tab);
+  // this used to build a text "hall ticket" whether or not one was issued.
+  const navigate = useNavigate();
+  const downloadHallTicket = () => navigate('/student/examinations?tab=registration');
 
   /**
    * The transcript gets its own renderer.
@@ -499,21 +509,24 @@ export default function StudentExaminations() {
               <div className="flex-1">
                 <p className="font-medium">End Semester Examinations</p>
                 <p className="text-sm text-muted-foreground">
-                  Exams starting from Dec 20, 2024. Download your hall ticket below.
+                  {upcomingExams.length > 0
+                    ? `${upcomingExams.length} paper${upcomingExams.length === 1 ? '' : 's'} scheduled. Your hall ticket is under Registration & hall ticket once issued.`
+                    : 'No papers are scheduled yet.'}
                 </p>
               </div>
               <Button onClick={downloadHallTicket}>
                 <Download className="mr-2 h-4 w-4" />
-                Download Hall Ticket
+                Hall ticket & registration
               </Button>
             </CardContent>
           </Card>
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue="schedule" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 sm:w-auto">
+        <Tabs key={tabParam.key} defaultValue={tabParam.defaultValue} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2 sm:flex sm:w-auto">
             <TabsTrigger value="schedule">Exam Schedule</TabsTrigger>
+            <TabsTrigger value="registration">Registration & hall ticket</TabsTrigger>
             <TabsTrigger value="results">Results</TabsTrigger>
             <TabsTrigger value="revaluation">Revaluation</TabsTrigger>
           </TabsList>
@@ -616,7 +629,7 @@ export default function StudentExaminations() {
                             </div>
                           </TableCell>
                           <TableCell>{getExamTypeBadge(exam.type)}</TableCell>
-                          <TableCell>{exam.date.toLocaleDateString()}</TableCell>
+                          <TableCell>{exam.date.toLocaleDateString('en-IN')}</TableCell>
                           <TableCell>
                             {exam.obtainedMarks !== undefined ? (
                               <span className="font-medium">
@@ -645,6 +658,8 @@ export default function StudentExaminations() {
           </TabsContent>
 
           {/* Results */}
+          <TabsContent value="registration"><ExamRegistration /></TabsContent>
+
           <TabsContent value="results" className="space-y-6">
             {/* Overall Performance */}
             <div className="grid gap-4 md:grid-cols-4">
@@ -661,7 +676,7 @@ export default function StudentExaminations() {
                 <CardContent className="flex flex-col items-center justify-center p-6">
                   <TrendingUp className="h-8 w-8 text-success" />
                   <p className="mt-2 text-3xl font-bold">
-                    {Number.isFinite(semesterResults[0]?.sgpa) ? semesterResults[0].sgpa.toFixed(2) : '-'}
+                    {(() => { const last = semesterResults.find((r) => Number.isFinite(r.sgpa)); return last ? last.sgpa.toFixed(2) : '-'; })()}
                   </p>
                   <p className="text-sm text-muted-foreground">Last SGPA</p>
                 </CardContent>
@@ -705,9 +720,15 @@ export default function StudentExaminations() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button variant="outline" onClick={downloadTranscript} className="w-full sm:w-auto">
+                    {semesterFilter !== 'all' && (
+                      <Button variant="outline" onClick={() => window.open(`/print/marks-memo/${semesterFilter}`, '_blank', 'noopener')} className="w-full sm:w-auto">
+                        <Download className="mr-2 h-4 w-4" />
+                        Marks memo
+                      </Button>
+                    )}
+                    <Button variant="outline" onClick={() => window.open('/print/transcript', '_blank', 'noopener')} className="w-full sm:w-auto">
                       <Download className="mr-2 h-4 w-4" />
-                      Download Transcript
+                      Transcript
                     </Button>
                   </div>
                 </div>
@@ -798,7 +819,7 @@ export default function StudentExaminations() {
                                         <TableCell>
                                           {course.externalMarks ?? <span className="text-muted-foreground" title="No published result yet">—</span>}
                                         </TableCell>
-                                        <TableCell>{course.totalMarks}</TableCell>
+                                        <TableCell>{Number.isFinite(course.totalMarks) ? course.totalMarks : '—'}</TableCell>
                                         <TableCell>
                                           <span className={cn('font-bold', getGradeColor(course.grade))}>
                                             {course.grade}
@@ -843,7 +864,7 @@ export default function StudentExaminations() {
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <p className="font-medium">{exam.courseCode} - {exam.courseName}</p>
-                            <p className="text-sm text-muted-foreground">Exam Date: {exam.date.toLocaleDateString()}</p>
+                            <p className="text-sm text-muted-foreground">Exam Date: {exam.date.toLocaleDateString('en-IN')}</p>
                           </div>
                           <Badge variant="outline">{exam.type}</Badge>
                         </div>

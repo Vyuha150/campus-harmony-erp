@@ -476,7 +476,7 @@ export default function StudentGrievances() {
                             {grievance.description}
                           </p>
                           <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>Submitted: {grievance.submittedAt.toLocaleDateString()}</span>
+                            <span>Submitted: {grievance.submittedAt.toLocaleDateString('en-IN')}</span>
                             {grievance.assignedTo && (
                               <span>Assigned to: {grievance.assignedTo}</span>
                             )}
@@ -506,7 +506,7 @@ export default function StudentGrievances() {
                               </div>
                               <DialogTitle>{selectedGrievanceDetail?.subject || grievance.subject}</DialogTitle>
                               <DialogDescription>
-                                Submitted on {(selectedGrievanceDetail?.submissionDate ? new Date(selectedGrievanceDetail.submissionDate) : grievance.submittedAt).toLocaleDateString()}
+                                Submitted on {(selectedGrievanceDetail?.submissionDate ? new Date(selectedGrievanceDetail.submissionDate) : grievance.submittedAt).toLocaleDateString('en-IN')}
                               </DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4 py-4">
@@ -550,7 +550,7 @@ export default function StudentGrievances() {
                                   <p className="text-xs text-muted-foreground">Resolution</p>
                                   <p className="font-medium text-success">{selectedGrievanceDetail?.resolution || grievance.resolution}</p>
                                   <p className="mt-1 text-xs text-muted-foreground">
-                                    Resolved on: {(selectedGrievanceDetail?.actualResolutionDate ? new Date(selectedGrievanceDetail.actualResolutionDate) : grievance.resolvedAt)?.toLocaleDateString()}
+                                    Resolved on: {(selectedGrievanceDetail?.actualResolutionDate ? new Date(selectedGrievanceDetail.actualResolutionDate) : grievance.resolvedAt)?.toLocaleDateString('en-IN')}
                                   </p>
                                 </div>
                               )}
@@ -593,7 +593,7 @@ export default function StudentGrievances() {
                       Faculty: {form.facultyName} • Semester {form.semester}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Deadline: {form.deadline.toLocaleDateString()}
+                      Deadline: {form.deadline.toLocaleDateString('en-IN')}
                     </p>
                   </div>
                   <Button 

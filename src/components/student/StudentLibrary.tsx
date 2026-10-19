@@ -24,18 +24,23 @@ export default function StudentLibrary() {
   const [renewingBookId, setRenewingBookId] = useState<string | null>(null);
 
   const normalizeBook = (raw: any) => ({
-    id: safeString(raw?.id),
-    isbn: safeString(raw?.isbn),
+    // The API sends loanId / bookId / issuedAt / dueAt / returnedAt; this read
+    // id / issuedDate / dueDate, so every date was blank and Renew had no id.
+    id: safeString(raw?.bookId ?? raw?.id),
+    loanId: safeString(raw?.loanId),
+    isbn: safeString(raw?.accessionNumber ?? raw?.isbn),
     title: safeString(raw?.title),
     author: safeString(raw?.author),
     category: safeString(raw?.category),
-    issuedDate: safeDate(raw?.issuedDate),
-    dueDate: safeDate(raw?.dueDate),
-    returnedDate: raw?.returnedDate ? safeDate(raw.returnedDate) : undefined,
+    issuedDate: safeDate(raw?.issuedAt ?? raw?.issuedDate),
+    dueDate: safeDate(raw?.dueAt ?? raw?.dueDate),
+    returnedDate: (raw?.returnedAt ?? raw?.returnedDate) ? safeDate(raw.returnedAt ?? raw.returnedDate) : undefined,
     fine: safeNumber(raw?.fine),
     renewalCount: safeNumber(raw?.renewalCount),
     maxRenewals: safeNumber(raw?.maxRenewals),
-    status: safeString(raw?.status),
+    // Loans are stored active / returned (+ an overdue flag); the tabs filter
+    // issued / overdue / returned, so borrowed books never appeared.
+    status: raw?.status === 'active' ? (raw?.overdue ? 'overdue' : 'issued') : safeString(raw?.status),
   });
 
   useEffect(() => {
@@ -51,13 +56,26 @@ export default function StudentLibrary() {
   const overdueBooks = libraryBooks.filter(b => b.status === 'overdue');
   const returnedBooks = libraryBooks.filter(b => b.status === 'returned');
   const totalFines = libraryBooks.reduce((sum, b) => sum + (b.fine || 0), 0);
-  const catalogResults = libraryBooks.filter((book) => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return false;
-    return [book.title, book.author, book.isbn, book.category].some((value) =>
-      safeString(value).toLowerCase().includes(query)
-    );
-  });
+  // The catalogue: every title the library holds, searched on the server.
+  // (This used to filter the student's own loan history.)
+  const [catalogResults, setCatalogResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchCatalog = async (query: string) => {
+    setSearching(true);
+    try {
+      const rows = await fetchApi<any[]>(`/students/library/catalog?query=${encodeURIComponent(query.trim())}`);
+      setCatalogResults(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      console.error('API request failed', error);
+      setCatalogResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+  useEffect(() => {
+    const timer = setTimeout(() => { searchCatalog(searchQuery); }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const getDaysRemaining = (dueDate: Date) => {
     const today = new Date();
@@ -113,8 +131,9 @@ export default function StudentLibrary() {
   const handleRenew = async (book: any) => {
     try {
       setRenewingBookId(book.id);
-      const updated = await postApi(`/students/library/${book.id}/renew`, {});
-      setLibraryBooks((prev) => prev.map((item) => item.id === book.id ? normalizeBook(updated) : item));
+      await postApi(`/students/library/${book.id}/renew`, {});
+      // The response is the renewal, not a loan row: reload the loans.
+      setLibraryBooks(safeArray(await fetchApi('/students/library')).map(normalizeBook));
       toast({ title: 'Book renewed', description: `${book.title} renewed successfully.` });
     } catch (error: any) {
       toast({ title: 'Renewal failed', description: safeString(error?.message, 'Unable to renew this book.'), variant: 'destructive' });
@@ -237,7 +256,7 @@ export default function StudentLibrary() {
                                 'font-medium',
                                 isOverdue ? 'text-destructive' : isNearDue ? 'text-warning' : ''
                               )}>
-                                {book.dueDate.toLocaleDateString()}
+                                {book.dueDate.toLocaleDateString('en-IN')}
                               </p>
                             </div>
                             {getStatusBadge(book.status, book.dueDate)}
@@ -302,8 +321,8 @@ export default function StudentLibrary() {
                       <TableRow key={book.id}>
                         <TableCell className="font-medium">{book.title}</TableCell>
                         <TableCell>{book.author}</TableCell>
-                        <TableCell>{book.issuedDate.toLocaleDateString()}</TableCell>
-                        <TableCell>{book.returnedDate?.toLocaleDateString() || '-'}</TableCell>
+                        <TableCell>{book.issuedDate.toLocaleDateString('en-IN')}</TableCell>
+                        <TableCell>{book.returnedDate?.toLocaleDateString('en-IN') || '-'}</TableCell>
                         <TableCell>
                           {book.fine ? (
                             <span className="text-warning">₹{book.fine}</span>
@@ -338,24 +357,30 @@ export default function StudentLibrary() {
                       className="pl-9"
                     />
                   </div>
-                  <Button onClick={() => setActiveTab('search')}>Search</Button>
+                  <Button onClick={() => searchCatalog(searchQuery)} disabled={searching}>{searching ? 'Searching…' : 'Search'}</Button>
                 </div>
                 {catalogResults.length > 0 ? (
                   <div className="mt-6 space-y-3">
+                    <p className="text-xs text-muted-foreground">{catalogResults.length} title{catalogResults.length === 1 ? '' : 's'}{searchQuery.trim() ? ` matching “${searchQuery.trim()}”` : ' in the catalogue'}</p>
                     {catalogResults.map((book) => (
-                      <div key={book.id} className="rounded-lg border p-3">
-                        <p className="font-medium">{book.title}</p>
-                        <p className="text-sm text-muted-foreground">{book.author} • {book.category}</p>
-                        <p className="text-xs text-muted-foreground">ISBN: {book.isbn}</p>
+                      <div key={`${book.isbn}-${book.title}`} className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                        <div>
+                          <p className="font-medium">{book.title}</p>
+                          <p className="text-sm text-muted-foreground">{book.author} • {book.category}{book.publisher ? ` • ${book.publisher}` : ''}</p>
+                          <p className="text-xs text-muted-foreground">ISBN: {book.isbn}</p>
+                        </div>
+                        <Badge variant={book.availableCopies > 0 ? 'default' : 'secondary'} className="shrink-0">
+                          {book.availableCopies > 0 ? `${book.availableCopies} of ${book.totalCopies} available` : 'All copies issued'}
+                        </Badge>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="mt-8 flex flex-col items-center justify-center py-12 text-center">
                     <Library className="h-16 w-16 text-muted-foreground" />
-                    <p className="mt-4 text-lg font-medium">Search Our Collection</p>
+                    <p className="mt-4 text-lg font-medium">{searching ? 'Searching…' : searchQuery.trim() ? 'No matching books' : 'Search Our Collection'}</p>
                     <p className="max-w-md text-sm text-muted-foreground">
-                      Enter a title, author, ISBN, or category to find matching resources.
+                      {searchQuery.trim() ? 'Try a different title, author, ISBN or subject.' : 'Enter a title, author, ISBN, or category to find matching resources.'}
                     </p>
                   </div>
                 )}

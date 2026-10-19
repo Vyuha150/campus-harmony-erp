@@ -16,9 +16,12 @@ import { cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '@/lib/apiService';
 import { safeArray, safeDate, safeNumber, safeString } from '@/lib/normalize';
+import { firstName } from '@/lib/names';
+import { DaySchedule, WEEK_DAYS, todayName, useAttendanceMarks, ymd } from './Timetable';
 
 export default function StudentDashboard() {
   const { user } = useAuth();
+  const todayMarks = useAttendanceMarks(ymd(new Date()), ymd(new Date()));
   const [dashboard, setDashboard] = useState<any>(null);
   const [courses, setCourses] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -36,10 +39,14 @@ export default function StudentDashboard() {
         safeArray(attendanceData).map((item: any) => [safeString(item?.courseId), safeNumber(item?.percentage)])
       );
 
-      const mergedCourses = safeArray(coursesData).map((course: any) => ({
-        ...course,
-        attendance: attendanceByCourseId.get(safeString(course?.id)) ?? safeNumber(course?.attendance)
-      }));
+      // This semester's subjects only — finished ones (published results) carry
+      // no attendance and no classes.
+      const mergedCourses = safeArray(coursesData)
+        .filter((course: any) => course?.status !== 'completed')
+        .map((course: any) => ({
+          ...course,
+          attendance: attendanceByCourseId.get(safeString(course?.id)) ?? safeNumber(course?.attendance)
+        }));
 
       setDashboard(dashData ?? {});
       setCourses(mergedCourses);
@@ -119,7 +126,7 @@ export default function StudentDashboard() {
             </Avatar>
             <div>
               <h1 className="text-2xl font-bold text-foreground">
-                {getGreeting()}, {(profile.name || user.name || '').split(' ')[0]}!
+                {getGreeting()}, {firstName(profile.name || user.name)}!
               </h1>
               <p className="text-muted-foreground">
                 {profile.program} {profile.branch} • Semester {profile.semester} • {profile.rollNumber}
@@ -154,6 +161,32 @@ export default function StudentDashboard() {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Left Column */}
           <div className="space-y-6 lg:col-span-2">
+            {/* Today's timetable, period by period (CampX-style). */}
+            <WidgetCard
+              title={WEEK_DAYS.includes(todayName()) ? "Today's Timetable" : 'No classes today'}
+              description={WEEK_DAYS.includes(todayName())
+                ? new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
+                : `${todayName()} — showing Monday`}
+              action={
+                <Link to="/student/timetable">
+                  <Button variant="ghost" size="sm" className="text-primary">
+                    Full timetable <ArrowRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </Link>
+              }
+            >
+              <DaySchedule
+                slots={courses.flatMap((course: any) => safeArray(course?.schedules).map((slot: any) => ({
+                  courseId: course.id, courseCode: course.code, courseName: course.name, faculty: course?.faculty?.user?.name,
+                  day: String(slot.day), startTime: String(slot.startTime), endTime: String(slot.endTime), room: slot.room, type: slot.type
+                })))}
+                day={WEEK_DAYS.includes(todayName()) ? todayName() : 'Monday'}
+                isToday={WEEK_DAYS.includes(todayName())}
+                date={WEEK_DAYS.includes(todayName()) ? ymd(new Date()) : undefined}
+                marks={todayMarks}
+              />
+            </WidgetCard>
+
             {/* Course Attendance Overview */}
             <WidgetCard
               title="Course Attendance"
@@ -233,7 +266,7 @@ export default function StudentDashboard() {
                           {assignment.status === 'overdue' ? 'Overdue' : 'Pending'}
                         </Badge>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Due: {safeDate(assignment.dueDate).toLocaleDateString()}
+                          Due: {safeDate(assignment.dueDate).toLocaleDateString('en-IN')}
                         </p>
                       </div>
                     </div>

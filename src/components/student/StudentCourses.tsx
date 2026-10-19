@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { fetchApi } from '@/lib/apiService';
+import { fetchApi, downloadUpload } from '@/lib/apiService';
 import { Course } from '@/types/student';
 import { cn } from '@/lib/utils';
 import { safeArray, safeNumber, safeString } from '@/lib/normalize';
@@ -25,6 +25,11 @@ type StudentCourseState = Course & {
   totalClasses: number;
   presentClasses: number;
   absentClasses: number;
+  /** 'ongoing' for this semester's subjects, 'completed' for past ones (from published results). */
+  status: string;
+  grade: string | null;
+  gradePoint: number | null;
+  totalMarks: number | null;
 };
 
 type AttendanceSummaryState = {
@@ -81,6 +86,10 @@ function normalizeCourses(raw: any): StudentCourseState[] {
       absentClasses: 0,
       semester: safeNumber(course?.semester, 1),
       department: safeString(course?.department?.name, '-'),
+      status: safeString(course?.status, 'ongoing'),
+      grade: course?.grade ?? null,
+      gradePoint: course?.gradePoint ?? null,
+      totalMarks: course?.totalMarks ?? null,
     };
   });
 }
@@ -103,6 +112,39 @@ function normalizeProfile(raw: any): StudentProfileState {
     branch: safeString(raw?.branch, DEFAULT_PROFILE.branch),
     semester: safeNumber(raw?.semester, DEFAULT_PROFILE.semester),
   };
+}
+
+/** Files the teacher uploaded for a course. Defined at module level so it keeps its state. */
+function CourseMaterialsList({ courseId }: { courseId: string }) {
+  const [materials, setMaterials] = useState<any[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchApi<any[]>(`/students/courses/${courseId}/materials`)
+      .then((rows) => { if (alive) setMaterials(Array.isArray(rows) ? rows : []); })
+      .catch(() => { if (alive) setMaterials([]); });
+    return () => { alive = false; };
+  }, [courseId]);
+
+  if (materials === null) return <p className="text-sm text-muted-foreground">Loading materials…</p>;
+  if (materials.length === 0) return <p className="text-sm text-muted-foreground">Your teacher has not uploaded any material for this course yet.</p>;
+  return (
+    <div className="space-y-3">
+      {materials.map((m) => (
+        <div key={m.id} className="flex items-center justify-between rounded-lg border p-3">
+          <div className="flex items-center gap-3">
+            <FileText className="h-5 w-5 text-primary" />
+            <div>
+              <p className="font-medium">{m.name}</p>
+              <p className="text-xs text-muted-foreground">{(m.sizeBytes / 1024).toFixed(0)} KB • {new Date(m.uploadedAt).toLocaleDateString('en-IN')}</p>
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => downloadUpload(m.url, m.name).catch(() => undefined)}>
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function StudentCourses() {
@@ -160,8 +202,10 @@ export default function StudentCourses() {
     : courses.filter((course) => String(course.semester) === selectedSemester);
 
   const totalCredits = visibleCourses.reduce((sum, c) => sum + Number(c.credits || 0), 0);
-  const avgAttendance = visibleCourses.length > 0
-    ? Math.round(visibleCourses.reduce((sum, c) => sum + Number(c.attendance || 0), 0) / visibleCourses.length)
+  // Attendance is a running-semester figure; completed subjects carry none.
+  const attendedCourses = visibleCourses.filter((c) => c.status !== 'completed');
+  const avgAttendance = attendedCourses.length > 0
+    ? Math.round(attendedCourses.reduce((sum, c) => sum + Number(c.attendance || 0), 0) / attendedCourses.length)
     : 0;
 
   const getAttendanceColor = (attendance: number) => {
@@ -246,6 +290,11 @@ export default function StudentCourses() {
 
         {/* Course Grid */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {/* While the first request is in flight this page showed "0" everywhere,
+              which reads as "you have none" rather than "still loading". */}
+          {_apiLoading && (
+            <p className="col-span-full py-8 text-center text-sm text-muted-foreground">Loading your courses…</p>
+          )}
           {visibleCourses.map((course) => {
             const status = getAttendanceStatus(course.attendance);
             return (
@@ -262,6 +311,22 @@ export default function StudentCourses() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {course.status === 'completed' ? (
+                    // A finished subject: its published result, not attendance.
+                    <div className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Result</p>
+                        <p className="text-lg font-semibold">{course.totalMarks ?? '—'}/100</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">Grade</p>
+                        <p className={cn('text-lg font-semibold', course.grade === 'F' ? 'text-destructive' : 'text-primary')}>
+                          {course.grade ?? '—'}{course.gradePoint != null ? ` (${course.gradePoint})` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                  <>
                   {/* Attendance */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
@@ -306,6 +371,8 @@ export default function StudentCourses() {
                       </p>
                     </div>
                   </div>
+                  </>
+                  )}
 
                   {/* Schedule Preview */}
                   <div className="space-y-1">
@@ -456,44 +523,9 @@ export default function StudentCourses() {
                         </TabsContent>
 
                         <TabsContent value="materials" className="pt-4">
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between rounded-lg border p-3">
-                              <div className="flex items-center gap-3">
-                                <FileText className="h-5 w-5 text-primary" />
-                                <div>
-                                  <p className="font-medium">Unit 1 Notes - Introduction</p>
-                                  <p className="text-xs text-muted-foreground">PDF • 2.4 MB</p>
-                                </div>
-                              </div>
-                              <Button size="sm" variant="outline" onClick={() => downloadMaterial(course.code, 'Unit 1 Notes - Introduction')}>
-                                <Download className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <div className="flex items-center justify-between rounded-lg border p-3">
-                              <div className="flex items-center gap-3">
-                                <FileText className="h-5 w-5 text-primary" />
-                                <div>
-                                  <p className="font-medium">Unit 2 Notes - Advanced Topics</p>
-                                  <p className="text-xs text-muted-foreground">PDF • 3.1 MB</p>
-                                </div>
-                              </div>
-                              <Button size="sm" variant="outline" onClick={() => downloadMaterial(course.code, 'Unit 2 Notes - Advanced Topics')}>
-                                <Download className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <div className="flex items-center justify-between rounded-lg border p-3">
-                              <div className="flex items-center gap-3">
-                                <ExternalLink className="h-5 w-5 text-info" />
-                                <div>
-                                  <p className="font-medium">Video Lecture - Week 5</p>
-                                  <p className="text-xs text-muted-foreground">YouTube Link</p>
-                                </div>
-                              </div>
-                              <Button size="sm" variant="outline" onClick={openLectureLink}>
-                                <ExternalLink className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
+                          {/* Was two hardcoded "Unit 1 / Unit 2 Notes" rows on every
+                              course. These are the files the teacher uploaded. */}
+                          <CourseMaterialsList courseId={course.id} />
                         </TabsContent>
                       </Tabs>
                     </DialogContent>

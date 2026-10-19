@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { 
   Briefcase, Building2, Calendar, MapPin, CheckCircle, 
   Clock, Award, TrendingUp, FileText, Upload, ExternalLink,
@@ -163,7 +163,9 @@ export default function StudentPlacements() {
     return profile.cgpa >= drive.eligibility.minCgpa;
   };
 
-  const DriveCard = ({ drive }: { drive: PlacementDrive }) => {
+  // Called as a function, not rendered as <DriveCard />: defined inside the page it
+  // would remount on every state change and close its dialog mid-use.
+  const renderDriveCard = ({ drive }: { drive: PlacementDrive }) => {
     const eligible = isEligible(drive);
     const daysUntil = Math.ceil((drive.driveDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
@@ -201,7 +203,7 @@ export default function StudentPlacements() {
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Calendar className="h-4 w-4" />
-              <span>Drive: {drive.driveDate.toLocaleDateString()}</span>
+              <span>Drive: {drive.driveDate.toLocaleDateString('en-IN')}</span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <Clock className="h-4 w-4" />
@@ -503,7 +505,7 @@ export default function StudentPlacements() {
           <TabsContent value="all">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {displayedDrives.map((drive) => (
-                <DriveCard key={drive.id} drive={drive} />
+                <Fragment key={drive.id}>{renderDriveCard({ drive: drive })}</Fragment>
               ))}
             </div>
           </TabsContent>
@@ -511,7 +513,7 @@ export default function StudentPlacements() {
           <TabsContent value="upcoming">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {upcomingDrives.map((drive) => (
-                <DriveCard key={drive.id} drive={drive} />
+                <Fragment key={drive.id}>{renderDriveCard({ drive: drive })}</Fragment>
               ))}
             </div>
           </TabsContent>
@@ -519,7 +521,7 @@ export default function StudentPlacements() {
           <TabsContent value="applied">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {appliedDrives.map((drive) => (
-                <DriveCard key={drive.id} drive={drive} />
+                <Fragment key={drive.id}>{renderDriveCard({ drive: drive })}</Fragment>
               ))}
             </div>
           </TabsContent>
@@ -528,7 +530,7 @@ export default function StudentPlacements() {
             {selectedOffers.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {selectedOffers.map((drive) => (
-                  <DriveCard key={drive.id} drive={drive} />
+                  <Fragment key={drive.id}>{renderDriveCard({ drive: drive })}</Fragment>
                 ))}
               </div>
             ) : (

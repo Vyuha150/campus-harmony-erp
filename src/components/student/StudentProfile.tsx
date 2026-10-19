@@ -1,3 +1,4 @@
+import { useTabParam } from '@/hooks/useTabParam';
 import { useState, useEffect } from 'react';
 import { 
   User, Mail, Phone, MapPin, Calendar, GraduationCap, 
@@ -13,8 +14,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { fetchApi } from '@/lib/apiService';
+import { fetchApi, postApi } from '@/lib/apiService';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { RecordCorrections } from '@/components/student/RecordCorrections';
+import { ProfileEditor } from '@/components/student/ProfileEditor';
 
 type StudentProfileState = {
   name: string;
@@ -196,15 +203,41 @@ function normalizeCertificates(raw: any): CertificateState[] {
   return raw.map((cert) => ({
     id: String(cert?.id ?? ''),
     type: String(cert?.type ?? 'certificate'),
-    status: String(cert?.status ?? 'processing'),
-    requestedAt: toDate(cert?.requestedAt),
+    status: String(cert?.status ?? 'pending'),
+    requestedAt: toDate(cert?.requestedAt ?? cert?.requestDate ?? cert?.createdAt),
     copies: Number(cert?.copies ?? 1),
   }));
 }
 
 export default function StudentProfile() {
+  const tabParam = useTabParam('personal');
   const [studentProfile, setStudentProfile] = useState<StudentProfileState>(DEFAULT_PROFILE);
   const [certificates, setCertificates] = useState<CertificateState[]>([]);
+  const { toast } = useToast();
+  // "Request New Certificate" had no handler. Bonafide, transcript, transfer
+  // and similar certificates are requested here and issued by the Registrar,
+  // after Finance confirms no dues and the HOD verifies (workflow CERTIFICATE_ISSUE).
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [certType, setCertType] = useState('bonafide');
+  const [certPurpose, setCertPurpose] = useState('');
+  const [certCopies, setCertCopies] = useState('1');
+  const [requesting, setRequesting] = useState(false);
+
+  const requestCertificate = async () => {
+    setRequesting(true);
+    try {
+      await postApi('/students/certificates/request', { type: certType, purpose: certPurpose.trim(), copies: Number(certCopies) || 1 });
+      setCertificates(normalizeCertificates(await fetchApi('/students/certificates')));
+      setRequestOpen(false);
+      setCertPurpose('');
+      setCertCopies('1');
+      toast({ title: 'Certificate requested', description: 'Finance checks for dues first, then your HOD verifies and the Registrar issues it.' });
+    } catch (error: any) {
+      toast({ title: 'Request failed', description: error?.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setRequesting(false);
+    }
+  };
   const [_apiLoading, _setApiLoading] = useState(true);
   useEffect(() => {
     Promise.allSettled([
@@ -240,25 +273,16 @@ export default function StudentProfile() {
             <p className="page-description">View and manage your personal information</p>
           </div>
           <div className="flex gap-2">
-            {isEditing ? (
-              <>
-                <Button variant="outline" onClick={() => setIsEditing(false)}>
-                  <X className="mr-2 h-4 w-4" />
-                  Cancel
-                </Button>
-                <Button onClick={() => setIsEditing(false)}>
-                  <Save className="mr-2 h-4 w-4" />
-                  Save Changes
-                </Button>
-              </>
-            ) : (
-              <Button variant="outline" onClick={() => setIsEditing(true)}>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit Profile
-              </Button>
-            )}
+            {/* "Save Changes" closed the form and saved nothing. */}
+            <Button variant="outline" onClick={() => setIsEditing(true)}>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Profile
+            </Button>
           </div>
         </div>
+
+        <ProfileEditor open={isEditing} onClose={() => setIsEditing(false)} profile={profile}
+          onSaved={() => fetchApi('/students/profile').then((d) => setStudentProfile(normalizeProfile(d))).catch(() => undefined)} />
 
         {/* Profile Header Card */}
         <Card>
@@ -315,14 +339,19 @@ export default function StudentProfile() {
         </Card>
 
         {/* Tabs */}
-        <Tabs defaultValue="personal" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5">
+        <Tabs key={tabParam.key} defaultValue={tabParam.defaultValue} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6">
             <TabsTrigger value="personal">Personal Info</TabsTrigger>
             <TabsTrigger value="academic">Academic Info</TabsTrigger>
             <TabsTrigger value="guardian">Guardian Info</TabsTrigger>
             <TabsTrigger value="address">Address</TabsTrigger>
             <TabsTrigger value="certificates">Certificates</TabsTrigger>
+            <TabsTrigger value="corrections">Record Corrections</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="corrections">
+            <RecordCorrections />
+          </TabsContent>
 
           {/* Personal Information */}
           <TabsContent value="personal" className="space-y-6">
@@ -335,33 +364,14 @@ export default function StudentProfile() {
               </CardHeader>
               <CardContent>
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {isEditing ? (
-                    <>
-                      <div className="space-y-2">
-                        <Label>Full Name</Label>
-                        <Input defaultValue={profile.name} disabled />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Personal Email</Label>
-                        <Input defaultValue={profile.personalEmail} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Phone Number</Label>
-                        <Input defaultValue={profile.phone} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Alternate Phone</Label>
-                        <Input defaultValue={profile.alternatePhone} />
-                      </div>
-                    </>
-                  ) : (
+                  {(
                     <>
                       <InfoRow icon={User} label="Full Name" value={profile.name} />
                       <InfoRow icon={Mail} label="University Email" value={profile.email} />
                       <InfoRow icon={Mail} label="Personal Email" value={profile.personalEmail || 'Not provided'} />
                       <InfoRow icon={Phone} label="Phone Number" value={profile.phone} />
                       <InfoRow icon={Phone} label="Alternate Phone" value={profile.alternatePhone || 'Not provided'} />
-                      <InfoRow icon={Calendar} label="Date of Birth" value={profile.dateOfBirth ? profile.dateOfBirth.toLocaleDateString() : 'Not provided'} />
+                      <InfoRow icon={Calendar} label="Date of Birth" value={profile.dateOfBirth ? profile.dateOfBirth.toLocaleDateString('en-IN') : 'Not provided'} />
                       <InfoRow label="Gender" value={profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1)} />
                       <InfoRow label="Blood Group" value={profile.bloodGroup} />
                       <InfoRow label="Nationality" value={profile.nationality} />
@@ -499,42 +509,71 @@ export default function StudentProfile() {
               </CardHeader>
               <CardContent>
                 <div className="mb-4">
-                  <Button>
+                  <Button onClick={() => setRequestOpen(true)}>
                     <FileText className="mr-2 h-4 w-4" />
                     Request New Certificate
                   </Button>
                 </div>
+                <Dialog open={requestOpen} onOpenChange={setRequestOpen}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Request a certificate</DialogTitle>
+                      <DialogDescription>For example, a bonafide certificate for a bank, scholarship or passport application.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <div className="space-y-1"><Label>Certificate</Label>
+                        <Select value={certType} onValueChange={setCertType}><SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="bonafide">Bonafide (study) certificate</SelectItem>
+                            <SelectItem value="transcript">Transcript / consolidated marks</SelectItem>
+                            <SelectItem value="conduct">Conduct certificate</SelectItem>
+                            <SelectItem value="course_completion">Course completion certificate</SelectItem>
+                            <SelectItem value="transfer">Transfer certificate</SelectItem>
+                            <SelectItem value="migration">Migration certificate</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1"><Label htmlFor="cert-purpose">Purpose</Label>
+                        <Textarea id="cert-purpose" rows={2} value={certPurpose} onChange={(e) => setCertPurpose(e.target.value)} placeholder="e.g. Education loan application at SBI" maxLength={500} />
+                      </div>
+                      <div className="space-y-1"><Label htmlFor="cert-copies">Copies</Label>
+                        <Input id="cert-copies" type="number" min={1} max={10} value={certCopies} onChange={(e) => setCertCopies(e.target.value)} className="w-24" />
+                      </div>
+                      <Button className="w-full" onClick={requestCertificate} disabled={requesting || certPurpose.trim().length < 3}>{requesting ? 'Requesting…' : 'Submit request'}</Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
                 <div className="space-y-3">
                   {certificates.map((cert) => (
                     <div key={cert.id} className="flex items-center justify-between rounded-lg border p-4">
                       <div className="flex items-center gap-4">
                         <div className={cn(
                           'flex h-10 w-10 items-center justify-center rounded-lg',
-                          cert.status === 'ready' ? 'bg-success/10' : 'bg-muted'
+                          ['issued', 'collected'].includes(cert.status) ? 'bg-success/10' : 'bg-muted'
                         )}>
                           <FileText className={cn(
                             'h-5 w-5',
-                            cert.status === 'ready' ? 'text-success' : 'text-muted-foreground'
+                            ['issued', 'collected'].includes(cert.status) ? 'text-success' : 'text-muted-foreground'
                           )} />
                         </div>
                         <div>
                           <p className="font-medium capitalize">{cert.type.replace('_', ' ')} Certificate</p>
                           <p className="text-sm text-muted-foreground">
-                            Requested: {cert.requestedAt ? cert.requestedAt.toLocaleDateString() : 'Not available'} • {cert.copies} copies
+                            Requested: {cert.requestedAt ? cert.requestedAt.toLocaleDateString('en-IN') : 'Not available'} • {cert.copies} copies
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
                         <Badge variant={
-                          cert.status === 'ready' ? 'default' :
-                          cert.status === 'processing' ? 'secondary' : 'outline'
+                          ['issued', 'collected'].includes(cert.status) ? 'default' :
+                          cert.status === 'rejected' ? 'destructive' : 'secondary'
                         }>
-                          {cert.status.charAt(0).toUpperCase() + cert.status.slice(1)}
+                          {({ pending: 'Being approved', approved: 'Approved — being issued', issued: 'Issued', collected: 'Collected', rejected: 'Rejected' } as Record<string, string>)[cert.status] ?? cert.status}
                         </Badge>
-                        {cert.status === 'ready' && (
-                          <Button size="sm" variant="outline">
+                        {['issued', 'collected'].includes(cert.status) && (
+                          <Button size="sm" variant="outline" onClick={() => window.open(`/print/certificate/${cert.id}`, '_blank', 'noopener')}>
                             <Download className="mr-2 h-4 w-4" />
-                            Download
+                            Print
                           </Button>
                         )}
                       </div>
