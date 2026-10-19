@@ -22,10 +22,15 @@
  * that refuses UPDATE and DELETE on the log.
  */
 
+import { Prisma } from '@prisma/client';
+import { logger } from '../../lib/logger.js';
 import { basePrisma } from '../../lib/prisma.js';
 import { mutate } from '../../lib/service.js';
-import { NotFoundError, ValidationError, BusinessRuleError, ConflictError } from '../../lib/errors.js';
+import { NotFoundError, ValidationError, BusinessRuleError, ConflictError, AuthorizationError } from '../../lib/errors.js';
 import type { TenantContext } from '../../lib/tenant.js';
+import { notifyInApp } from '../../lib/inAppNotify.js';
+import { applyApprovedChange } from '../hod/planning.service.js';
+import { publishDepartment } from '../examination/resultsFlow.js';
 
 export const WORKFLOW_ACTIONS = ['approved', 'rejected', 'forwarded', 'cancelled'] as const;
 export type WorkflowAction = (typeof WORKFLOW_ACTIONS)[number];
@@ -146,6 +151,72 @@ export async function defineWorkflow(
   );
 }
 
+/** Roles that may read any approval trail. */
+/**
+ * A HOD approves for their own department only. The inbox listed every
+ * department's pending HOD step to every HOD, so the ECE head could approve a
+ * CSE lecturer's leave. Requests from someone with no department stay visible
+ * to every HOD rather than disappearing.
+ */
+async function departmentOf(institutionId: string, userIds: string[]): Promise<Map<string, string | null>> {
+  const users = await basePrisma.user.findMany({
+    where: { institutionId, id: { in: [...new Set(userIds)] } },
+    select: { id: true, departmentId: true }
+  });
+  return new Map(users.map((u) => [u.id, u.departmentId ?? null]));
+}
+
+/**
+ * A faculty-step request about one course (attendance condonation) is for that
+ * course's teacher, not every faculty member in the institution.
+ */
+async function facultyMayAct(context: TenantContext, entityType: string, entityId: string): Promise<boolean> {
+  if (context.role !== 'faculty' || entityType !== 'ExamRegistration') return true;
+  const reg = await basePrisma.examRegistration.findFirst({
+    where: { id: entityId, institutionId: context.institutionId },
+    select: { schedule: { select: { course: { select: { facultyId: true } } } } }
+  });
+  const profile = await basePrisma.facultyProfile.findFirst({ where: { userId: context.userId, institutionId: context.institutionId }, select: { id: true } });
+  return !!reg && !!profile && reg.schedule.course.facultyId === profile.id;
+}
+
+async function hodMayAct(context: TenantContext, requesterId: string): Promise<boolean> {
+  if (context.role !== 'hod') return true;
+  const depts = await departmentOf(context.institutionId, [context.userId, requesterId]);
+  const mine = depts.get(context.userId);
+  const theirs = depts.get(requesterId);
+  return !mine || !theirs || mine === theirs;
+}
+
+const HISTORY_OVERSIGHT = new Set(['super_admin', 'registrar', 'vice_chancellor', 'pro_vc', 'principal', 'auditor']);
+
+/**
+ * Refuse to start an approval for a record that does not exist.
+ *
+ * `entityId` was accepted on trust, so anyone could open an approval — and put
+ * work in an approver's inbox — for a record that was never created. When the
+ * entity type names a model, the row must exist in the caller's institution.
+ * A type that is not a model (a process with no table behind it) is let through.
+ */
+async function assertEntityExists(context: TenantContext, entityType: string, entityId: string): Promise<void> {
+  const model = Prisma.dmmf.datamodel.models.find((m) => m.name === entityType);
+  if (!model) return;
+
+  const delegate = (basePrisma as unknown as Record<string, { findFirst: (args: unknown) => Promise<unknown> }>)[
+    entityType.charAt(0).toLowerCase() + entityType.slice(1)
+  ];
+  if (!delegate) return;
+
+  const tenantOwned = model.fields.some((f) => f.name === 'institutionId');
+  const row = await delegate.findFirst({
+    where: { id: entityId, ...(tenantOwned ? { institutionId: context.institutionId } : {}) },
+    select: { id: true }
+  });
+  if (!row) {
+    throw new NotFoundError(`${entityType} ${entityId}`);
+  }
+}
+
 /** Start an instance against an entity. */
 export async function startWorkflow(
   context: TenantContext,
@@ -179,6 +250,8 @@ export async function startWorkflow(
     throw new BusinessRuleError(`Workflow "${input.code}" has no steps.`, { code: input.code });
   }
 
+  await assertEntityExists(context, input.entityType, input.entityId);
+
   // One open instance per entity. Two concurrent approvals of the same fee
   // waiver could reach opposite conclusions, and nothing would say which won.
   const existing = await basePrisma.workflowInstance.findFirst({
@@ -198,7 +271,7 @@ export async function startWorkflow(
     );
   }
 
-  return mutate(
+  const started = await mutate(
     context,
     {
       action: 'CREATE',
@@ -238,6 +311,39 @@ export async function startWorkflow(
         currentStep: firstStep.name,
         assigneeRole: firstStep.assigneeRole
       };
+    }
+  );
+
+  await notifyApprovers(context, definition.name, firstStep.assigneeRole, input.entityType, input.entityId, context.userId);
+  return started;
+}
+
+/**
+ * Approvers had to open the Approvals page to discover work. Each step now
+ * drops a note in the assignee role's in-app inbox. A HOD step goes only to the
+ * HOD of the requester's department.
+ */
+async function notifyApprovers(
+  context: TenantContext,
+  workflowName: string,
+  role: string,
+  entityType: string,
+  entityId: string,
+  requesterId: string
+): Promise<void> {
+  const requester = await basePrisma.user.findFirst({
+    where: { id: requesterId, institutionId: context.institutionId },
+    select: { name: true, departmentId: true }
+  });
+  await notifyInApp(
+    context.institutionId,
+    { roles: [role], departmentId: role === 'hod' ? requester?.departmentId ?? null : null, excludeUserId: context.userId },
+    {
+      eventType: 'workflow.assigned',
+      subject: `Approval needed: ${workflowName}`,
+      body: `${requester?.name ?? 'A user'} submitted a request that is waiting for your decision under Approvals & Workflows.`,
+      relatedEntityType: entityType,
+      relatedEntityId: entityId
     }
   );
 }
@@ -306,11 +412,22 @@ export async function act(
     permitted.add(currentStep.escalationRole);
   }
 
-  if (context.role !== 'super_admin' && !permitted.has(context.role)) {
+  // Withdrawing your own request is not an approval decision, so it does not
+  // need the approver's role. Before this, only the current approver could
+  // cancel — the one person who had not asked for anything.
+  const withdrawingOwn = action === 'cancelled' && instance.startedBy === context.userId;
+
+  if (context.role !== 'super_admin' && !withdrawingOwn && !permitted.has(context.role)) {
     throw new BusinessRuleError(
       `This approval is waiting on ${[...permitted].join(' or ')}, not ${context.role}. Step: "${currentStep.name}".`,
       { requiredRole: [...permitted].join(' or '), step: currentStep.name }
     );
+  }
+  if (!withdrawingOwn && !(await hodMayAct(context, instance.startedBy))) {
+    throw new AuthorizationError('This request is from another department. Its own HOD approves it.');
+  }
+  if (!withdrawingOwn && !(await facultyMayAct(context, instance.entityType, instance.entityId))) {
+    throw new AuthorizationError('This request is for the course teacher.');
   }
 
   if (action === 'rejected' && (!note || note.trim().length < 10)) {
@@ -345,7 +462,7 @@ export async function act(
         ? 'rejected'
         : 'cancelled';
 
-  return mutate(
+  const result = await mutate(
     context,
     {
       action: 'UPDATE',
@@ -393,6 +510,13 @@ export async function act(
         );
       }
 
+      // The approval's outcome becomes the record's own status, in the same
+      // transaction — otherwise a leave approved by every step still read
+      // "pending" on the faculty member's screen.
+      if (complete) {
+        await applyOutcome(db, instance.entityType, instance.entityId, finalStatus);
+      }
+
       return {
         instanceId: instance.id,
         action,
@@ -403,6 +527,175 @@ export async function act(
       };
     }
   );
+
+  // An approved timetable change takes effect now, outside the approval's own
+  // transaction (it notifies people and may find the slot taken meanwhile).
+  if (!nextStep && finalStatus === 'approved' && instance.entityType === 'TimetableChange') {
+    await applyApprovedChange({ userId: context.userId, role: context.role, institutionId: context.institutionId }, instance.entityId);
+  }
+  // A course's lesson plan: approved, or returned to the teacher.
+  if (!nextStep && instance.definition.code === 'COURSE_LESSON_PLAN') {
+    await basePrisma.course.updateMany({
+      where: { id: instance.entityId, institutionId: context.institutionId },
+      data: { lessonPlanStatus: finalStatus === 'approved' ? 'approved' : finalStatus === 'rejected' ? 'returned' : null, lessonPlanNote: note ?? null }
+    });
+  }
+  // The Dean's approval of a department's results is what publishes them.
+  if (!nextStep && instance.entityType === 'Department' && instance.definition.code === 'RESULT_PUBLICATION') {
+    if (finalStatus === 'approved') await publishDepartment(context, instance.entityId);
+    else await basePrisma.approvalItem.updateMany({ where: { institutionId: context.institutionId, workflowInstanceId: instance.id }, data: { status: finalStatus } });
+  }
+
+  if (nextStep) {
+    await notifyApprovers(context, instance.definition.name, nextStep.assigneeRole, instance.entityType, instance.entityId, instance.startedBy);
+  } else if (instance.startedBy !== context.userId) {
+    await notifyInApp(
+      context.institutionId,
+      { userIds: [instance.startedBy] },
+      {
+        eventType: `workflow.${finalStatus}`,
+        subject: `Your request was ${finalStatus}: ${instance.definition.name}`,
+        body: note ? `Final decision note: ${note}` : `The ${currentStep.name} step recorded the final decision.`,
+        relatedEntityType: instance.entityType,
+        relatedEntityId: instance.entityId
+      }
+    );
+  }
+  return result;
+}
+
+/**
+ * Record statuses written when an approval finishes, per entity type.
+ *
+ * Only records whose own status means "approved or not" are listed. A type not
+ * listed here keeps whatever status its own module manages.
+ */
+const OUTCOME_STATUS: Record<string, Partial<Record<'approved' | 'rejected' | 'cancelled', string>>> = {
+  LeaveRequest: { approved: 'approved', rejected: 'rejected', cancelled: 'cancelled' },
+  CertificateRequest: { approved: 'approved', rejected: 'rejected', cancelled: 'cancelled' },
+  ResearchProject: { approved: 'ongoing', rejected: 'rejected', cancelled: 'withdrawn' },
+  // 'published' is the publication's own state; approval records that the HOD and IQAC verified it.
+  Publication: { approved: 'verified', rejected: 'rejected' },
+  Patent: { approved: 'filed', rejected: 'rejected', cancelled: 'abandoned' },
+  FeeWaiverRequest: { approved: 'approved', rejected: 'rejected', cancelled: 'cancelled' },
+  TimetableChange: { approved: 'approved', rejected: 'rejected', cancelled: 'cancelled' },
+  // Decided from Approvals & Workflows as well as their own screens.
+  CurriculumProposal: { approved: 'approved', rejected: 'rejected' },
+  PurchaseRequest: { approved: 'approved', rejected: 'rejected' },
+  PromotionRequest: { approved: 'approved', rejected: 'rejected', cancelled: 'cancelled' },
+  StudentLeaveRequest: { approved: 'approved', rejected: 'rejected', cancelled: 'cancelled' },
+  // Handled below — each has more to do than a status.
+  ExamRegistration: { approved: 'condoned', rejected: 'ineligible', cancelled: 'ineligible' },
+  AQARRecord: { approved: 'approved', rejected: 'returned' },
+  AccreditationChecklist: { approved: 'completed', rejected: 'in_progress' }
+};
+
+async function applyOutcome(db: typeof basePrisma, entityType: string, entityId: string, outcome: string): Promise<void> {
+  const status = OUTCOME_STATUS[entityType]?.[outcome as 'approved' | 'rejected' | 'cancelled'];
+  if (!status) return;
+  if (entityType === 'FeeWaiverRequest') {
+    await applyFeeWaiver(db, entityId, status);
+    return;
+  }
+  if (entityType === 'ExamRegistration') {
+    // Condonation granted: the paper becomes eligible (fees are never condoned here).
+    const reg = await db.examRegistration.findFirst({ where: { id: entityId } });
+    if (reg && status === 'condoned' && reg.feesCleared) {
+      await db.examRegistration.updateMany({
+        where: { id: entityId },
+        data: { isEligible: true, isCondoned: true, condonedAt: new Date(), condonationReason: reg.condonationRequest ?? 'Condoned on approval', status: 'condoned' }
+      });
+    }
+    return;
+  }
+  if (entityType === 'StudentLeaveRequest') {
+    const leave = await db.studentLeaveRequest.findFirst({ where: { id: entityId } });
+    await db.studentLeaveRequest.updateMany({ where: { id: entityId }, data: { status, decidedAt: new Date() } });
+    // Approved on-duty: classes missed in that period count as attended.
+    if (leave && status === 'approved' && leave.type === 'on_duty') {
+      const sessions = await db.attendanceSession.findMany({
+        where: { date: { gte: new Date(leave.fromDate.toISOString().slice(0, 10)), lte: new Date(leave.toDate.toISOString().slice(0, 10) + 'T23:59:59.999Z') } },
+        select: { id: true }
+      });
+      await db.attendance.updateMany({
+        where: { studentProfileId: leave.studentProfileId, attendanceSessionId: { in: sessions.map((x) => x.id) }, status: 'absent' },
+        data: { status: 'on_duty' }
+      });
+    }
+    return;
+  }
+  if (entityType === 'PromotionRequest') {
+    // The VC's order takes effect: the faculty member's designation changes.
+    const promotion = await db.promotionRequest.findFirst({ where: { id: entityId } });
+    await db.promotionRequest.updateMany({ where: { id: entityId }, data: { status, ...(status === 'approved' ? { approvedAt: new Date() } : {}) } });
+    if (promotion && status === 'approved') {
+      const profile = await db.facultyProfile.findFirst({ where: { id: promotion.facultyProfileId, institutionId: promotion.institutionId } });
+      if (profile) await db.user.updateMany({ where: { id: profile.userId, institutionId: promotion.institutionId }, data: { designation: promotion.newDesignation } });
+    }
+    return;
+  }
+  const delegate = (db as unknown as Record<string, { updateMany: (args: unknown) => Promise<unknown> }>)[
+    entityType.charAt(0).toLowerCase() + entityType.slice(1)
+  ];
+  await delegate?.updateMany({ where: { id: entityId }, data: { status } });
+}
+
+/**
+ * A sanctioned waiver reduces what the student owes: the amount (capped at
+ * what is still outstanding) is added to FeeRecord.waivedAmount with the
+ * reason, and a fee left with nothing to pay becomes `waived`.
+ */
+async function applyFeeWaiver(db: typeof basePrisma, requestId: string, status: string): Promise<void> {
+  const request = await db.feeWaiverRequest.findFirst({ where: { id: requestId } });
+  if (!request) return;
+  let sanctioned: number | null = null;
+  if (status === 'approved') {
+    const fee = await db.feeRecord.findFirst({ where: { id: request.feeRecordId } });
+    if (fee) {
+      const outstanding = Math.max(0, fee.amount - fee.paidAmount - fee.waivedAmount);
+      sanctioned = Math.round(Math.min(request.requestedAmount, outstanding) * 100) / 100;
+      const waived = fee.waivedAmount + sanctioned;
+      await db.feeRecord.updateMany({
+        where: { id: fee.id },
+        data: {
+          waivedAmount: waived,
+          waiverReason: `${request.category.replace(/_/g, ' ')}: ${request.reason}`.slice(0, 500),
+          ...(fee.amount - fee.paidAmount - waived <= 0.005 ? { status: 'waived' } : {})
+        }
+      });
+    }
+  }
+  await db.feeWaiverRequest.updateMany({
+    where: { id: requestId },
+    data: { status, decidedAt: new Date(), ...(sanctioned !== null ? { sanctionedAmount: sanctioned } : {}) }
+  });
+}
+
+/**
+ * Open the approval for a record that has just been created — best effort.
+ *
+ * Called by the screens where the record is raised (a leave application, a
+ * research project, a certificate request …) so the request reaches its first
+ * approver's inbox with nothing more for the requester to do. If the
+ * institution has not defined that workflow, nothing happens: the record is
+ * still created, it just is not routed.
+ */
+export async function startApprovalFor(
+  context: TenantContext,
+  code: string,
+  entityType: string,
+  entityId: string
+): Promise<{ instanceId: string; assigneeRole: string } | null> {
+  try {
+    const started = await startWorkflow(context, { code, entityType, entityId });
+    return { instanceId: started.instanceId, assigneeRole: started.assigneeRole };
+  } catch (error) {
+    if (error instanceof NotFoundError) return null;
+    logger.warn('Could not open the approval for a new record', {
+      module: 'workflow', code, entityType, entityId, error: (error as Error).message
+    });
+    return null;
+  }
 }
 
 /** What is waiting on this caller's role. */
@@ -413,6 +706,8 @@ export async function inbox(
   data: Array<{
     instanceId: string;
     workflow: string;
+    workflowName: string;
+    requestedBy: string | null;
     entityType: string;
     entityId: string;
     step: string;
@@ -433,14 +728,30 @@ export async function inbox(
 
   // Filtered in memory because "is this step assigned to my role" depends on the
   // instance's current step, which SQL cannot join to without a step FK.
-  const mine = instances.filter((i) => {
+  const roleMatches = instances.filter((i) => {
     const step = i.definition.steps.find((s) => s.id === i.currentStepId);
     return step && (context.role === 'super_admin' || step.assigneeRole === context.role);
   });
+  let mine = roleMatches;
+  if (context.role === 'hod') {
+    const depts = await departmentOf(context.institutionId, [context.userId, ...roleMatches.map((i) => i.startedBy)]);
+    const own = depts.get(context.userId);
+    mine = roleMatches.filter((i) => !own || !depts.get(i.startedBy) || depts.get(i.startedBy) === own);
+  }
+  if (context.role === 'faculty') {
+    const allowed = await Promise.all(mine.map((i) => facultyMayAct(context, i.entityType, i.entityId)));
+    mine = mine.filter((_, n) => allowed[n]);
+  }
 
   const start = (page.page - 1) * page.pageSize;
   const slice = mine.slice(start, start + page.pageSize);
   const now = Date.now();
+  // Readable on a dashboard: the process name and who asked.
+  const requesters = await basePrisma.user.findMany({
+    where: { institutionId: context.institutionId, id: { in: [...new Set(slice.map((i) => i.startedBy))] } },
+    select: { id: true, name: true }
+  });
+  const requesterName = new Map(requesters.map((u) => [u.id, u.name]));
 
   return {
     data: slice.map((i) => {
@@ -449,6 +760,8 @@ export async function inbox(
       return {
         instanceId: i.id,
         workflow: `${i.definition.code} v${i.definition.version}`,
+        workflowName: i.definition.name,
+        requestedBy: requesterName.get(i.startedBy) ?? null,
         entityType: i.entityType,
         entityId: i.entityId,
         step: step.name,
@@ -485,11 +798,59 @@ export async function history(
     throw new NotFoundError(`Workflow instance ${instanceId}`);
   }
 
+  // An approval trail names who asked for what and what each approver wrote.
+  // It was readable by every signed-in account — a student could read the
+  // history of a faculty recruitment. It is for the people involved: whoever
+  // raised it, anyone who acted on it, any role that approves a step, and the
+  // offices that oversee workflows.
+  const involved =
+    HISTORY_OVERSIGHT.has(context.role) ||
+    instance.startedBy === context.userId ||
+    instance.transitions.some((t) => t.actorId === context.userId) ||
+    instance.definition.steps.some((s) => s.assigneeRole === context.role || s.escalationRole === context.role);
+  if (!involved) {
+    throw new AuthorizationError('You are not a party to this approval.');
+  }
+  const personallyInvolved = instance.startedBy === context.userId || instance.transitions.some((t) => t.actorId === context.userId);
+  if (!personallyInvolved && !HISTORY_OVERSIGHT.has(context.role) && (!(await hodMayAct(context, instance.startedBy)) || !(await facultyMayAct(context, instance.entityType, instance.entityId)))) {
+    throw new AuthorizationError('This request is from another department.');
+  }
+
   const stepName = (id: string | null) =>
     id ? instance.definition.steps.find((s) => s.id === id)?.name ?? id : null;
 
+  // Who asked, what they asked for, and where it stands — the approver had
+  // only Approve / Reject to go on, with no dates or reason to read.
+  const people = await basePrisma.user.findMany({
+    where: { institutionId: context.institutionId, id: { in: [instance.startedBy, ...instance.transitions.map((t) => t.actorId)] } },
+    select: { id: true, name: true, role: true, designation: true, department: { select: { name: true } } }
+  });
+  const person = (id: string) => people.find((u) => u.id === id);
+  const requester = person(instance.startedBy);
+  const steps = instance.definition.steps.map((step) => {
+    const decided = [...instance.transitions].reverse().find((t) => t.fromStepId === step.id && t.action !== 'started');
+    const state =
+      decided ? decided.action
+      : step.id === instance.currentStepId && instance.status === 'pending' ? 'current'
+      : 'upcoming';
+    return {
+      sequence: step.sequence,
+      name: step.name,
+      assigneeRole: step.assigneeRole,
+      state,
+      actorName: decided ? person(decided.actorId)?.name ?? null : null,
+      note: decided?.note ?? null,
+      at: decided?.occurredAt ?? null
+    };
+  });
+
   return {
     instanceId: instance.id,
+    requester: requester
+      ? { name: requester.name, role: requester.role, designation: requester.designation, department: requester.department?.name ?? null }
+      : null,
+    record: await recordSummary(instance.entityType, instance.entityId, instance.institutionId),
+    steps,
     workflow: { code: instance.definition.code, version: instance.definition.version, name: instance.definition.name },
     entity: { type: instance.entityType, id: instance.entityId },
     status: instance.status,
@@ -504,11 +865,60 @@ export async function history(
       from: stepName(t.fromStepId),
       to: stepName(t.toStepId),
       actorId: t.actorId,
+      actorName: person(t.actorId)?.name ?? null,
       actorRole: t.actorRole,
       note: t.note,
       occurredAt: t.occurredAt
     }))
   };
+}
+
+/** Fields not worth showing an approver. */
+const HIDDEN_FIELD = /(^id$|Id$|^institution|^campus|password|lockVersion|^createdAt$|^updatedAt$|^deletedAt$|^deletedBy$)/;
+
+/**
+ * The approved record as label → value pairs. Read through the base client
+ * with the instance's own institution already checked by the caller.
+ */
+async function recordSummary(entityType: string, entityId: string, institutionId: string): Promise<Array<{ label: string; value: unknown }>> {
+  if (entityType === 'ExamRegistration') {
+    const r = await basePrisma.examRegistration.findFirst({
+      where: { id: entityId, institutionId },
+      include: { schedule: { include: { course: true } }, session: true, studentProfile: { include: { user: { select: { name: true } } } } }
+    }).catch(() => null);
+    if (!r) return [];
+    return [
+      { label: 'Student', value: `${r.studentProfile.user?.name ?? ''} (${r.studentProfile.rollNumber})` },
+      { label: 'Course', value: `${r.schedule.course.code} – ${r.schedule.course.name}` },
+      { label: 'Exam', value: `${r.session.name}, ${r.schedule.examDate.toISOString().slice(0, 10)}` },
+      { label: 'Attendance', value: r.attendancePercentage === null ? 'not recorded' : `${r.attendancePercentage}% (required ${r.session.minAttendancePercentage}%)` },
+      { label: "Student's reason", value: r.condonationRequest ?? '—' },
+      ...(r.condonationDocumentUrl ? [{ label: 'Supporting document', value: r.condonationDocumentUrl }] : [])
+    ];
+  }
+  if (entityType === 'Course') {
+    const course = await basePrisma.course.findFirst({ where: { id: entityId, institutionId }, include: { faculty: { include: { user: { select: { name: true } } } }, lessonPlans: { orderBy: { weekNumber: 'asc' } } } }).catch(() => null);
+    if (!course) return [];
+    const weeks = (course as any).lessonPlans as Array<{ weekNumber: number; topic: string; status: string }>;
+    return [
+      { label: 'Course', value: `${course.code} – ${course.name} (semester ${course.semester})` },
+      { label: 'Faculty', value: (course as any).faculty?.user?.name ?? '—' },
+      { label: 'Weeks planned', value: weeks.length },
+      { label: 'Weeks completed', value: weeks.filter((w) => w.status === 'completed').length },
+      { label: 'Plan', value: weeks.map((w) => `W${w.weekNumber}: ${w.topic}`).join(' · ') || '—' }
+    ];
+  }
+  const delegate = (basePrisma as unknown as Record<string, { findFirst?: (args: unknown) => Promise<Record<string, unknown> | null> }>)[
+    entityType.charAt(0).toLowerCase() + entityType.slice(1)
+  ];
+  const row = await delegate?.findFirst?.({ where: { id: entityId } }).catch(() => null);
+  if (!row) return [];
+  return Object.entries(row)
+    .filter(([key, value]) => !HIDDEN_FIELD.test(key) && value !== null && value !== '' && (typeof value !== 'object' || value instanceof Date || Array.isArray(value)))
+    .map(([key, value]) => ({
+      label: key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()),
+      value: Array.isArray(value) ? value.join(', ') : value
+    }));
 }
 
 /**
@@ -629,4 +1039,91 @@ export async function escalateOverdue(
   }
 
   return { escalated, overdueWithoutRole, details };
+}
+
+/**
+ * The active workflow catalogue: what can be started, and who approves each step.
+ *
+ * There was no way to read this. A workflow could be started only by someone who
+ * already knew its code, which is why none of the definitions had a screen.
+ */
+export async function listDefinitions(context: TenantContext): Promise<
+  Array<{
+    code: string;
+    name: string;
+    description: string | null;
+    entityType: string;
+    version: number;
+    steps: Array<{ sequence: number; name: string; assigneeRole: string; slaHours: number | null; escalationRole: string | null }>;
+  }>
+> {
+  const definitions = await basePrisma.workflowDefinition.findMany({
+    where: { institutionId: context.institutionId, active: true },
+    include: { steps: { orderBy: { sequence: 'asc' } } },
+    orderBy: { name: 'asc' }
+  });
+  return definitions.map((d) => ({
+    code: d.code,
+    name: d.name,
+    description: d.description,
+    entityType: d.entityType,
+    version: d.version,
+    steps: d.steps.map((s) => ({
+      sequence: s.sequence,
+      name: s.name,
+      assigneeRole: s.assigneeRole,
+      slaHours: s.slaHours,
+      escalationRole: s.escalationRole
+    }))
+  }));
+}
+
+/** Approvals the caller raised, newest first — so a requester can follow their own. */
+export async function listMine(
+  context: TenantContext,
+  page: { page: number; pageSize: number }
+): Promise<{
+  data: Array<{
+    instanceId: string;
+    workflow: string;
+    workflowName: string;
+    entityType: string;
+    entityId: string;
+    status: string;
+    currentStep: string | null;
+    waitingOn: string | null;
+    startedAt: Date;
+    endedAt: Date | null;
+  }>;
+  meta: { page: number; pageSize: number; total: number; totalPages: number };
+}> {
+  const where = { institutionId: context.institutionId, startedBy: context.userId };
+  const [total, instances] = await Promise.all([
+    basePrisma.workflowInstance.count({ where }),
+    basePrisma.workflowInstance.findMany({
+      where,
+      include: { definition: { include: { steps: true } } },
+      orderBy: { startedAt: 'desc' },
+      skip: (page.page - 1) * page.pageSize,
+      take: page.pageSize
+    })
+  ]);
+  return {
+    data: instances.map((i) => {
+      const step = i.definition.steps.find((s) => s.id === i.currentStepId) ?? null;
+      return {
+        instanceId: i.id,
+        workflow: i.definition.code,
+        workflowName: i.definition.name,
+        entityType: i.entityType,
+        entityId: i.entityId,
+        status: i.status,
+        currentStep: i.status === 'pending' ? step?.name ?? null : null,
+        waitingOn: i.status === 'pending' ? step?.assigneeRole ?? null : null,
+        startedAt: i.startedAt,
+        endedAt: i.endedAt
+      };
+    }),
+    meta: { page: page.page, pageSize: page.pageSize, total, totalPages: Math.max(1, Math.ceil(total / page.pageSize)) }
+  };
 }

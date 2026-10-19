@@ -82,6 +82,24 @@ const startSchema = z
   })
   .strict();
 
+router.get(
+  '/definitions',
+  asyncHandler(async (req: Request, res: Response) => {
+    const data = await service.listDefinitions(getTenantContext(req));
+    res.json({ success: true, data });
+  })
+);
+
+router.get(
+  '/mine',
+  validate({ query: pageQuery }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = req.query as unknown as { page: number; pageSize: number };
+    const result = await service.listMine(getTenantContext(req), q);
+    res.json({ success: true, ...result });
+  })
+);
+
 router.post(
   '/instances',
   validate({ body: startSchema }),

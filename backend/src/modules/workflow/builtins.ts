@@ -142,3 +142,60 @@ export const BUILTIN_WORKFLOWS: readonly BuiltinWorkflow[] = [
   PURCHASE_REQUEST,
   CURRICULUM_PROPOSAL
 ];
+
+
+/** A student's leave / medical leave / on-duty request: the department's HOD decides. */
+export const STUDENT_LEAVE_OD: BuiltinWorkflow = {
+  code: 'STUDENT_LEAVE_OD',
+  name: 'Student leave / on-duty request',
+  description: 'A student applies for leave, medical leave or on-duty; the HOD approves. Approved on-duty counts as attendance.',
+  entityType: 'StudentLeaveRequest',
+  steps: [{ sequence: 1, name: 'HOD approval', assigneeRole: 'hod', slaHours: 48 }]
+};
+
+/** Attendance condonation: course teacher certifies, HOD recommends, Dean approves, CoE records. */
+export const ATTENDANCE_CONDONATION_FLOW: BuiltinWorkflow = {
+  code: 'ATTENDANCE_CONDONATION',
+  name: 'Attendance condonation',
+  description: 'A student short of attendance asks to sit the exam; course teacher → HOD → Dean → CoE.',
+  entityType: 'ExamRegistration',
+  steps: [
+    { sequence: 1, name: 'Course teacher — certify', assigneeRole: 'faculty', slaHours: 48 },
+    { sequence: 2, name: 'HOD — recommend', assigneeRole: 'hod', slaHours: 48 },
+    { sequence: 3, name: 'Dean — approve', assigneeRole: 'dean', slaHours: 72 },
+    { sequence: 4, name: 'CoE — record', assigneeRole: 'coe', slaHours: 48 }
+  ]
+};
+
+/** A course's lesson plan: HOD then Dean. entityId is the course. */
+export const LESSON_PLAN_FLOW: BuiltinWorkflow = {
+  code: 'COURSE_LESSON_PLAN',
+  name: 'Lesson plan approval',
+  description: 'The course teacher submits the semester lesson plan; HOD and Dean approve.',
+  entityType: 'Course',
+  steps: [
+    { sequence: 1, name: 'HOD approval', assigneeRole: 'hod', slaHours: 72 },
+    { sequence: 2, name: 'Dean approval', assigneeRole: 'dean', slaHours: 72 }
+  ]
+};
+
+/** The AQAR, prepared by IQAC: Principal then Vice-Chancellor approve it for submission to NAAC. */
+export const AQAR_APPROVAL: BuiltinWorkflow = {
+  code: 'AQAR_APPROVAL',
+  name: 'AQAR approval for submission',
+  description: 'IQAC submits the AQAR; the Principal and the Vice-Chancellor approve it before it goes to NAAC.',
+  entityType: 'AQARRecord',
+  steps: [
+    { sequence: 1, name: 'Principal approval', assigneeRole: 'principal', slaHours: 120 },
+    { sequence: 2, name: 'Vice-Chancellor approval', assigneeRole: 'vice_chancellor', slaHours: 120 }
+  ]
+};
+
+/** A NAAC criterion's evidence, signed off by the Principal once IQAC marks it ready. */
+export const CRITERION_SIGNOFF: BuiltinWorkflow = {
+  code: 'CRITERION_SIGNOFF',
+  name: 'Accreditation criterion sign-off',
+  description: 'IQAC marks a NAAC / NIRF criterion ready; the Principal signs it off.',
+  entityType: 'AccreditationChecklist',
+  steps: [{ sequence: 1, name: 'Principal sign-off', assigneeRole: 'principal', slaHours: 120 }]
+};
