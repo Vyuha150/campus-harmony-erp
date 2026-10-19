@@ -171,7 +171,7 @@ export default function DeanMeetings() {
           <Card>
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">Scheduled</p>
-              <p className="text-2xl font-bold text-blue-600">{meetings.filter((m) => (m.status || 'scheduled') === 'scheduled').length}</p>
+              <p className="text-2xl font-bold text-blue-600">{meetings.filter((m) => ['scheduled', 'upcoming'].includes(m.status || 'upcoming')).length}</p>
             </CardContent>
           </Card>
           <Card>
@@ -230,6 +230,8 @@ export default function DeanMeetings() {
                 <Select value={form.meetingType} onValueChange={(value) => setForm((p) => ({ ...p, meetingType: value }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="academic_council">Academic Council</SelectItem>
+                    <SelectItem value="board_of_studies">Board of Studies</SelectItem>
                     <SelectItem value="dean_council">Dean Council</SelectItem>
                     <SelectItem value="inter_department">Inter-Department</SelectItem>
                     <SelectItem value="review">Review</SelectItem>
@@ -249,6 +251,7 @@ export default function DeanMeetings() {
                     <SelectItem value="upcoming">Upcoming</SelectItem>
                     <SelectItem value="scheduled">Scheduled</SelectItem>
                     <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -272,6 +275,8 @@ export default function DeanMeetings() {
                 <Select value={form.meetingType} onValueChange={(value) => setForm((p) => ({ ...p, meetingType: value }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="academic_council">Academic Council</SelectItem>
+                    <SelectItem value="board_of_studies">Board of Studies</SelectItem>
                     <SelectItem value="dean_council">Dean Council</SelectItem>
                     <SelectItem value="inter_department">Inter-Department</SelectItem>
                     <SelectItem value="review">Review</SelectItem>
@@ -291,6 +296,7 @@ export default function DeanMeetings() {
                     <SelectItem value="upcoming">Upcoming</SelectItem>
                     <SelectItem value="scheduled">Scheduled</SelectItem>
                     <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

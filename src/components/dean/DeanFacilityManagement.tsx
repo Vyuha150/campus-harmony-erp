@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -121,11 +122,19 @@ export default function DeanFacilityManagement() {
     }
   };
 
-  const handlePRStatus = async (id: string, status: 'approved' | 'rejected') => {
+  // A rejection needs a reason (the approval engine refuses one without);
+  // the old button sent none, so every rejection failed.
+  const [prReject, setPrReject] = useState<{ id: string; reason: string } | null>(null);
+  const handlePRStatus = async (id: string, status: 'approved' | 'rejected', note?: string) => {
+    if (status === 'rejected' && (note?.trim().length ?? 0) < 10) {
+      setPrReject({ id, reason: note ?? '' });
+      return;
+    }
     try {
-      await putApi(`/dean/inventory/purchase-requests/${id}/status`, { status });
+      await putApi(`/dean/inventory/purchase-requests/${id}/status`, { status, ...(note?.trim() ? { note: note.trim() } : {}) });
       setPurchaseRequests((prev) => prev.map((item) => (item.id === id ? { ...item, status } : item)));
-      toast({ title: `Purchase request ${status}` });
+      setPrReject(null);
+      toast({ title: `Purchase request ${status}`, description: 'The HOD has been notified.' });
     } catch (error: any) {
       toast({ title: 'Action failed', description: error?.message || 'Unable to update purchase request', variant: 'destructive' });
     }
@@ -273,6 +282,16 @@ export default function DeanFacilityManagement() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpenEdit(false)}>Cancel</Button>
             <Button onClick={handleUpdate}>Update</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={prReject !== null} onOpenChange={(open) => { if (!open) setPrReject(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Reject purchase request</DialogTitle></DialogHeader>
+          <Textarea rows={3} placeholder="Reason for the HOD (at least 10 characters)" value={prReject?.reason ?? ''} onChange={(e) => setPrReject((p) => (p ? { ...p, reason: e.target.value } : p))} />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPrReject(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={(prReject?.reason.trim().length ?? 0) < 10} onClick={() => prReject && handlePRStatus(prReject.id, 'rejected', prReject.reason)}>Reject</Button>
           </div>
         </DialogContent>
       </Dialog>

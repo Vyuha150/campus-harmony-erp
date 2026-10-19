@@ -93,8 +93,11 @@ export default function VCDashboard() {
     toast({ title: 'Alert Dismissed', description: 'Update removed from feed.' });
   };
 
+  // Acknowledging marks the alert as seen on this screen (it stays in the feed,
+  // dimmed); Dismiss removes it. The old toast claimed it was "logged".
+  const [acknowledged, setAcknowledged] = useState<Set<string>>(new Set());
   const handleMarkAlertRead = (id: string) => {
-    toast({ title: 'Noted', description: 'Alert acknowledged and logged.' });
+    setAcknowledged((prev) => new Set(prev).add(id));
   };
 
   const radarData = departmentPerformance.slice(0, 6).map(d => ({
@@ -235,7 +238,7 @@ export default function VCDashboard() {
               <div className="space-y-3 max-h-[400px] overflow-y-auto">
                 {liveUpdates.length === 0 && <p className="text-center text-muted-foreground py-8">All alerts cleared.</p>}
                 {liveUpdates.map(update => (
-                  <div key={update.id} className={`flex items-start gap-3 rounded-lg border p-3 ${update.type === 'critical' ? 'border-destructive/40 bg-destructive/5' : ''}`}>
+                  <div key={update.id} className={`flex items-start gap-3 rounded-lg border p-3 ${update.type === 'critical' ? 'border-destructive/40 bg-destructive/5' : ''} ${acknowledged.has(update.id) ? 'opacity-50' : ''}`}>
                     {statusIcons[update.type]}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm">{update.message}</p>
@@ -248,7 +251,7 @@ export default function VCDashboard() {
                       </div>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleMarkAlertRead(update.id)} title="Acknowledge">
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleMarkAlertRead(update.id)} title="Acknowledge" disabled={acknowledged.has(update.id)}>
                         <Eye className="h-3 w-3" />
                       </Button>
                       <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleDismissAlert(update.id)} title="Dismiss">

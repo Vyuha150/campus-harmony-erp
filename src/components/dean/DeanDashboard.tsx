@@ -14,75 +14,57 @@ import {
 import { fetchApi, putApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { CurriculumProposal } from '@/types/dean';
+import { useAuth } from '@/context/AuthContext';
+import { ApprovalReview } from '@/components/workflow/ApprovalReview';
 
 export default function DeanDashboard() {
   const [departmentSummaries, setDepartmentSummaries] = useState<any>([]);
-  const [deanApprovals, setDeanApprovals] = useState<any>([]);
+  const [academicYear, setAcademicYear] = useState<string | null>(null);
+  const [inbox, setInbox] = useState<any[]>([]);
   const [qualityMetrics, setQualityMetrics] = useState<any>([]);
   const [_apiLoading, _setApiLoading] = useState(true);
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  // Everything waiting on the Dean — leave, fee waivers, timetable changes,
+  // curriculum, purchases. It listed curriculum proposals only, so a faculty
+  // leave the HOD had forwarded never appeared here.
+  const loadInbox = () => fetchApi<any[]>('/workflow/inbox?pageSize=100').then((d) => setInbox(Array.isArray(d) ? d : [])).catch(() => setInbox([]));
   useEffect(() => {
     Promise.allSettled([
       fetchApi('/dean/dashboard').then((d: any) => {
         setDepartmentSummaries(Array.isArray(d?.departments) ? d.departments : []);
+        setAcademicYear(d?.academicYear ?? null);
       }),
-      fetchApi('/dean/curriculum-proposals').then((d: any) => setDeanApprovals(Array.isArray(d) ? d : [])),
+      loadInbox(),
       fetchApi('/dean/accreditation').then((d: any) => setQualityMetrics(Array.isArray(d) ? d : [])),
     ]).finally(() => _setApiLoading(false));
   }, []);
 
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [approvals, setApprovals] = useState<CurriculumProposal[]>([]);
-  const [rejectDialog, setRejectDialog] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-
-  useEffect(() => {
-    setApprovals(Array.isArray(deanApprovals) ? deanApprovals : []);
-  }, [deanApprovals]);
-
+  const { user } = useAuth();
   const totalStudents = departmentSummaries.reduce((s, d) => s + d.totalStudents, 0);
   const totalFaculty = departmentSummaries.reduce((s, d) => s + d.totalFaculty, 0);
   const totalCourses = departmentSummaries.reduce((s, d) => s + Number(d.totalCourses || 0), 0);
-  const pendingApprovals = approvals.filter((a) => a.status === 'pending_dean');
-
-  const handleApprove = async (id: string) => {
-    const item = approvals.find((a) => a.id === id);
-    try {
-      const updated = await putApi(`/dean/curriculum-proposals/${id}`, { status: 'approved' });
-      setApprovals((prev) => prev.map((a) => (a.id === id ? { ...a, ...updated } : a)));
-      toast({ title: 'Approved', description: item?.title });
-    } catch (error: any) {
-      toast({ title: 'Approval failed', description: error?.message || 'Unable to approve request', variant: 'destructive' });
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    const item = approvals.find((a) => a.id === id);
-    try {
-      const updated = await putApi(`/dean/curriculum-proposals/${id}`, { status: 'rejected' });
-      setApprovals((prev) => prev.map((a) => (a.id === id ? { ...a, ...updated } : a)));
-      toast({ title: 'Rejected', description: `${item?.title} – ${rejectReason || 'No reason provided'}` });
-      setRejectDialog(null);
-      setRejectReason('');
-    } catch (error: any) {
-      toast({ title: 'Rejection failed', description: error?.message || 'Unable to reject request', variant: 'destructive' });
-    }
+  // Calendar days, so yesterday afternoon reads "1 day", not "today".
+  const waitingDays = (since: string) => {
+    const start = new Date(since); start.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.max(0, Math.round((today.getTime() - start.getTime()) / 86_400_000));
   };
 
   const trendIcon = (t: string) => t === 'up' ? <TrendingUp className="h-3 w-3 text-green-600" /> : t === 'down' ? <TrendingDown className="h-3 w-3 text-destructive" /> : <Minus className="h-3 w-3 text-muted-foreground" />;
 
   const approvalIcons: Record<string, React.ElementType> = {
-    new_course: Briefcase, syllabus_update: Calendar, program_change: GraduationCap,
-    elective_addition: Target,
+    LeaveRequest: Calendar, FeeWaiverRequest: Award, TimetableChange: Calendar, CurriculumProposal: GraduationCap,
+    PurchaseRequest: Briefcase, ResearchProject: Target, Patent: Target, Department: BarChart3,
   };
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Dean's Dashboard</h1>
-          <p className="text-muted-foreground">Faculty of Engineering • Academic Year 2025-26</p>
+          <h1 className="text-2xl font-bold text-foreground">{user?.role === 'principal' ? "Principal's Dashboard" : "Dean's Dashboard"}</h1>
+          <p className="text-muted-foreground">Faculty of Engineering{academicYear ? ` • Academic Year ${academicYear}` : ''}</p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -90,8 +72,8 @@ export default function DeanDashboard() {
             { label: 'Departments', value: departmentSummaries.length, icon: Building2, color: 'text-blue-600 bg-blue-100' },
             { label: 'Total Students', value: totalStudents.toLocaleString(), icon: GraduationCap, color: 'text-green-600 bg-green-100' },
             { label: 'Total Faculty', value: totalFaculty, icon: Users, color: 'text-purple-600 bg-purple-100' },
-            { label: 'Total Courses', value: totalCourses, icon: AlertTriangle, color: 'text-amber-600 bg-amber-100' },
-            { label: 'Pending Approvals', value: pendingApprovals.length, icon: Bell, color: 'text-destructive bg-destructive/10' },
+            { label: 'Total Courses', value: totalCourses, icon: Briefcase, color: 'text-amber-600 bg-amber-100' },
+            { label: 'Awaiting your approval', value: inbox.length, icon: Bell, color: 'text-destructive bg-destructive/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
               <CardContent className="flex items-center gap-3 p-4">
@@ -133,7 +115,7 @@ export default function DeanDashboard() {
                         { label: 'Students', value: dept.totalStudents, ok: true },
                         { label: 'Faculty', value: dept.totalFaculty, ok: true },
                         { label: 'Courses', value: dept.totalCourses, ok: true },
-                        { label: 'Status', value: 'Active', ok: true },
+                        { label: 'Pass rate', value: dept.passPercentage == null ? 'N/A' : `${dept.passPercentage}%`, ok: dept.passPercentage == null || dept.passPercentage >= 60 },
                       ].map(m => (
                         <div key={m.label}>
                           <p className={`text-sm font-bold ${m.ok ? 'text-foreground' : 'text-destructive'}`}>{m.value}</p>
@@ -149,39 +131,34 @@ export default function DeanDashboard() {
             <Card className="border-border">
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Bell className="h-5 w-5 text-amber-500" />Pending Approvals ({pendingApprovals.length})
+                  <Bell className="h-5 w-5 text-amber-500" />Awaiting your approval ({inbox.length})
                 </CardTitle>
+                <Button variant="outline" size="sm" onClick={() => navigate('/workflows')}>All approvals <ArrowRight className="ml-1 h-4 w-4" /></Button>
               </CardHeader>
               <CardContent className="space-y-3">
-                {pendingApprovals.length === 0 && (
-                  <p className="text-center text-sm text-muted-foreground py-6">All approvals have been processed ✓</p>
+                {inbox.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground py-6">Nothing is waiting for your approval ✓</p>
                 )}
-                {pendingApprovals.slice(0, 5).map(item => {
-                  const Icon = approvalIcons[item.type] || Bell;
+                {inbox.slice(0, 6).map(item => {
+                  const Icon = approvalIcons[item.entityType] || Bell;
                   return (
-                    <div key={item.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
+                    <div key={item.instanceId} className="flex items-start gap-3 rounded-lg border border-border p-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                         <Icon className="h-4 w-4 text-muted-foreground" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground">{item.title}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">{item.proposedBy} • {item.submittedAt}</p>
+                        <p className="text-sm font-medium text-foreground">{item.workflowName}</p>
+                        <p className="text-xs text-muted-foreground">{item.requestedBy ? `From ${item.requestedBy} · ` : ''}{item.step}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          Waiting {waitingDays(item.waitingSince) === 0 ? 'since today' : `${waitingDays(item.waitingSince)} day${waitingDays(item.waitingSince) === 1 ? '' : 's'}`}
+                          {item.overdue && <Badge variant="destructive" className="ml-2 text-[9px]">Overdue</Badge>}
+                        </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <Badge variant="secondary" className="text-[10px] capitalize">{item.type.replace('_', ' ')}</Badge>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-100"
-                          onClick={() => handleApprove(item.id)}>
-                          <CheckCircle className="h-4 w-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                          onClick={() => setRejectDialog(item.id)}>
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <Button size="sm" onClick={() => setReviewing(item.instanceId)}>Review</Button>
                     </div>
                   );
                 })}
+                {inbox.length > 6 && <p className="text-center text-xs text-muted-foreground">+{inbox.length - 6} more in Approvals & Workflows</p>}
               </CardContent>
             </Card>
           </div>
@@ -234,22 +211,7 @@ export default function DeanDashboard() {
         </div>
       </div>
 
-      {/* Reject Dialog */}
-      <Dialog open={!!rejectDialog} onOpenChange={() => { setRejectDialog(null); setRejectReason(''); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reject Request</DialogTitle>
-            <DialogDescription>Provide a reason for rejecting this request.</DialogDescription>
-          </DialogHeader>
-          <Textarea placeholder="Reason for rejection..." value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} />
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setRejectDialog(null); setRejectReason(''); }}>Cancel</Button>
-            <Button variant="destructive" onClick={() => rejectDialog && handleReject(rejectDialog)}>
-              <XCircle className="mr-1 h-4 w-4" />Reject
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ApprovalReview instanceId={reviewing} onClose={() => setReviewing(null)} onDecided={loadInbox} />
     </DashboardLayout>
   );
 }

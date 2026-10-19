@@ -26,6 +26,7 @@ const typeIcons: Record<string, React.ElementType> = {
 
 export default function DeanStudentAffairs() {
   const [disciplinaryCases, setDisciplinaryCases] = useState<any>([]);
+  const [scholarships, setScholarships] = useState({ count: 0, amount: 0, pending: 0 });
   const [mentoringData, setMentoringData] = useState<any>({ faculty: [], students: [], assignments: [] });
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [selectedFacultyId, setSelectedFacultyId] = useState('');
@@ -47,7 +48,10 @@ export default function DeanStudentAffairs() {
 
   useEffect(() => {
     Promise.allSettled([
-      fetchApi('/dean/student-affairs').then((d: any) => setDisciplinaryCases(d?.disciplinaryCases || [])),
+      fetchApi('/dean/student-affairs').then((d: any) => {
+        setDisciplinaryCases(d?.disciplinaryCases || []);
+        setScholarships({ count: d?.scholarshipCount ?? 0, amount: d?.scholarshipAmount ?? 0, pending: d?.scholarshipPending ?? 0 });
+      }),
       loadMentoringData(),
     ])
       .catch((error) => { console.error('API request failed', error); })
@@ -66,9 +70,19 @@ export default function DeanStudentAffairs() {
 
   const takeAction = async (action: string, newStatus: DisciplinaryCase['status']) => {
     if (!item) return;
+    if (newStatus === 'action_taken' && decision.trim().length < 10) {
+      toast({ title: 'Add your remarks', description: 'Record why (at least 10 characters) — it stays on the case.', variant: 'destructive' });
+      return;
+    }
     try {
-      await putApi(`/dean/disciplinary/${item.id}`, { status: newStatus });
-      setCases(prev => prev.map(c => c.id === item.id ? { ...c, status: newStatus } : c));
+      // The action and remarks were shown in a toast and then lost; only the
+      // status was saved. Both are kept on the case now.
+      const updated = await putApi<any>(`/dean/disciplinary/${item.id}`, {
+        status: newStatus,
+        ...(newStatus === 'action_taken' ? { actionTaken: action } : {}),
+        ...(decision.trim() ? { remarks: decision.trim() } : {})
+      });
+      setCases(prev => prev.map(c => c.id === item.id ? { ...c, ...updated } : c));
       toast({ title: action, description: `${item.studentName} – ${decision || 'No remarks'}` });
       setDecision('');
       setSelected(null);
@@ -132,7 +146,7 @@ export default function DeanStudentAffairs() {
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted"><Icon className="h-5 w-5 text-muted-foreground" /></div>
               <div>
                 <h1 className="text-xl font-bold text-foreground">{item.studentName} – {item.type.replace('_', ' ')}</h1>
-                <p className="text-sm text-muted-foreground">{item.rollNumber} • {item.department} • Reported by {item.reportedBy}</p>
+                <p className="text-sm text-muted-foreground">{item.rollNumber} • Reported by {item.reportedBy} on {new Date(item.reportedAt).toLocaleDateString('en-IN')}</p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -147,9 +161,15 @@ export default function DeanStudentAffairs() {
           <Card className="border-border">
             <CardHeader className="pb-2"><CardTitle className="text-sm">Dean's Decision / Action</CardTitle></CardHeader>
             <CardContent className="space-y-3">
+              {((item as any).actionTaken || (item as any).decisionRemarks) && (
+                <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                  <p className="font-medium">{(item as any).actionTaken ?? 'Remarks'}{(item as any).decidedAt ? ` · ${new Date((item as any).decidedAt).toLocaleDateString('en-IN')}` : ''}</p>
+                  {(item as any).decisionRemarks && <p className="text-muted-foreground">{(item as any).decisionRemarks}</p>}
+                </div>
+              )}
               <Textarea placeholder="Enter your decision or remarks..." rows={4} value={decision} onChange={e => setDecision(e.target.value)} />
               <div className="flex justify-end gap-2">
-                {item.type === 'attendance_shortage' && (
+                {/attendance/.test(item.type) && (
                   <Button variant="outline" onClick={() => takeAction('Attendance Condoned', 'action_taken')}>
                     <CheckCircle className="mr-1 h-4 w-4" />Condone Attendance
                   </Button>
@@ -246,11 +266,12 @@ export default function DeanStudentAffairs() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { label: 'Escalated Cases', count: escalated, color: 'text-destructive bg-destructive/10', icon: AlertTriangle },
             { label: 'Under Review', count: underReview, color: 'text-amber-600 bg-amber-100', icon: Clock },
             { label: 'Resolved', count: resolved, color: 'text-green-600 bg-green-100', icon: CheckCircle },
+            { label: `Scholarships sanctioned (₹${Math.round(scholarships.amount).toLocaleString('en-IN')})${scholarships.pending ? ` · ${scholarships.pending} in review` : ''}`, count: scholarships.count, color: 'text-primary bg-primary/10', icon: Users },
           ].map(s => (
             <Card key={s.label} className="border-border">
               <CardContent className="flex items-center gap-3 p-4">

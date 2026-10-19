@@ -75,8 +75,8 @@ export default function VCCompliance() {
   const getNirfScore = (id: string, defaultVal: number) => nirfScores[id] ?? defaultVal;
   const getNaacScore = (id: string, defaultVal: number) => naacScores[id] ?? defaultVal;
 
-  const nirfTotal = nirfReport ? nirfReport.criteria.reduce((sum, c) => sum + (getNirfScore(c.id, c.score)), 0) / nirfReport.criteria.length : 0;
-  const naacTotal = naacReport ? naacReport.criteria.reduce((sum, c) => sum + getNaacScore(c.id, c.score), 0) / naacReport.criteria.length : 0;
+  const nirfTotal = nirfReport && nirfReport.criteria.length > 0 ? nirfReport.criteria.reduce((sum, c) => sum + (getNirfScore(c.id, c.score)), 0) / nirfReport.criteria.length : 0;
+  const naacTotal = naacReport && naacReport.criteria.length > 0 ? naacReport.criteria.reduce((sum, c) => sum + getNaacScore(c.id, c.score), 0) / naacReport.criteria.length : 0;
 
   const handleApproveReport = async (id: string) => {
     try {
@@ -112,7 +112,7 @@ export default function VCCompliance() {
 
   const handleSaveNirfSimulation = () => {
     setEditingNIRF(false);
-    toast({ title: 'NIRF Simulation Saved', description: `Projected score: ${nirfTotal.toFixed(1)}/100. Estimated rank: #${Math.max(1, Math.round(150 - nirfTotal * 2))}.` });
+    toast({ title: 'NIRF Simulation Saved', description: `Simulated score: ${nirfTotal.toFixed(1)}/100.` });
   };
 
   const handleSaveNaacSimulation = () => {
@@ -173,7 +173,10 @@ export default function VCCompliance() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-primary" /> NIRF Score Simulator</CardTitle>
-                <CardDescription>Current projected rank: #{Math.max(1, Math.round(150 - nirfTotal * 2))} (Score: {nirfTotal.toFixed(1)}/100)</CardDescription>
+                {/* A "projected rank" was shown here, computed as 150 − 2 × score. NIRF
+                    ranks depend on every other institution's score, so no such
+                    formula exists; the number was invented. */}
+                <CardDescription>Simulated score: {nirfTotal.toFixed(1)}/100 — a what-if on the parameters below, not a rank prediction</CardDescription>
               </div>
               <Button variant={editingNIRF ? 'default' : 'outline'} size="sm" className="gap-1" onClick={() => editingNIRF ? handleSaveNirfSimulation() : setEditingNIRF(true)}>
                 {editingNIRF ? <><Save className="h-3 w-3" /> Save</> : <><Edit className="h-3 w-3" /> Simulate</>}
@@ -237,7 +240,9 @@ export default function VCCompliance() {
               <div>
                 <CardTitle className="flex items-center gap-2"><Award className="h-5 w-5 text-primary" /> NAAC Criteria Breakdown</CardTitle>
                 <CardDescription>
-                  Projected CGPA: {naacTotal.toFixed(2)} / 4.00 — Target: {naacTotal >= 3.51 ? 'A++ ✓' : `A++ (3.51+) — Need +${(3.51 - naacTotal).toFixed(2)}`}
+                  {naacReport && naacReport.criteria.length > 0
+                    ? <>Simulated CGPA: {naacTotal.toFixed(2)} / 4.00 — Target: {naacTotal >= 3.51 ? 'A++ ✓' : `A++ (3.51+) — Need +${(3.51 - naacTotal).toFixed(2)}`}</>
+                    : 'No NAAC criteria have been scored yet.'}
                 </CardDescription>
               </div>
               <Button variant={editingNAAC ? 'default' : 'outline'} size="sm" className="gap-1" onClick={() => editingNAAC ? handleSaveNaacSimulation() : setEditingNAAC(true)}>

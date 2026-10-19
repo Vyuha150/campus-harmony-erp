@@ -14,6 +14,15 @@ import { fetchApi } from '@/lib/apiService';
 import { downloadCsv } from '@/lib/download';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
+/**
+ * The API reports money in rupees; every figure and chart on this page is
+ * labelled in lakhs. Nothing converted between the two, so a ₹4.2 crore budget
+ * was shown as "₹420000 Cr". Amounts are converted once, where they arrive.
+ */
+const toLakhs = (rupees: unknown) => Math.round((Number(rupees) || 0) / 10000) / 10;
+/** A lakh amount as text: crores once it passes 100 lakh. */
+const lakhsLabel = (lakhs: number) => (lakhs >= 100 ? `₹${(lakhs / 100).toFixed(2)} Cr` : `₹${lakhs.toFixed(1)} L`);
+
 interface DeptBudget { dept: string; allocated: number; spent: number; util: number; categories: { name: string; amount: number }[]; }
 
 export default function VCFinance() {
@@ -24,18 +33,18 @@ export default function VCFinance() {
   const [_apiLoading, _setApiLoading] = useState(true);
   useEffect(() => {
     fetchApi('/vc/financialoverview').then(d => setFinancialOverview(d)).catch((error) => { console.error('API request failed', error); });
-    fetchApi('/vc/department-budgets').then(d => setDeptBudgets(d)).catch((error) => { console.error('API request failed', error); });
-    fetchApi('/vc/revenue-streams').then(d => setRevenueStreams(d)).catch((error) => { console.error('API request failed', error); });
-    fetchApi('/vc/finance-summary').then(d => setFinanceSummary(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/department-budgets').then((d: any[]) => setDeptBudgets((Array.isArray(d) ? d : []).map((row) => ({ ...row, allocated: toLakhs(row.allocated), spent: toLakhs(row.spent), categories: (row.categories ?? []).map((c: any) => ({ ...c, amount: toLakhs(c.amount) })) })))).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/revenue-streams').then((d: any[]) => setRevenueStreams((Array.isArray(d) ? d : []).map((row) => ({ ...row, amount: toLakhs(row.amount) })))).catch((error) => { console.error('API request failed', error); });
+    fetchApi('/vc/finance-summary').then((d: any[]) => setFinanceSummary((Array.isArray(d) ? d : []).map((row) => ({ ...row, allocated: toLakhs(row.allocated), spent: toLakhs(row.spent), remaining: toLakhs(row.remaining) })))).catch((error) => { console.error('API request failed', error); });
     _setApiLoading(false);
   }, []);
 
   const { toast } = useToast();
   const [selectedDept, setSelectedDept] = useState<DeptBudget | null>(null);
 
-  const totalBudget = Number(financialOverview.totalBudget || 0);
-  const totalActual = Number(financialOverview.totalSpent || 0);
-  const revenueYtd = Number(financialOverview.totalRevenue || 0);
+  const totalBudget = toLakhs(financialOverview.totalBudget);
+  const totalActual = toLakhs(financialOverview.totalSpent);
+  const revenueYtd = toLakhs(financialOverview.totalRevenue);
   const utilizationPct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
 
   const handleExportSummary = () => {
@@ -83,10 +92,10 @@ export default function VCFinance() {
         {/* Summary Cards */}
         <div className="grid gap-4 sm:grid-cols-4">
           {[
-            { label: 'Total Budget', value: `₹${(totalBudget / 100).toFixed(0)} Cr`, icon: Wallet, color: 'text-primary' },
-            { label: 'Actual Spend', value: `₹${(totalActual / 100).toFixed(0)} Cr`, icon: Receipt, color: 'text-amber-600' },
+            { label: 'Total Budget', value: lakhsLabel(totalBudget), icon: Wallet, color: 'text-primary' },
+            { label: 'Actual Spend', value: lakhsLabel(totalActual), icon: Receipt, color: 'text-amber-600' },
             { label: 'Utilization', value: `${utilizationPct}%`, icon: PieChart, color: 'text-emerald-600' },
-            { label: 'Revenue YTD', value: `₹${(revenueYtd / 100).toFixed(0)} Cr`, icon: TrendingUp, color: 'text-blue-600' },
+            { label: 'Revenue YTD', value: lakhsLabel(revenueYtd), icon: TrendingUp, color: 'text-blue-600' },
           ].map(s => (
             <Card key={s.label}>
               <CardContent className="flex items-center gap-3 p-4">

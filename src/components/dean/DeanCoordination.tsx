@@ -140,13 +140,13 @@ export default function DeanCoordination() {
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
                     <div className="text-center shrink-0">
-                      <p className="text-xs font-bold text-primary">{new Date(event.date).toLocaleDateString('en-US', { month: 'short' })}</p>
+                      <p className="text-xs font-bold text-primary">{new Date(event.date).toLocaleDateString('en-IN', { month: 'short' })}</p>
                       <p className="text-2xl font-bold text-foreground">{new Date(event.date).getDate()}</p>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <Badge className={`text-[10px] capitalize ${colorClass}`} variant="outline">
-                          <Icon className="mr-1 h-3 w-3" />{event.type}
+                          <Icon className="mr-1 h-3 w-3" />{String(event.type).replace(/_/g, ' ')}
                         </Badge>
                         <Badge variant={event.status === 'ongoing' ? 'default' : event.status === 'completed' ? 'secondary' : 'outline'} className="capitalize text-[10px]">
                           {event.status}
@@ -189,6 +189,7 @@ export default function DeanCoordination() {
               <Select value={newEvent.type} onValueChange={v => setNewEvent(p => ({ ...p, type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="technical_fest">Technical Fest</SelectItem>
                   <SelectItem value="technical">Technical</SelectItem>
                   <SelectItem value="cultural">Cultural</SelectItem>
                   <SelectItem value="sports">Sports</SelectItem>
@@ -215,7 +216,7 @@ export default function DeanCoordination() {
           {detailEvent && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-muted-foreground">Type:</span> <span className="capitalize font-medium">{detailEvent.type}</span></div>
+                <div><span className="text-muted-foreground">Type:</span> <span className="capitalize font-medium">{String(detailEvent.type).replace(/_/g, ' ')}</span></div>
                 <div><span className="text-muted-foreground">Status:</span> <Badge variant="outline" className="capitalize ml-1">{detailEvent.status}</Badge></div>
                 <div><span className="text-muted-foreground">Date:</span> <span className="font-medium">{detailEvent.date}</span></div>
                 <div><span className="text-muted-foreground">Budget:</span> <span className="font-medium">₹{(detailEvent.budget / 1000).toFixed(0)}K</span></div>
@@ -247,6 +248,7 @@ export default function DeanCoordination() {
               <Select value={editEvent.type} onValueChange={v => setEditEvent(p => ({ ...p, type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="technical_fest">Technical Fest</SelectItem>
                   <SelectItem value="technical">Technical</SelectItem>
                   <SelectItem value="cultural">Cultural</SelectItem>
                   <SelectItem value="sports">Sports</SelectItem>
