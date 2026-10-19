@@ -65,7 +65,7 @@ function stableStringify(value: unknown): string {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
 }
 
-/** Postgres unique-violation code, surfaced through Prisma. */
+/** Unique-index violation, surfaced through Prisma. */
 function isUniqueViolation(error: unknown): boolean {
   return (
     typeof error === 'object' &&

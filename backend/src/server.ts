@@ -23,13 +23,16 @@ import {
   rejectClientTenantOverride
 } from './middleware/tenantContext.js';
 import { enforceReadOnly } from './middleware/readOnly.js';
-import { basePrisma } from './lib/prisma.js';
+import { basePrisma, pingDatabase } from './lib/prisma.js';
+import { resolveDisplayNames } from './middleware/displayNames.js';
 import authRoutes from './routes/auth.js';
+import accountRoutes from './routes/account.js';
 import studentRoutes from './routes/students.js';
 import facultyRoutes from './routes/faculty.js';
 import financeRoutes from './routes/finance.js';
 import adminRoutes from './routes/admin.js';
 import hodRoutes from './routes/hod.js';
+import hodPlanningRoutes from './modules/hod/planning.routes.js';
 import deanRoutes from './routes/dean.js';
 import vcRoutes from './routes/vc.js';
 import registrarRoutes from './routes/registrar.js';
@@ -114,7 +117,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
  */
 app.get('/api/ready', async (_req: Request, res: Response) => {
   try {
-    await basePrisma.$queryRaw`SELECT 1`;
+    await pingDatabase();
     res.json({ status: 'ready', database: 'connected', timestamp: new Date().toISOString() });
   } catch (error) {
     logger.error('Readiness check failed', {
@@ -142,7 +145,9 @@ const tenantScoped = [
   authenticate,
   rejectClientTenantOverride,
   resolveTenantContext,
-  enforceReadOnly
+  enforceReadOnly,
+  // Replaces stored account ids with names in what is sent back (see the file).
+  resolveDisplayNames
 ];
 
 /**
@@ -175,6 +180,8 @@ app.use('/api/finance', ...tenantScoped, financeModuleRoutes);
 app.use('/api/finance', ...tenantScoped, authorizeRoles('finance_officer', 'principal', 'super_admin', ...OVERSIGHT), financeRoutes);
 app.use('/api/admin', ...tenantScoped, authorizeRoles('super_admin'), adminRoutes);
 
+// Workload & timetable planning (allocation, timetable edits, substitutions, student record).
+app.use('/api/hod', ...tenantScoped, authorizeRoles('hod', 'principal', 'super_admin', ...OVERSIGHT), hodPlanningRoutes);
 app.use('/api/hod', ...tenantScoped, authorizeRoles('hod', 'principal', 'super_admin', ...OVERSIGHT), hodRoutes);
 app.use('/api/dean', ...tenantScoped, authorizeRoles('dean', 'principal', 'super_admin', ...OVERSIGHT), deanRoutes);
 app.use('/api/vc', ...tenantScoped, authorizeRoles('vice_chancellor', 'pro_vc', 'super_admin', ...OVERSIGHT), vcRoutes);
@@ -225,6 +232,8 @@ app.use('/api/obe', ...tenantScoped, obeRoutes);
 // Workflow engine (Phase 2). Role checks live INSIDE the module: who may act
 // depends on the step an instance is currently at, which middleware cannot see.
 app.use('/api/workflow', ...tenantScoped, workflowRoutes);
+// The caller's own account — every role (profile, password, support tickets).
+app.use('/api/account', ...tenantScoped, accountRoutes);
 
 app.use('/api/uploads', ...tenantScoped, uploadRoutes);
 

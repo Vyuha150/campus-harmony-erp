@@ -38,9 +38,16 @@ export function createLimiter(options: {
   name: string;
   store: RateLimitStore;
   keyOf?: (req: Request) => string;
+  /** Clear the count when the request succeeds, so only failures are limited. */
+  skipSuccessful?: boolean;
 }) {
   return function rateLimit(req: Request, res: Response, next: NextFunction): void {
     const key = `${options.name}:${options.keyOf ? options.keyOf(req) : req.ip ?? 'unknown'}`;
+    if (options.skipSuccessful && options.store.reset) {
+      res.on('finish', () => {
+        if (res.statusCode < 400) void options.store.reset!(key).catch(() => undefined);
+      });
+    }
 
     void options.store
       .hit(key, options.windowMs)
@@ -102,6 +109,10 @@ export const loginRateLimiter = createLimiter({
   windowMs: config.rateLimit.loginWindowMs,
   max: config.rateLimit.loginMaxAttempts,
   store: new ResilientRateLimitStore(),
+  // Only FAILED attempts count. Successful sign-ins counted too, so someone
+  // switching between demo accounts, or simply signing in six times in a
+  // quarter-hour, was locked out with the right password.
+  skipSuccessful: true,
   keyOf: (req) => {
     const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : 'unknown';
     return `${req.ip ?? 'unknown'}:${email}`;

@@ -75,6 +75,10 @@ export async function resolveTenantContext(
     // Role is taken from the DATABASE, not the token, for the same staleness
     // reason: a demoted user must lose access immediately, not in 24 hours.
     const role = record.role;
+    // `authorizeRoles` (mounted after this in server.ts) reads req.user.role —
+    // the TOKEN's copy. Overwrite it so a replaced HOD or any demoted user loses
+    // the old role's routes on their next request, not when the token expires.
+    user.role = role;
 
     const context: TenantContext = {
       institutionId: record.institutionId,

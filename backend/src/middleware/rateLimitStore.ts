@@ -18,7 +18,7 @@
  *
  * The development plan records this as F1 and names Redis. The requirement is
  * a store SHARED BY EVERY INSTANCE, and Redis is one way to get one; this
- * deployment already requires PostgreSQL, which is another. Postgres is used
+ * deployment already requires MongoDB, which is another. MongoDB is used
  * here because it can be verified in this environment today, where Redis
  * cannot — an unexercised integration is not a fix. The interface below is the
  * seam: adding a Redis store later is a new implementation, not a rewrite.
@@ -46,6 +46,8 @@ export interface WindowState {
 export interface RateLimitStore {
   /** Record one hit against `key` and return the resulting window. */
   hit(key: string, windowMs: number): Promise<WindowState>;
+  /** Forget a key's count (used to stop counting successful sign-ins). */
+  reset?(key: string): Promise<void>;
   /** Human-readable name, used when reporting which store is active. */
   readonly name: string;
 }
@@ -81,61 +83,84 @@ export class InProcessRateLimitStore implements RateLimitStore {
     state.count += 1;
     return { count: state.count, resetAt: state.resetAt };
   }
+
+  async reset(key: string): Promise<void> {
+    this.buckets.delete(key);
+  }
 }
 
 /**
- * Counters in PostgreSQL, shared by every instance.
+ * Counters in MongoDB, shared by every instance.
  *
- * One statement per hit: insert the window, or increment it if this key's
- * window is still open. `resetAt` is chosen by whichever instance opens the
- * window and is then read back, so all instances agree on when it ends rather
- * than each extending it.
+ * One atomic command per hit: `findAndModify` with an update PIPELINE, so the
+ * decision "is this window still open?" is made by the server against the
+ * stored document, not by this process against a value it read earlier.
+ * `resetAt` is chosen by whichever instance opens the window and is then read
+ * back, so all instances agree on when it ends rather than each extending it.
  *
- * The expired-window case is handled inside the same statement — an expired
- * row is overwritten with a fresh window rather than incremented — so two
+ * The expired-window case is handled inside the same command — an expired
+ * document is overwritten with a fresh window rather than incremented — so two
  * instances racing at a window boundary cannot produce two different windows.
  */
-export class PostgresRateLimitStore implements RateLimitStore {
-  readonly name = 'postgres';
+export class MongoRateLimitStore implements RateLimitStore {
+  readonly name = 'mongodb';
 
   async hit(key: string, windowMs: number): Promise<WindowState> {
-    const now = new Date();
-    const resetAt = new Date(now.getTime() + windowMs);
+    const now = { $date: new Date().toISOString() };
+    const resetAt = { $date: new Date(Date.now() + windowMs).toISOString() };
 
-    const rows = await basePrisma.$queryRaw<Array<{ count: number; resetAt: Date }>>`
-      INSERT INTO "RateLimitWindow" ("key", "count", "resetAt")
-      VALUES (${key}, 1, ${resetAt})
-      ON CONFLICT ("key") DO UPDATE
-        SET "count"   = CASE
-                          WHEN "RateLimitWindow"."resetAt" <= ${now} THEN 1
-                          ELSE "RateLimitWindow"."count" + 1
-                        END,
-            "resetAt" = CASE
-                          WHEN "RateLimitWindow"."resetAt" <= ${now} THEN ${resetAt}
-                          ELSE "RateLimitWindow"."resetAt"
-                        END
-      RETURNING "count", "resetAt"
-    `;
+    // A missing document has no `resetAt`; `$ifNull` makes it count as expired.
+    const expired = { $lte: [{ $ifNull: ['$resetAt', now] }, now] };
 
-    const row = rows[0];
-    if (!row) {
-      // RETURNING always yields a row for an upsert; this is defensive only.
-      throw new Error('RateLimitWindow upsert returned no row');
+    const run = () =>
+      basePrisma.$runCommandRaw({
+        findAndModify: 'RateLimitWindow',
+        query: { _id: key },
+        update: [
+          {
+            $set: {
+              count: { $cond: [expired, 1, { $add: ['$count', 1] }] },
+              resetAt: { $cond: [expired, resetAt, '$resetAt'] }
+            }
+          }
+        ],
+        upsert: true,
+        new: true
+      }) as Promise<{ value?: { count?: number; resetAt?: { $date: string } } | null }>;
+
+    let result;
+    try {
+      result = await run();
+    } catch (error) {
+      // Two instances upserting the same brand-new key: one inserts, the other
+      // gets a duplicate-key error. The document now exists, so retry once.
+      if (!/E11000|duplicate key/i.test((error as Error).message)) throw error;
+      result = await run();
     }
-    return { count: Number(row.count), resetAt: new Date(row.resetAt).getTime() };
+
+    const doc = result.value;
+    if (!doc || typeof doc.count !== 'number' || !doc.resetAt) {
+      // `new: true` with `upsert: true` always yields a document; defensive only.
+      throw new Error('RateLimitWindow upsert returned no document');
+    }
+    return { count: doc.count, resetAt: new Date(doc.resetAt.$date).getTime() };
   }
 
   /** Delete expired windows. Called opportunistically, not on the hot path. */
+  async reset(key: string): Promise<void> {
+    await basePrisma.rateLimitWindow.deleteMany({ where: { key } });
+  }
+
   static async prune(): Promise<number> {
-    const result = await basePrisma.$executeRaw`
-      DELETE FROM "RateLimitWindow" WHERE "resetAt" <= NOW()
-    `;
-    return Number(result);
+    const result = await basePrisma.rateLimitWindow.deleteMany({
+      where: { resetAt: { lte: new Date() } }
+    });
+    return result.count;
   }
 }
 
 /**
- * A store that uses PostgreSQL but degrades to per-process counting if the
+ * A store that uses MongoDB but degrades to per-process counting if the
  * database is unreachable.
  *
  * Failing OPEN is deliberate. If the database is down the application cannot
@@ -144,10 +169,15 @@ export class PostgresRateLimitStore implements RateLimitStore {
  * outage. The degradation is logged at `error` so it is never silent.
  */
 export class ResilientRateLimitStore implements RateLimitStore {
-  readonly name = 'postgres (falls back to in-process)';
-  private readonly shared = new PostgresRateLimitStore();
+  readonly name = 'mongodb (falls back to in-process)';
+  private readonly shared = new MongoRateLimitStore();
   private readonly fallback = new InProcessRateLimitStore();
   private degraded = false;
+
+  async reset(key: string): Promise<void> {
+    await this.fallback.reset(key);
+    await this.shared.reset(key).catch(() => undefined);
+  }
 
   async hit(key: string, windowMs: number): Promise<WindowState> {
     try {

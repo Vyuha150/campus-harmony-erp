@@ -192,6 +192,16 @@ export function sendError(
  */
 export function translatePrismaError(error: unknown): AppError | null {
   if (typeof error !== 'object' || error === null) return null;
+
+  // The MongoDB connector reports a lost connection as a raw-query failure with
+  // code `unknown` (or P2010), not P1001 — so a DNS or network dropout fell
+  // through to a 500 "unexpected error". The client then treated the session
+  // check as failed and signed the user out. It is the database that is
+  // unavailable, and the caller should be told to retry.
+  const message = String((error as { message?: unknown }).message ?? '');
+  if (/Server selection timeout|No such host is known|Connection pool .* cleared|forcibly closed by the remote host|ReplicaSetNoPrimary|I\/O error/i.test(message)) {
+    return new DatabaseError();
+  }
   const code = (error as { code?: unknown }).code;
   if (typeof code !== 'string') return null;
 
