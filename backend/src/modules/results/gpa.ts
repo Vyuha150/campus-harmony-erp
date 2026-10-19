@@ -147,7 +147,15 @@ export function resolveGradeBand(
   // Highest band first, so overlapping ranges resolve in the student's favour
   // deterministically instead of by array order.
   const ordered = [...bands].sort((a, b) => b.minMarks - a.minMarks);
-  return ordered.find((band) => marks >= band.minMarks && marks <= band.maxMarks) ?? null;
+  const exact = ordered.find((band) => marks >= band.minMarks && marks <= band.maxMarks);
+  if (exact) return exact;
+  // Bands are usually whole numbers (A+ 80–89, O 90–100), so 89.5 fell between
+  // them and was refused as "the scale has a gap". A fractional mark belongs to
+  // the band of its whole part — it has not reached the next band's minimum.
+  // A genuine gap (no band covers the whole number either) still returns null.
+  const whole = Math.floor(marks);
+  if (whole === marks) return null;
+  return ordered.find((band) => whole >= band.minMarks && whole <= band.maxMarks) ?? null;
 }
 
 /**

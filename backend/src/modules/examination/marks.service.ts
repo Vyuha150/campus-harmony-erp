@@ -493,7 +493,7 @@ export async function requestRevaluation(input: {
  */
 export async function completeRevaluation(
   requestId: string,
-  input: { revisedMarks: number; remarks?: string }
+  input: { revisedMarks: number; remarks?: string; externalMarks?: number }
 ) {
   const ctx = requireContext();
 
@@ -568,7 +568,8 @@ export async function completeRevaluation(
           semester: original.semester,
           academicYear: original.academicYear,
           internalMarks: original.internalMarks,
-          externalMarks: input.revisedMarks,
+          // The re-marked paper when given; the total otherwise (legacy callers).
+          externalMarks: input.externalMarks ?? input.revisedMarks,
           totalMarks: input.revisedMarks,
           maxMarks,
           letterGrade: band.letter,

@@ -398,7 +398,7 @@ export async function registerStudent(sessionId: string, studentProfileId: strin
             feesCleared: check.feesCleared,
             outstandingFeeAmount: check.outstandingFeeAmount,
             isEligible: check.isEligible,
-            ineligibilityReasons: check.reasons.length > 0 ? check.reasons : Prisma.DbNull,
+            ineligibilityReasons: check.reasons.length > 0 ? check.reasons : null,
             status: check.isEligible ? 'registered' : 'ineligible'
           },
           create: {
@@ -411,7 +411,7 @@ export async function registerStudent(sessionId: string, studentProfileId: strin
             feesCleared: check.feesCleared,
             outstandingFeeAmount: check.outstandingFeeAmount,
             isEligible: check.isEligible,
-            ineligibilityReasons: check.reasons.length > 0 ? check.reasons : Prisma.DbNull,
+            ineligibilityReasons: check.reasons.length > 0 ? check.reasons : null,
             status: check.isEligible ? 'registered' : 'ineligible',
             registeredBy: ctx.userId
           }
