@@ -1,262 +1,253 @@
+import { useTabParam } from '@/hooks/useTabParam';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  Calendar, Clock, BookOpen, Users, AlertTriangle, Plus, Shuffle, Download, CheckCircle
-} from 'lucide-react';
-import { deleteApi, fetchApi, postApi, putApi, promptForDeleteReason } from '@/lib/apiService';
-import { useState, useEffect } from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertTriangle, CalendarClock, ChevronLeft, ChevronRight, Plus, Shuffle, Trash2, UserCheck, UserMinus } from 'lucide-react';
+import { deleteApi, fetchApi, postApi, putApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
-import { CourseAssignment } from '@/types/hod';
+import { cn } from '@/lib/utils';
 
-const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const timeSlots = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00'];
+/**
+ * Workload & Timetable (blueprint, HOD portal): assign subjects to faculty,
+ * manage the department timetable with conflict checking, and arrange cover
+ * when a faculty member is on leave — the system suggests who is free.
+ * Affected teachers and students are notified of every change.
+ */
+
+interface AllocCourse { id: string; code: string; name: string; semester: number; credits: number; facultyId: string | null; facultyName: string | null; students: number; weeklyHours: number; slots: number }
+interface AllocFaculty { id: string; name: string; designation: string | null; courses: string[]; weeklyHours: number }
+interface Slot { scheduleId: string; courseId: string; courseCode: string; courseName: string; semester: number; day: string; startTime: string; endTime: string; room: string; type: string; facultyId: string | null; facultyName: string | null }
+interface DayClass extends Omit<Slot, 'day'> { facultyOnLeave: { status: string; type: string } | null; substitution: { id: string; substituteFacultyId: string; substituteName: string | null; reason: string | null } | null }
+interface Change { id: string; kind: string; summary: string; status: string; requestedAt: string; appliedAt: string | null; failureReason: string | null; decisionNote: string | null; payload: any }
+interface Candidate { facultyId: string; name: string; designation: string | null; weeklyHours: number; free: boolean; reason: string | null }
+
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const UNASSIGNED = '__none__';
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const shift = (v: string, n: number) => { const [y, m, d] = v.split('-').map(Number); const x = new Date(y!, m! - 1, d!); x.setDate(x.getDate() + n); return ymd(x); };
+const longDate = (v: string) => { const [y, m, d] = v.split('-').map(Number); return new Date(y!, m! - 1, d!).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }); };
+const emptySlot = { scheduleId: '', courseId: '', day: 'Monday', startTime: '09:00', endTime: '10:00', room: '', type: 'Lecture' };
 
 export default function HODWorkload() {
-  const [courseAssignments, setCourseAssignments] = useState<any[]>([]);
-  const [courseOptions, setCourseOptions] = useState<any>({ courses: [], rooms: [] });
-  const [departmentTimetable, setDepartmentTimetable] = useState<any>([]);
-  const [departmentFaculty, setDepartmentFaculty] = useState<any>([]);
-  const [_apiLoading, _setApiLoading] = useState(true);
-  useEffect(() => {
-    fetchApi('/hod/workload').then(d => setCourseAssignments(d)).catch((error) => { console.error('API request failed', error); });
-    fetchApi('/hod/workload/course-options').then(d => setCourseOptions(d || { courses: [], rooms: [] })).catch((error) => { console.error('API request failed', error); });
-    fetchApi('/hod/timetable').then(d => setDepartmentTimetable(d)).catch((error) => { console.error('API request failed', error); });
-    fetchApi('/hod/faculty').then(d => setDepartmentFaculty(d)).catch((error) => { console.error('API request failed', error); });
-    _setApiLoading(false);
+  const tabParam = useTabParam('allocation');
+  const { toast } = useToast();
+  const [courses, setCourses] = useState<AllocCourse[]>([]);
+  const [faculty, setFaculty] = useState<AllocFaculty[]>([]);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [semester, setSemester] = useState<string>('');
+  const [saving, setSaving] = useState<string | null>(null);
+  const [changes, setChanges] = useState<Change[]>([]);
+
+  const reload = useCallback(async () => {
+    const [alloc, tt, ch] = await Promise.all([
+      fetchApi<{ courses: AllocCourse[]; faculty: AllocFaculty[] }>('/hod/planning/allocation'),
+      fetchApi<Slot[]>('/hod/planning/timetable'),
+      fetchApi<Change[]>('/hod/planning/changes')
+    ]);
+    setCourses(alloc?.courses ?? []);
+    setFaculty(alloc?.faculty ?? []);
+    setSlots(Array.isArray(tt) ? tt : []);
+    setChanges(Array.isArray(ch) ? ch : []);
   }, []);
 
-  const { toast } = useToast();
-  const [assignments, setAssignments] = useState<CourseAssignment[]>([]);
+  // Changes waiting for the Dean, by what they touch, to mark them on screen.
+  const pending = changes.filter((c) => c.status === 'pending');
+  const pendingForCourse = (courseId: string) => pending.find((c) => c.kind === 'allocation' && c.payload?.courseId === courseId);
+  const pendingForSlot = (scheduleId: string) => pending.find((c) => c.payload?.scheduleId === scheduleId);
+  const sentToDean = (summary: string) => toast({ title: 'Sent to the Dean for approval', description: `${summary}. It takes effect when the Dean approves; the teacher and students are notified then.` });
+
+  const withdraw = async (change: Change) => {
+    if (!window.confirm(`Withdraw this request?\n\n${change.summary}`)) return;
+    try {
+      await deleteApi(`/hod/planning/changes/${change.id}`);
+      toast({ title: 'Request withdrawn' });
+      await reload();
+    } catch (e: any) {
+      toast({ title: 'Could not withdraw', description: e?.message, variant: 'destructive' });
+    }
+  };
+
   useEffect(() => {
-    setAssignments(courseAssignments);
-  }, [courseAssignments]);
-  const [showAssignDialog, setShowAssignDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showSubDialog, setShowSubDialog] = useState(false);
-  const [newCourse, setNewCourse] = useState({ courseId: '', section: '', faculty: '', type: 'theory', studentEmails: '', roomId: '', day: 'Monday', startTime: '09:00', endTime: '10:00' });
-  const [editingCourse, setEditingCourse] = useState<any>(null);
+    reload().catch((e) => toast({ title: 'Could not load the department', description: e?.message, variant: 'destructive' }));
+  }, [reload, toast]);
 
-  const totalCredits = assignments.reduce((sum, c) => sum + c.credits, 0);
-  const totalStudents = assignments.reduce((sum, c) => sum + c.students, 0);
-  const onLeaveFaculty = departmentFaculty.filter(f => f.isOnLeave);
-  const freeFaculty = departmentFaculty.filter(f => !f.isOnLeave && f.weeklyHours < 16);
+  // Default to the semester that has a timetable.
+  const semesters = useMemo(() => [...new Set(courses.map((c) => c.semester))].sort((a, b) => a - b), [courses]);
+  useEffect(() => {
+    if (!semester && slots.length) setSemester(String(slots[0]!.semester));
+  }, [slots, semester]);
 
-  const handleAssignCourse = async () => {
-    // Both faculty dropdowns carry facultyProfileId as their value, since that
-    // is what every assignment handler resolves faculty by.
-    const fac = departmentFaculty.find(f => f.facultyProfileId === newCourse.faculty);
-    const selectedCourse = (courseOptions.courses || []).find((course: any) => course.id === newCourse.courseId);
-    if (!fac || !selectedCourse || !newCourse.section || !newCourse.roomId || !newCourse.day || !newCourse.startTime || !newCourse.endTime) {
-      toast({ title: 'Missing Fields', description: 'Please fill all required fields', variant: 'destructive' });
-      return;
-    }
+  const fail = (title: string, e: any) => toast({ title, description: e?.message || 'Please try again.', variant: 'destructive' });
+
+  // ── Allocation ─────────────────────────────────────────────────────────────
+  const allocate = async (course: AllocCourse, value: string) => {
+    const facultyId = value === UNASSIGNED ? null : value;
+    if (facultyId === course.facultyId) return;
+    if (!facultyId && !window.confirm(`Remove ${course.facultyName} from ${course.code}? The course will have no teacher until you assign one.`)) return;
+    setSaving(course.id);
     try {
-      const newItem = await postApi<CourseAssignment>('/hod/workload/course', {
-        courseId: selectedCourse.id,
-        semester: selectedCourse.semester,
-        section: newCourse.section,
-        // `fac.id` is the USER id; the handler resolves faculty by
-        // FacultyProfile id, which /hod/faculty now returns alongside it.
-        facultyId: fac.facultyProfileId,
-        type: newCourse.type,
-        studentEmails: newCourse.studentEmails,
-        roomId: newCourse.roomId,
-        day: newCourse.day,
-        startTime: newCourse.startTime,
-        endTime: newCourse.endTime,
-      });
-      setAssignments(prev => [...prev, newItem]);
-      toast({ title: 'Class Created', description: `${selectedCourse.code} section ${newCourse.section} assigned to ${fac.name}` });
-      setShowAssignDialog(false);
-      setNewCourse({ courseId: '', section: '', faculty: '', type: 'theory', studentEmails: '', roomId: '', day: 'Monday', startTime: '09:00', endTime: '10:00' });
-    } catch (error: any) {
-      toast({ title: 'Creation failed', description: error?.message || 'Unable to create class', variant: 'destructive' });
-    }
+      const r = await putApi<{ summary: string }>(`/hod/planning/allocation/${course.id}`, { facultyId });
+      sentToDean(r.summary);
+      await reload();
+    } catch (e) { fail('Allocation failed', e); } finally { setSaving(null); }
   };
 
-  const handleOpenEdit = (item: any) => {
-    setEditingCourse({
-      id: item.id,
-      courseCode: item.courseCode,
-      courseName: item.courseName,
-      credits: String(item.credits ?? 0),
-      semester: String(item.semester ?? 1),
-      section: item.section || 'A',
-      faculty: item.facultyId || '',
-      type: item.type || 'theory',
-      roomId: (courseOptions.rooms || []).find((room: any) => room.name === item.room)?.id || '',
-      day: item.day || 'Monday',
-      startTime: item.startTime || '09:00',
-      endTime: item.endTime || '10:00',
-      studentEmails: '',
-    });
-    setShowEditDialog(true);
-  };
+  // ── Timetable ──────────────────────────────────────────────────────────────
+  const [editing, setEditing] = useState<typeof emptySlot | null>(null);
+  const semSlots = slots.filter((s) => !semester || String(s.semester) === semester);
+  const semCourses = courses.filter((c) => !semester || String(c.semester) === semester);
+  const columns = useMemo(() => {
+    const bounds = [...new Set(semSlots.flatMap((s) => [s.startTime, s.endTime]))].sort();
+    return bounds.slice(0, -1).map((start, i) => ({ start, end: bounds[i + 1]!, isBreak: !semSlots.some((s) => s.startTime <= start && s.endTime >= bounds[i + 1]!) }));
+  }, [semSlots]);
 
-  const handleUpdateCourse = async () => {
-    if (!editingCourse?.id) return;
+  const saveSlot = async () => {
+    if (!editing) return;
+    if (!editing.courseId || !editing.room.trim()) { toast({ title: 'Missing details', description: 'Choose a course and a room.', variant: 'destructive' }); return; }
+    setSaving('slot');
     try {
-      const updated = await putApi<any>(`/hod/workload/course/${editingCourse.id}`, {
-        courseCode: editingCourse.courseCode,
-        courseName: editingCourse.courseName,
-        credits: Number(editingCourse.credits),
-        semester: Number(editingCourse.semester),
-        section: editingCourse.section,
-        facultyId: editingCourse.faculty,
-        type: editingCourse.type,
-        studentEmails: editingCourse.studentEmails,
-        roomId: editingCourse.roomId,
-        day: editingCourse.day,
-        startTime: editingCourse.startTime,
-        endTime: editingCourse.endTime,
-      });
-      setAssignments((prev) => prev.map((course) => (course.id === updated.id ? updated : course)));
-      setShowEditDialog(false);
-      setEditingCourse(null);
-      toast({ title: 'Class Updated', description: `${updated.courseCode} updated successfully.` });
-    } catch (error: any) {
-      toast({ title: 'Update failed', description: error?.message || 'Unable to update class/course details', variant: 'destructive' });
-    }
+      const body = { courseId: editing.courseId, day: editing.day, startTime: editing.startTime, endTime: editing.endTime, room: editing.room.trim(), type: editing.type };
+      const r = editing.scheduleId
+        ? await putApi<{ summary: string }>(`/hod/planning/timetable/${editing.scheduleId}`, body)
+        : await postApi<{ summary: string }>('/hod/planning/timetable', body);
+      sentToDean(r.summary);
+      setEditing(null);
+      await reload();
+    } catch (e) { fail('Timetable clash', e); } finally { setSaving(null); }
   };
-
-  const handleCheckConflicts = () => {
-    postApi<{ conflicts: string[] }>('/hod/workload/check-conflicts', {})
-      .then((result) => {
-        const conflicts = Array.isArray(result?.conflicts) ? result.conflicts : [];
-        if (conflicts.length === 0) {
-          toast({ title: '✅ No Conflicts Found', description: 'All timetable slots are conflict-free.' });
-        } else {
-          toast({ title: '⚠️ Conflicts Detected', description: conflicts.join('; '), variant: 'destructive' });
-        }
-      })
-      .catch((error: any) => {
-        toast({ title: 'Action failed', description: error?.message || 'Unable to check timetable conflicts', variant: 'destructive' });
-      });
-  };
-
-  const handleSubstitution = async (absentFac: string) => {
-    if (freeFaculty.length > 0) {
-      const sub = freeFaculty[0];
-      try {
-        await putApi('/hod/workload/assign', {
-          absentFaculty: absentFac,
-          substituteFacultyId: sub.id,
-        });
-        toast({ title: '✅ Substitution Arranged', description: `${sub.name} will substitute for ${absentFac} today.` });
-        setShowSubDialog(false);
-      } catch (error: any) {
-        toast({ title: 'Action failed', description: error?.message || 'Unable to arrange substitution', variant: 'destructive' });
-      }
-    } else {
-      toast({ title: 'No Free Faculty', description: 'All faculty are currently occupied.', variant: 'destructive' });
-    }
-  };
-
-  const handleRemoveAssignment = async (id: string) => {
-    const reason = promptForDeleteReason('this workload assignment');
-    if (!reason) return;
+  const removeSlot = async () => {
+    if (!editing?.scheduleId || !window.confirm('Ask the Dean to remove this class from the timetable?')) return;
+    setSaving('slot');
     try {
-      await deleteApi(`/hod/workload/course/${id}`, { reason });
-      setAssignments(prev => prev.filter(a => a.id !== id));
-      toast({ title: 'Assignment Removed' });
-    } catch (error: any) {
-      toast({ title: 'Delete failed', description: error?.message || 'Unable to remove assignment', variant: 'destructive' });
-    }
+      await deleteApi(`/hod/planning/timetable/${editing.scheduleId}`);
+      sentToDean(`Remove ${courses.find((c) => c.id === editing.courseId)?.code ?? 'the class'} on ${editing.day} ${editing.startTime}–${editing.endTime}`);
+      setEditing(null);
+      await reload();
+    } catch (e) { fail('Remove failed', e); } finally { setSaving(null); }
   };
+
+  // ── Substitution ───────────────────────────────────────────────────────────
+  const [subDate, setSubDate] = useState(ymd(new Date()));
+  const [dayClasses, setDayClasses] = useState<DayClass[]>([]);
+  const [covering, setCovering] = useState<DayClass | null>(null);
+  const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [reason, setReason] = useState('');
+  const loadDay = useCallback((d: string) => {
+    fetchApi<{ classes: DayClass[] }>(`/hod/planning/substitutions?date=${d}`).then((r) => setDayClasses(r?.classes ?? [])).catch((e) => fail('Could not load the day', e));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadDay(subDate); }, [subDate, loadDay]);
+
+  const openCover = async (cls: DayClass) => {
+    setCovering(cls);
+    setCandidates(null);
+    setReason(cls.facultyOnLeave ? `${cls.facultyName} on ${cls.facultyOnLeave.type} leave` : '');
+    try {
+      setCandidates(await fetchApi<Candidate[]>(`/hod/planning/substitutions/suggest?scheduleId=${cls.scheduleId}&date=${subDate}`));
+    } catch (e) { fail('Could not find free faculty', e); }
+  };
+  const arrange = async (c: Candidate) => {
+    if (!covering) return;
+    setSaving('cover');
+    try {
+      await postApi('/hod/planning/substitutions', { scheduleId: covering.scheduleId, date: subDate, substituteFacultyId: c.facultyId, ...(reason.trim() ? { reason: reason.trim() } : {}) });
+      toast({ title: `${c.name} will take ${covering.courseCode}`, description: 'The substitute, the regular teacher and the students have been notified.' });
+      setCovering(null);
+      loadDay(subDate);
+    } catch (e) { fail('Could not arrange cover', e); } finally { setSaving(null); }
+  };
+  const cancelCover = async (cls: DayClass) => {
+    if (!cls.substitution || !window.confirm(`Cancel ${cls.substitution.substituteName}'s cover for ${cls.courseCode}?`)) return;
+    try {
+      await deleteApi(`/hod/planning/substitutions/${cls.substitution.id}`);
+      toast({ title: 'Cover cancelled' });
+      loadDay(subDate);
+    } catch (e) { fail('Cancel failed', e); }
+  };
+  const onLeaveToday = dayClasses.filter((c) => c.facultyOnLeave && !c.substitution).length;
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Workload & Timetable</h1>
-            <p className="text-muted-foreground">Manage course assignments and department timetable</p>
+            <p className="text-muted-foreground">Allocate subjects, edit the department timetable, and arrange cover for faculty on leave.</p>
           </div>
-          <div className="flex gap-2">
-            {onLeaveFaculty.length > 0 && (
-              <Button variant="outline" size="sm" onClick={() => setShowSubDialog(true)}>
-                <Shuffle className="mr-1 h-4 w-4" />Arrange Substitution ({onLeaveFaculty.length})
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={handleCheckConflicts}>
-              <AlertTriangle className="mr-1 h-4 w-4" />Check Conflicts
-            </Button>
-            <Button size="sm" onClick={() => setShowAssignDialog(true)}>
-              <Plus className="mr-1 h-4 w-4" />Class Creation
-            </Button>
-          </div>
+          <Select value={semester} onValueChange={setSemester}>
+            <SelectTrigger className="w-[170px]"><SelectValue placeholder="Semester" /></SelectTrigger>
+            <SelectContent>{semesters.map((s) => <SelectItem key={s} value={String(s)}>Semester {s}{slots.some((x) => x.semester === s) ? '' : ' (no timetable)'}</SelectItem>)}</SelectContent>
+          </Select>
         </div>
 
-        {/* Summary */}
-        <div className="grid gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {[
-            { label: 'Courses Offered', value: assignments.length, icon: BookOpen },
-            { label: 'Total Credits', value: totalCredits, icon: Clock },
-            { label: 'Faculty Assigned', value: new Set(assignments.map(c => c.facultyId)).size, icon: Users },
-            { label: 'Students Enrolled', value: totalStudents, icon: Users },
-          ].map(s => (
-            <Card key={s.label} className="border-border">
-              <CardContent className="flex items-center gap-3 p-4">
-                <s.icon className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-2xl font-bold text-foreground">{s.value}</p>
-                  <p className="text-xs text-muted-foreground">{s.label}</p>
-                </div>
-              </CardContent>
-            </Card>
+            [`Semester ${semester || '—'} courses`, semCourses.length],
+            ['Without a teacher', semCourses.filter((c) => !c.facultyId).length],
+            ['Weekly classes', semSlots.length],
+            ['Faculty', faculty.length]
+          ].map(([label, value]) => (
+            <Card key={label as string}><CardContent className="p-4"><p className="text-2xl font-bold">{value}</p><p className="text-xs text-muted-foreground">{label}</p></CardContent></Card>
           ))}
         </div>
 
-        <Tabs defaultValue="assignments">
-          <TabsList>
-            <TabsTrigger value="assignments">Course Assignments</TabsTrigger>
-            <TabsTrigger value="timetable">Timetable Grid</TabsTrigger>
+        <Tabs key={tabParam.key} defaultValue={tabParam.defaultValue}>
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="allocation">Subject Allocation</TabsTrigger>
+            <TabsTrigger value="timetable">Timetable</TabsTrigger>
+            <TabsTrigger value="changes">Dean approvals{pending.length > 0 && <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{pending.length}</Badge>}</TabsTrigger>
+            <TabsTrigger value="cover">Substitutions{onLeaveToday > 0 && <Badge variant="destructive" className="ml-1 h-4 px-1 text-[10px]">{onLeaveToday}</Badge>}</TabsTrigger>
             <TabsTrigger value="workload">Faculty Workload</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="assignments" className="mt-4">
-            <Card className="border-border">
-              <CardContent className="p-0">
+          {/* ── Allocation ── */}
+          <TabsContent value="allocation" className="mt-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Who teaches what</CardTitle>
+                <CardDescription>Change the teacher of any subject. The new teacher must be free at all of its slots, and the change takes effect when the Dean approves it.</CardDescription>
+              </CardHeader>
+              <CardContent className="overflow-x-auto p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Code</TableHead>
-                      <TableHead>Course</TableHead>
-                      <TableHead>Faculty</TableHead>
-                      <TableHead className="text-center">Credits</TableHead>
-                      <TableHead className="text-center">Sem</TableHead>
-                      <TableHead>Schedule</TableHead>
-                      <TableHead className="text-center">Students</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead></TableHead>
+                      <TableHead>Code</TableHead><TableHead>Course</TableHead><TableHead className="text-center">Sem</TableHead>
+                      <TableHead className="text-center">Credits</TableHead><TableHead className="text-center">Hrs/week</TableHead>
+                      <TableHead className="text-center">Students</TableHead><TableHead className="min-w-[220px]">Teacher</TableHead><TableHead />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {assignments.map(c => (
+                    {semCourses.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="font-mono font-medium">{c.courseCode}</TableCell>
-                        <TableCell className="font-medium text-foreground">{c.courseName}</TableCell>
-                        <TableCell className="text-sm">{c.assignedFaculty}</TableCell>
-                        <TableCell className="text-center">{c.credits}</TableCell>
+                        <TableCell className="font-mono font-medium">{c.code}</TableCell>
+                        <TableCell>{c.name}</TableCell>
                         <TableCell className="text-center">{c.semester}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{c.schedule}</TableCell>
+                        <TableCell className="text-center">{c.credits}</TableCell>
+                        <TableCell className="text-center">{c.weeklyHours || '—'}</TableCell>
                         <TableCell className="text-center">{c.students}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="capitalize text-[10px]">{c.type}</Badge>
+                          {pendingForCourse(c.id) && <p className="mb-1 text-[11px] font-medium text-amber-600">Waiting for the Dean: {pendingForCourse(c.id)!.summary.split(': teacher ').pop()}</p>}
+                          <Select value={c.facultyId ?? UNASSIGNED} onValueChange={(v) => allocate(c, v)} disabled={saving === c.id || !!pendingForCourse(c.id)}>
+                            <SelectTrigger className={cn('h-8', !c.facultyId && 'border-amber-500 text-amber-700')}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={UNASSIGNED}>— Unassigned —</SelectItem>
+                              {faculty.map((f) => <SelectItem key={f.id} value={f.id}>{f.name} ({f.weeklyHours}h)</SelectItem>)}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleRemoveAssignment(c.id)}>
-                            Remove
-                          </Button>
+                          {c.facultyId && (
+                            <Button size="sm" variant="ghost" className="h-8 text-destructive" title="Remove the teacher" onClick={() => allocate(c, UNASSIGNED)}>
+                              <UserMinus className="h-4 w-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -266,120 +257,175 @@ export default function HODWorkload() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="timetable" className="mt-4">
-            <Card className="border-border">
+          {/* ── Changes sent to the Dean ── */}
+          <TabsContent value="changes" className="mt-4">
+            <Card>
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Department Timetable – Current Semester</CardTitle>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={async () => {
-                      try {
-                        await postApi('/hod/timetable/export', { format: 'pdf' });
-                        toast({ title: 'Timetable Exported', description: 'PDF downloaded successfully' });
-                      } catch (error: any) {
-                        toast({ title: 'Export failed', description: error?.message || 'Unable to export timetable', variant: 'destructive' });
-                      }
-                    }}>
-                      <Download className="mr-1 h-4 w-4" />Export
-                    </Button>
+                <CardTitle className="text-lg">Changes sent to the Dean</CardTitle>
+                <CardDescription>Timetable and subject-allocation changes take effect when the Dean approves them. Substitutions do not need approval.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {changes.length === 0 && <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No changes requested yet.</p>}
+                {changes.map((c) => (
+                  <div key={c.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3">
+                    <div className="min-w-0">
+                      <p className="font-medium">{c.summary}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Requested {new Date(c.requestedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        {c.appliedAt ? ` · applied ${new Date(c.appliedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
+                      </p>
+                      {c.decisionNote && <p className="text-xs italic text-muted-foreground">Dean: “{c.decisionNote}”</p>}
+                      {c.failureReason && <p className="text-xs text-destructive">Could not be applied: {c.failureReason}</p>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className={cn('capitalize',
+                        c.status === 'applied' && 'bg-green-600 hover:bg-green-600',
+                        (c.status === 'rejected' || c.status === 'failed') && 'bg-destructive hover:bg-destructive')}
+                        variant={c.status === 'pending' ? 'secondary' : c.status === 'cancelled' ? 'outline' : 'default'}>
+                        {c.status === 'pending' ? 'Waiting for the Dean' : c.status === 'applied' ? 'Approved & applied' : c.status === 'cancelled' ? 'Withdrawn' : c.status}
+                      </Badge>
+                      {c.status === 'pending' && <Button size="sm" variant="outline" onClick={() => withdraw(c)}>Withdraw</Button>}
+                    </div>
                   </div>
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ── Timetable ── */}
+          <TabsContent value="timetable" className="mt-4">
+            <Card>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
+                <div>
+                  <CardTitle className="text-lg">Department timetable</CardTitle>
+                  <CardDescription>Click a class to move or remove it, or + to add one. Changes go to the Dean for approval; clashes (same students, teacher or room) are refused.</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={() => setEditing({ ...emptySlot, courseId: semCourses[0]?.id ?? '' })}><Plus className="mr-1 h-4 w-4" />Add class</Button>
                 </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-24">Time</TableHead>
-                      {days.map(d => <TableHead key={d} className="text-center">{d}</TableHead>)}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {timeSlots.map(time => (
-                      <TableRow key={time}>
-                        <TableCell className="font-mono text-sm font-medium">{time}</TableCell>
-                        {days.map(day => {
-                          const slot = departmentTimetable.find(
-                            t => t.day === day && t.startTime === time
+                {semSlots.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">No classes scheduled for this semester yet. Use “Add class”.</p>
+                ) : (
+                  <table className="w-full min-w-[900px] border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        <th className="w-20 border-b p-2 text-left">Day</th>
+                        {columns.map((c) => (
+                          <th key={c.start} className={cn('border-b border-l p-2 text-center font-medium', c.isBreak && 'w-8 bg-muted')}>
+                            {c.isBreak ? '' : <>{c.start}<br /><span className="font-normal text-muted-foreground">{c.end}</span></>}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {DAYS.map((day) => {
+                        const cells: JSX.Element[] = [];
+                        for (let i = 0; i < columns.length; i++) {
+                          const col = columns[i]!;
+                          if (col.isBreak) { cells.push(<td key={col.start} className="border-l bg-muted/60" />); continue; }
+                          const slot = semSlots.find((s) => s.day === day && s.startTime <= col.start && s.endTime >= col.end);
+                          if (!slot) {
+                            cells.push(
+                              <td key={col.start} className="border-l p-1 text-center">
+                                <button type="button" className="h-full w-full rounded py-3 text-muted-foreground/40 hover:bg-muted hover:text-foreground"
+                                  title="Add a class here" onClick={() => setEditing({ ...emptySlot, day, startTime: col.start, endTime: col.end, courseId: semCourses[0]?.id ?? '' })}>+</button>
+                              </td>
+                            );
+                            continue;
+                          }
+                          let span = 1;
+                          while (i + span < columns.length && columns[i + span]!.end <= slot.endTime) span++;
+                          cells.push(
+                            <td key={col.start} colSpan={span} className="border-l p-1">
+                              <button type="button" onClick={() => setEditing({ scheduleId: slot.scheduleId, courseId: slot.courseId, day: slot.day, startTime: slot.startTime, endTime: slot.endTime, room: slot.room, type: slot.type })}
+                                className={cn('w-full rounded p-1.5 text-left hover:ring-2 hover:ring-primary', slot.type === 'Lab' ? 'bg-purple-100 text-purple-900 dark:bg-purple-900/30 dark:text-purple-200' : 'bg-primary/10', !slot.facultyId && 'ring-1 ring-amber-500')}>
+                                <p className="flex items-center justify-between font-semibold">{slot.courseCode}{pendingForSlot(slot.scheduleId) && <span className="rounded bg-amber-500 px-1 text-[9px] text-white" title={pendingForSlot(slot.scheduleId)!.summary}>change pending</span>}</p>
+                                <p className="truncate text-[10px]">{slot.facultyName ?? 'No teacher'}</p>
+                                <p className="truncate text-[10px] text-muted-foreground">{slot.type !== 'Lecture' ? `${slot.type} · ` : ''}{slot.room}</p>
+                              </button>
+                            </td>
                           );
-                          return (
-                            <TableCell key={day} className="text-center p-1">
-                              {slot ? (
-                                <div className={`rounded-lg p-2 text-xs cursor-pointer hover:ring-2 hover:ring-primary/50 ${
-                                  slot.type === 'lab' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' :
-                                  'bg-primary/10 text-primary'
-                                }`} onClick={() => toast({ title: slot.courseCode, description: `${slot.courseName} • ${slot.faculty} • ${slot.room}` })}>
-                                  <p className="font-semibold">{slot.courseCode}</p>
-                                  <p className="text-[10px]">{slot.faculty.split(' ').pop()}</p>
-                                  <p className="text-[10px] text-muted-foreground">{slot.room}</p>
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground/30">—</span>
-                              )}
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          i += span - 1;
+                        }
+                        return <tr key={day} className="border-b"><td className="p-2 font-medium">{day.slice(0, 3)}</td>{cells}</tr>;
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
+          {/* ── Substitutions ── */}
+          <TabsContent value="cover" className="mt-4 space-y-4">
+            <Card>
+              <CardContent className="flex flex-wrap items-center gap-2 p-4">
+                <Button variant="outline" size="icon" onClick={() => setSubDate(shift(subDate, -1))} aria-label="Previous day"><ChevronLeft className="h-4 w-4" /></Button>
+                <Input type="date" value={subDate} onChange={(e) => e.target.value && setSubDate(e.target.value)} className="w-[170px]" />
+                <Button variant="outline" size="icon" onClick={() => setSubDate(shift(subDate, 1))} aria-label="Next day"><ChevronRight className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="sm" onClick={() => setSubDate(ymd(new Date()))}>Today</Button>
+                <span className="ml-auto text-sm font-medium">{longDate(subDate)}</span>
+              </CardContent>
+            </Card>
+            {dayClasses.length === 0 && <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No department classes on {longDate(subDate)}.</p>}
+            {dayClasses.map((cls) => (
+              <Card key={cls.scheduleId} className={cn(cls.facultyOnLeave && !cls.substitution && 'border-destructive/50')}>
+                <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-20 rounded-lg bg-primary/10 px-2 py-2 text-center">
+                      <p className="text-sm font-bold text-primary">{cls.startTime}</p>
+                      <p className="text-[10px] text-muted-foreground">{cls.endTime}</p>
+                    </div>
+                    <div>
+                      <p className="font-medium">{cls.courseCode} – {cls.courseName} <span className="text-xs text-muted-foreground">(Sem {cls.semester} · {cls.type} · {cls.room})</span></p>
+                      <p className="text-sm text-muted-foreground">
+                        {cls.facultyName ?? 'No teacher assigned'}
+                        {cls.facultyOnLeave && <Badge variant="destructive" className="ml-2 text-[10px]">On {cls.facultyOnLeave.type} leave{cls.facultyOnLeave.status === 'pending' ? ' (pending approval)' : ''}</Badge>}
+                      </p>
+                      {cls.substitution && (
+                        <p className="mt-1 flex items-center gap-1 text-sm text-green-700 dark:text-green-400">
+                          <UserCheck className="h-4 w-4" />Covered by {cls.substitution.substituteName}{cls.substitution.reason ? ` · ${cls.substitution.reason}` : ''}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    {cls.substitution && <Button size="sm" variant="outline" onClick={() => cancelCover(cls)}>Cancel cover</Button>}
+                    <Button size="sm" variant={cls.facultyOnLeave && !cls.substitution ? 'default' : 'outline'} onClick={() => openCover(cls)}>
+                      <Shuffle className="mr-1 h-4 w-4" />{cls.substitution ? 'Change' : 'Arrange cover'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </TabsContent>
+
+          {/* ── Workload ── */}
           <TabsContent value="workload" className="mt-4">
-            <Card className="border-border">
+            <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Faculty Workload Summary</CardTitle>
+                <CardTitle className="text-lg">Faculty workload</CardTitle>
+                <CardDescription>Weekly contact hours from the timetable. Above 18 hours is flagged.</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-0">
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Faculty</TableHead>
-                      <TableHead>Designation</TableHead>
-                      <TableHead className="text-center">Courses</TableHead>
-                      <TableHead className="text-center">Hours/Week</TableHead>
-                      <TableHead className="text-center">Total Students</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
+                  <TableHeader><TableRow><TableHead>Faculty</TableHead><TableHead>Designation</TableHead><TableHead>Subjects</TableHead><TableHead className="text-center">Hours / week</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {departmentFaculty.map(f => {
-                      // `c.facultyId` is a FacultyProfile id; `f.id` is a User
-                      // id, so this comparison never matched and every row's
-                      // course/student counts read zero.
-                      const courses = assignments.filter(c => c.facultyId === f.facultyProfileId);
-                      const students = courses.reduce((s, c) => s + c.students, 0);
-                      const overloaded = f.weeklyHours > 18;
-                      return (
-                        <TableRow key={f.id}>
-                          <TableCell className="font-medium">{f.name}</TableCell>
-                          <TableCell><Badge variant="outline" className="text-xs">{f.designation}</Badge></TableCell>
-                          <TableCell className="text-center">{f.coursesAssigned}</TableCell>
-                          <TableCell className="text-center">
-                            <span className={overloaded ? 'text-destructive font-bold' : ''}>{f.weeklyHours}h</span>
-                          </TableCell>
-                          <TableCell className="text-center">{students}</TableCell>
-                          <TableCell>
-                            {f.isOnLeave ? (
-                              <Badge variant="destructive" className="text-[10px]">On Leave</Badge>
-                            ) : overloaded ? (
-                              <Badge variant="secondary" className="text-[10px]">Overloaded</Badge>
-                            ) : (
-                              <Badge variant="default" className="text-[10px]">Normal</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {f.isOnLeave && (
-                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setShowSubDialog(true); }}>
-                                <Shuffle className="mr-1 h-3 w-3" />Substitute
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {faculty.map((f) => (
+                      <TableRow key={f.id}>
+                        <TableCell className="font-medium">{f.name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{f.designation ?? '—'}</TableCell>
+                        <TableCell className="text-sm">{f.courses.length ? f.courses.join(', ') : <span className="text-muted-foreground">None</span>}</TableCell>
+                        <TableCell className="text-center">{f.weeklyHours}h</TableCell>
+                        <TableCell>
+                          {f.weeklyHours > 18 ? <Badge variant="destructive" className="text-[10px]">Overloaded</Badge>
+                            : f.courses.length === 0 ? <Badge variant="secondary" className="text-[10px]">No subjects</Badge>
+                            : <Badge className="text-[10px]">Normal</Badge>}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -388,247 +434,76 @@ export default function HODWorkload() {
         </Tabs>
       </div>
 
-      {/* Class Creation Dialog */}
-      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+      {/* Add / move a class */}
+      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Class Creation</DialogTitle></DialogHeader>
-          <div className="space-y-4">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5" />{editing?.scheduleId ? 'Move or remove a class' : 'Add a class'}</DialogTitle>
+            <DialogDescription>The change goes to the Dean for approval. The course's teacher and students are notified when it is applied.</DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <div className="space-y-3">
               <div>
-                <Label>Select Existing Course</Label>
-                <Select value={newCourse.courseId} onValueChange={v => setNewCourse(p => ({ ...p, courseId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select course..." /></SelectTrigger>
-                  <SelectContent>
-                    {(courseOptions.courses || []).map((course: any) => (
-                      <SelectItem key={course.id} value={course.id}>{course.code} - {course.name} (Sem {course.semester})</SelectItem>
-                    ))}
-                  </SelectContent>
+                <Label>Course</Label>
+                <Select value={editing.courseId} onValueChange={(v) => setEditing({ ...editing, courseId: v })}>
+                  <SelectTrigger><SelectValue placeholder="Choose a course" /></SelectTrigger>
+                  <SelectContent>{(semCourses.length ? semCourses : courses).map((c) => <SelectItem key={c.id} value={c.id}>{c.code} – {c.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>Semester</Label>
-                <Input value={String((courseOptions.courses || []).find((course: any) => course.id === newCourse.courseId)?.semester || '')} disabled />
-              </div>
-              <div>
-                <Label>Credits</Label>
-                <Input value={String((courseOptions.courses || []).find((course: any) => course.id === newCourse.courseId)?.credits || '')} disabled />
-              </div>
-              <div>
-                <Label>Section</Label>
-                <Input
-                  value={newCourse.section}
-                  placeholder="e.g. A"
-                  onChange={e => setNewCourse(p => ({ ...p, section: e.target.value.toUpperCase() }))}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-3">
-              <div>
-                <Label>Type</Label>
-                <Select value={newCourse.type} onValueChange={v => setNewCourse(p => ({ ...p, type: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="theory">Theory</SelectItem>
-                    <SelectItem value="lab">Lab</SelectItem>
-                    <SelectItem value="tutorial">Tutorial</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Day</Label>
-                <Select value={newCourse.day} onValueChange={v => setNewCourse(p => ({ ...p, day: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {days.map((day) => <SelectItem key={day} value={day}>{day}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Room / Lab</Label>
-                <Select value={newCourse.roomId} onValueChange={v => setNewCourse(p => ({ ...p, roomId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select room..." /></SelectTrigger>
-                  <SelectContent>
-                    {(courseOptions.rooms || []).map((room: any) => (
-                      <SelectItem key={room.id} value={room.id}>{room.name} ({room.type})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Start Time</Label>
-                <Input type="time" value={newCourse.startTime} onChange={e => setNewCourse(p => ({ ...p, startTime: e.target.value }))} />
-              </div>
-              <div>
-                <Label>End Time</Label>
-                <Input type="time" value={newCourse.endTime} onChange={e => setNewCourse(p => ({ ...p, endTime: e.target.value }))} />
-              </div>
-            </div>
-            <div>
-              <Label>Student Emails (comma or newline separated)</Label>
-              <Textarea
-                placeholder="student1@college.edu, student2@college.edu"
-                value={newCourse.studentEmails}
-                onChange={e => setNewCourse(p => ({ ...p, studentEmails: e.target.value }))}
-                rows={3}
-              />
-            </div>
-            <div>
-              <Label>Assign Faculty</Label>
-              <Select value={newCourse.faculty} onValueChange={v => setNewCourse(p => ({ ...p, faculty: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select faculty..." /></SelectTrigger>
-                <SelectContent>
-                  {departmentFaculty.filter(f => !f.isOnLeave).map(f => (
-                    <SelectItem key={f.id} value={f.facultyProfileId}>{f.name} ({f.weeklyHours}h/wk)</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowAssignDialog(false)}>Cancel</Button>
-              <Button onClick={handleAssignCourse}>
-                <CheckCircle className="mr-1 h-4 w-4" />Create Class
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Class Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Update Class & Course</DialogTitle></DialogHeader>
-          {editingCourse && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Course Code</Label>
-                  <Input value={editingCourse.courseCode} onChange={e => setEditingCourse((p: any) => ({ ...p, courseCode: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>Course Name</Label>
-                  <Input value={editingCourse.courseName} onChange={e => setEditingCourse((p: any) => ({ ...p, courseName: e.target.value }))} />
-                </div>
-              </div>
-              <div className="grid grid-cols-4 gap-3">
-                <div>
-                  <Label>Credits</Label>
-                  <Input type="number" value={editingCourse.credits} onChange={e => setEditingCourse((p: any) => ({ ...p, credits: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>Semester</Label>
-                  <Input type="number" value={editingCourse.semester} onChange={e => setEditingCourse((p: any) => ({ ...p, semester: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>Section</Label>
-                  <Input value={editingCourse.section} onChange={e => setEditingCourse((p: any) => ({ ...p, section: e.target.value.toUpperCase() }))} />
-                </div>
-                <div>
-                  <Label>Type</Label>
-                  <Select value={editingCourse.type} onValueChange={v => setEditingCourse((p: any) => ({ ...p, type: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="theory">Theory</SelectItem>
-                      <SelectItem value="lab">Lab</SelectItem>
-                      <SelectItem value="tutorial">Tutorial</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <Label>Day</Label>
-                  <Select value={editingCourse.day} onValueChange={v => setEditingCourse((p: any) => ({ ...p, day: v }))}>
+                  <Select value={editing.day} onValueChange={(v) => setEditing({ ...editing, day: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {days.map((day) => <SelectItem key={day} value={day}>{day}</SelectItem>)}
-                    </SelectContent>
+                    <SelectContent>{DAYS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label>Room / Lab</Label>
-                  <Select value={editingCourse.roomId} onValueChange={v => setEditingCourse((p: any) => ({ ...p, roomId: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Select room..." /></SelectTrigger>
-                    <SelectContent>
-                      {(courseOptions.rooms || []).map((room: any) => (
-                        <SelectItem key={room.id} value={room.id}>{room.name} ({room.type})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <div><Label>Starts</Label><Input type="time" value={editing.startTime} onChange={(e) => setEditing({ ...editing, startTime: e.target.value })} /></div>
+                <div><Label>Ends</Label><Input type="time" value={editing.endTime} onChange={(e) => setEditing({ ...editing, endTime: e.target.value })} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
+                <div><Label>Room</Label><Input value={editing.room} placeholder="e.g. CSE-301" onChange={(e) => setEditing({ ...editing, room: e.target.value })} /></div>
                 <div>
-                  <Label>Start Time</Label>
-                  <Input type="time" value={editingCourse.startTime} onChange={e => setEditingCourse((p: any) => ({ ...p, startTime: e.target.value }))} />
+                  <Label>Type</Label>
+                  <Select value={editing.type} onValueChange={(v) => setEditing({ ...editing, type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{['Lecture', 'Lab', 'Tutorial'].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                  </Select>
                 </div>
-                <div>
-                  <Label>End Time</Label>
-                  <Input type="time" value={editingCourse.endTime} onChange={e => setEditingCourse((p: any) => ({ ...p, endTime: e.target.value }))} />
-                </div>
-              </div>
-              <div>
-                <Label>Assign Faculty</Label>
-                <Select value={editingCourse.faculty} onValueChange={v => setEditingCourse((p: any) => ({ ...p, faculty: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select faculty..." /></SelectTrigger>
-                  <SelectContent>
-                    {departmentFaculty.map((faculty) => (
-                      <SelectItem key={faculty.id} value={faculty.facultyProfileId}>{faculty.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Student Emails (replace current class list)</Label>
-                <Textarea
-                  placeholder="student1@college.edu, student2@college.edu"
-                  value={editingCourse.studentEmails}
-                  onChange={e => setEditingCourse((p: any) => ({ ...p, studentEmails: e.target.value }))}
-                  rows={3}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
-                <Button onClick={handleUpdateCourse}>Save Changes</Button>
               </div>
             </div>
           )}
+          <DialogFooter className="gap-2 sm:justify-between">
+            {editing?.scheduleId ? <Button variant="outline" className="text-destructive" onClick={removeSlot} disabled={saving === 'slot'}><Trash2 className="mr-1 h-4 w-4" />Request removal</Button> : <span />}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+              <Button onClick={saveSlot} disabled={saving === 'slot'}>{saving === 'slot' ? 'Checking…' : 'Send to Dean'}</Button>
+            </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Substitution Dialog */}
-      <Dialog open={showSubDialog} onOpenChange={setShowSubDialog}>
+      {/* Arrange cover */}
+      <Dialog open={covering !== null} onOpenChange={(open) => { if (!open) setCovering(null); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Arrange Faculty Substitution</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-2">Faculty On Leave Today:</p>
-              {onLeaveFaculty.map(f => (
-                <div key={f.id} className="flex items-center justify-between p-2 border border-border rounded-lg mb-2">
-                  <div>
-                    <p className="text-sm font-medium">{f.name}</p>
-                    <p className="text-xs text-muted-foreground">{f.leaveType} • {f.coursesAssigned} courses</p>
-                  </div>
-                  <Button size="sm" onClick={() => handleSubstitution(f.name)}>
-                    <Shuffle className="mr-1 h-3 w-3" />Assign Sub
-                  </Button>
+          <DialogHeader>
+            <DialogTitle>Cover {covering?.courseCode} · {covering && longDate(subDate)}</DialogTitle>
+            <DialogDescription>{covering?.startTime}–{covering?.endTime} in {covering?.room}. Free faculty first, least-loaded first.</DialogDescription>
+          </DialogHeader>
+          <div><Label>Reason (shown to the substitute)</Label><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Dr. X on medical leave" /></div>
+          <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+            {candidates === null && <p className="text-sm text-muted-foreground">Finding free faculty…</p>}
+            {candidates?.length === 0 && <p className="text-sm text-muted-foreground">No other faculty in the department.</p>}
+            {candidates?.map((c) => (
+              <div key={c.facultyId} className={cn('flex items-center justify-between rounded-lg border p-3', !c.free && 'opacity-60')}>
+                <div>
+                  <p className="font-medium">{c.name}</p>
+                  <p className="text-xs text-muted-foreground">{c.designation ?? 'Faculty'} · {c.weeklyHours}h/week</p>
+                  {!c.free && <p className="flex items-center gap-1 text-xs text-amber-700"><AlertTriangle className="h-3 w-3" />{c.reason}</p>}
                 </div>
-              ))}
-            </div>
-            {freeFaculty.length > 0 && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-2">Available Faculty ({"<"}16h/wk):</p>
-                {freeFaculty.map(f => (
-                  <div key={f.id} className="flex items-center justify-between p-2 text-sm">
-                    <span>{f.name}</span>
-                    <Badge variant="outline" className="text-[10px]">{f.weeklyHours}h/wk</Badge>
-                  </div>
-                ))}
+                <Button size="sm" disabled={!c.free || saving === 'cover'} onClick={() => arrange(c)}>{c.free ? 'Assign' : 'Busy'}</Button>
               </div>
-            )}
+            ))}
           </div>
         </DialogContent>
       </Dialog>

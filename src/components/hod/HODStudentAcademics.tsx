@@ -17,8 +17,10 @@ import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { DepartmentStudent } from '@/types/hod';
+import { StudentRecord, downloadReportCard, type StudentRecordData } from './StudentRecord';
 
 export default function HODStudentAcademics() {
+  const [record, setRecord] = useState<StudentRecordData | null>(null);
   const [departmentStudents, setDepartmentStudents] = useState<any>([]);
   const [departmentFaculty, setDepartmentFaculty] = useState<any>([]);
   const [_apiLoading, _setApiLoading] = useState(true);
@@ -279,7 +281,7 @@ export default function HODStudentAcademics() {
 
       {/* Student Detail Dialog */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader><DialogTitle>Student Profile</DialogTitle></DialogHeader>
           {selectedStudent && (
             <div className="space-y-4">
@@ -302,6 +304,7 @@ export default function HODStudentAcademics() {
                 <div><span className="text-muted-foreground">Advisor:</span> {selectedStudent.advisor}</div>
                 <div className="flex items-center gap-1"><Mail className="h-3 w-3 text-muted-foreground" />{selectedStudent.email}</div>
               </div>
+              <StudentRecord studentId={selectedStudent.id} onLoaded={setRecord} />
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" onClick={() => { setShowDetailDialog(false); setShowAdvisorDialog(true); }}>
                   <UserCheck className="mr-1 h-3 w-3" />Change Advisor
@@ -322,13 +325,9 @@ export default function HODStudentAcademics() {
                 }}>
                   <Mail className="mr-1 h-3 w-3" />Email Student
                 </Button>
-                <Button size="sm" variant="outline" onClick={async () => {
-                  try {
-                    await postApi(`/hod/students/${selectedStudent.id}/report-card`, {});
-                    toast({ title: 'Report Card Generated', description: `Report card for ${selectedStudent.name} downloaded` });
-                  } catch (error: any) {
-                    toast({ title: 'Action failed', description: error?.message || 'Unable to generate report card', variant: 'destructive' });
-                  }
+                <Button size="sm" variant="outline" disabled={!record} onClick={() => {
+                  // Said "downloaded" while downloading nothing.
+                  if (record) downloadReportCard(record);
                 }}>
                   <Download className="mr-1 h-3 w-3" />Report Card
                 </Button>

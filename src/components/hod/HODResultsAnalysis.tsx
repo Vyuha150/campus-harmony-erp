@@ -1,3 +1,4 @@
+import { downloadCsv } from '@/lib/download';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +14,7 @@ import { fetchApi, postApi } from '@/lib/apiService';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { CourseResult } from '@/types/hod';
+import { ExamResultSheets } from '@/components/shared/ExamResultSheets';
 
 export default function HODResultsAnalysis() {
   const [courseResults, setCourseResults] = useState<any>([]);
@@ -23,7 +25,6 @@ export default function HODResultsAnalysis() {
   }, []);
 
   const { toast } = useToast();
-  const [verifiedCourses, setVerifiedCourses] = useState<string[]>([]);
   const [showRemedialDialog, setShowRemedialDialog] = useState(false);
   const [showGradeDialog, setShowGradeDialog] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<CourseResult | null>(null);
@@ -48,18 +49,20 @@ export default function HODResultsAnalysis() {
     : null;
   const totalFailed = courseResults.reduce((s, c) => s + c.failed, 0);
 
-  const handleVerify = async (code: string) => {
-    try {
-      await postApi(`/hod/courseresults/${code}/verify`, {});
-      setVerifiedCourses(prev => [...prev, code]);
-      toast({ title: '✅ Results Verified', description: `${code} results verified and locked by HOD` });
-    } catch (error: any) {
-      toast({ title: 'Verification failed', description: error?.message || 'Unable to verify course results', variant: 'destructive' });
-    }
-  };
 
   const handleDownload = () => {
-    toast({ title: '📥 Report Downloaded', description: 'Department results analysis report exported as PDF' });
+    if (courseResults.length === 0) {
+      toast({ title: 'Nothing to export', description: 'No course results have been published yet.' });
+      return;
+    }
+    downloadCsv(
+      `department-results-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Course code', 'Course', 'Semester', 'Faculty', 'Students', 'Passed', 'Failed', 'Pass %', 'Average', 'Highest'],
+      (courseResults as any[]).map((c) => [
+        c.courseCode, c.courseName, c.semester ?? '', c.faculty, c.totalStudents, c.passed, c.failed,
+        c.passPercentage ?? '', c.avgScore ?? '', c.highestScore ?? ''
+      ])
+    );
   };
 
   const handleArrangeRemedial = async () => {
@@ -81,25 +84,25 @@ export default function HODResultsAnalysis() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Department Results Analysis</h1>
-            <p className="text-muted-foreground">Semester-wise performance analysis • Even Semester 2025-26</p>
+            <p className="text-muted-foreground">{(() => { const sems = [...new Set((courseResults as any[]).filter((c) => c.passPercentage != null).map((c) => c.semester).filter(Boolean))].sort(); return sems.length ? `Published results for semester ${sems.join(', ')}` : 'No results published yet'; })()}</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={async () => {
-              try {
-                await postApi('/hod/courseresults/forward-coe', {});
-                toast({ title: 'All Results Verified', description: 'Forwarded to CoE for publication' });
-              } catch (error: any) {
-                toast({ title: 'Action failed', description: error?.message || 'Unable to forward results to CoE', variant: 'destructive' });
-              }
-            }}
-              disabled={verifiedCourses.length < courseResults.length}>
-              <Send className="mr-1 h-4 w-4" />Forward to CoE
-            </Button>
             <Button variant="outline" size="sm" onClick={handleDownload}>
               <Download className="mr-1 h-4 w-4" />Download Report
             </Button>
           </div>
         </div>
+
+        {/* End-semester verification: faculty entered → HOD verifies → CoE moderates → Dean publishes */}
+        <Card className="border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">End-semester result verification</CardTitle>
+            <p className="text-sm text-muted-foreground">Check each paper's marks as entered by the faculty. Verify to send it to the Controller of Examinations, or return it for correction.</p>
+          </CardHeader>
+          <CardContent>
+            <ExamResultSheets mode="hod" />
+          </CardContent>
+        </Card>
 
         {/* Summary */}
         <div className="grid gap-4 sm:grid-cols-4">
@@ -107,7 +110,7 @@ export default function HODResultsAnalysis() {
             { label: 'Overall Pass %', value: overallPass === null ? 'N/A' : `${overallPass}%`, icon: TrendingUp, color: 'text-green-600 bg-green-100' },
             { label: 'Average Score', value: overallAvg === null ? 'N/A' : overallAvg, icon: BarChart3, color: 'text-blue-600 bg-blue-100' },
             { label: 'Total Failures', value: totalFailed, icon: TrendingDown, color: 'text-destructive bg-destructive/10' },
-            { label: 'Verified', value: `${verifiedCourses.length}/${courseResults.length}`, icon: CheckCircle, color: 'text-primary bg-primary/10' },
+            { label: 'Courses', value: courseResults.length, icon: CheckCircle, color: 'text-primary bg-primary/10' },
           ].map(s => (
             <Card key={s.label} className="border-border">
               <CardContent className="flex items-center gap-3 p-4">
@@ -170,13 +173,6 @@ export default function HODResultsAnalysis() {
                     <TableCell className="text-center font-bold text-green-600">{c.highestScore ?? 'N/A'}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        {verifiedCourses.includes(c.courseCode) ? (
-                          <Badge variant="default" className="text-[10px]"><CheckCircle className="mr-1 h-3 w-3" />Verified</Badge>
-                        ) : (
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleVerify(c.courseCode)}>
-                            Verify & Lock
-                          </Button>
-                        )}
                         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setSelectedCourse(c); setShowGradeDialog(true); }}>
                           <Eye className="h-3 w-3" />
                         </Button>
@@ -196,7 +192,6 @@ export default function HODResultsAnalysis() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm">{c.courseCode} – Grade Distribution</CardTitle>
-                  {verifiedCourses.includes(c.courseCode) && <CheckCircle className="h-4 w-4 text-green-600" />}
                 </div>
               </CardHeader>
               <CardContent>

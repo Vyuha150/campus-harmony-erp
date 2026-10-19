@@ -186,7 +186,7 @@ export default function HODCourseManagement() {
 
             <div className="grid gap-4 sm:grid-cols-3">
               <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Courses</p><p className="text-2xl font-bold">{courses.length}</p></CardContent></Card>
-              <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Enrollment</p><p className="text-2xl font-bold">{totalStudents}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Course Enrolments</p><p className="text-2xl font-bold">{totalStudents}</p></CardContent></Card>
               <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Faculty Allocation</p><p className="text-sm font-semibold">Class-wise via Workload & Timetable</p></CardContent></Card>
             </div>
 

@@ -15,6 +15,7 @@ import {
 import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FacultyLeaveDialog } from './FacultyLeaveDialog';
 import { useToast } from '@/hooks/use-toast';
 import { DepartmentFaculty } from '@/types/hod';
 import {
@@ -50,6 +51,10 @@ export default function HODFacultyManagement() {
   const [newRole, setNewRole] = useState('');
   const [promoReason, setPromoReason] = useState('');
   const { toast } = useToast();
+  // After a leave decision, re-read the list so "On Leave" reflects it.
+  const reloadFaculty = () => {
+    fetchApi('/hod/departmentfaculty').then((d) => setDepartmentFaculty(d)).catch(() => undefined);
+  };
 
   useEffect(() => {
     setFaculty(Array.isArray(departmentFaculty) ? departmentFaculty : []);
@@ -94,37 +99,15 @@ export default function HODFacultyManagement() {
     }
   };
 
-  const handleApproveLeave = async (f: DepartmentFaculty) => {
-    try {
-      await putApi(`/hod/faculty/${f.id}/leave`, { action: 'approve' });
-      setFaculty(prev => prev.map(fac =>
-        fac.id === f.id ? { ...fac, isOnLeave: true, leaveType: 'Approved Leave' } : fac
-      ));
-      toast({ title: 'Leave Approved', description: `Leave approved for ${f.name}` });
-      setShowLeaveDialog(false);
-    } catch (error: any) {
-      toast({ title: 'Update failed', description: error?.message || 'Unable to approve leave', variant: 'destructive' });
-    }
-  };
-
-  const handleRejectLeave = async (f: DepartmentFaculty) => {
-    try {
-      await putApi(`/hod/faculty/${f.id}/leave`, { action: 'reject' });
-      setFaculty(prev => prev.map(fac =>
-        fac.id === f.id ? { ...fac, isOnLeave: false, leaveType: undefined } : fac
-      ));
-      toast({ title: 'Leave Rejected', description: `Leave rejected for ${f.name}` });
-      setShowLeaveDialog(false);
-    } catch (error: any) {
-      toast({ title: 'Update failed', description: error?.message || 'Unable to reject leave', variant: 'destructive' });
-    }
-  };
-
   const handlePromote = async () => {
     if (roleTarget) {
       try {
-        await postApi(`/hod/faculty/${roleTarget.id}/promotion-recommendation`, { reason: promoReason });
-        toast({ title: '📤 Promotion Recommended', description: `Recommendation for ${roleTarget.name} forwarded to Dean. Reason: ${promoReason || 'N/A'}` });
+        // The next rung of the Career Advancement Scheme ladder.
+        const ladder = ['Assistant Professor', 'Associate Professor', 'Professor'];
+        const current = String((roleTarget as any).designation ?? '');
+        const next = ladder[Math.min(ladder.length - 1, Math.max(0, ladder.findIndex((d) => current.includes(d)) + 1))]!;
+        await postApi(`/hod/faculty/${roleTarget.id}/promotion-recommendation`, { newDesignation: next, ...(promoReason.trim() ? { reason: promoReason.trim() } : {}) });
+        toast({ title: 'Promotion recommended', description: `${roleTarget.name}: ${current || 'Faculty'} → ${next}. Now with the Dean, then Registrar and VC.` });
         setShowPromoDialog(false);
         setPromoReason('');
       } catch (error: any) {
@@ -235,26 +218,8 @@ export default function HODFacultyManagement() {
             </div>
           </DialogContent>
         </Dialog>
-
-        {/* Leave Dialog */}
-        <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Manage Leave – {roleTarget?.name}</DialogTitle></DialogHeader>
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Current Status: {roleTarget?.isOnLeave ? `On Leave (${roleTarget.leaveType})` : 'Active'}
-              </p>
-              <div className="flex gap-2">
-                <Button className="flex-1" onClick={() => roleTarget && handleApproveLeave(roleTarget)}>
-                  <UserCheck className="mr-1 h-4 w-4" />Approve Leave
-                </Button>
-                <Button variant="destructive" className="flex-1" onClick={() => roleTarget && handleRejectLeave(roleTarget)}>
-                  <UserX className="mr-1 h-4 w-4" />Reject / Cancel Leave
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+      {/* Leave — the faculty member's actual applications, decided through the leave approval */}
+      <FacultyLeaveDialog faculty={roleTarget} open={showLeaveDialog} onOpenChange={setShowLeaveDialog} onDecided={reloadFaculty} />
 
         {/* Promotion Dialog */}
         <Dialog open={showPromoDialog} onOpenChange={setShowPromoDialog}>
@@ -393,22 +358,8 @@ export default function HODFacultyManagement() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Leave Dialog */}
-      <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Manage Leave – {roleTarget?.name}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Status: {roleTarget?.isOnLeave ? `On Leave (${roleTarget.leaveType})` : 'Active'}
-            </p>
-            <div className="flex gap-2">
-              <Button className="flex-1" onClick={() => roleTarget && handleApproveLeave(roleTarget)}>Approve Leave</Button>
-              <Button variant="destructive" className="flex-1" onClick={() => roleTarget && handleRejectLeave(roleTarget)}>Reject Leave</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Leave — the faculty member's actual applications, decided through the leave approval */}
+      <FacultyLeaveDialog faculty={roleTarget} open={showLeaveDialog} onOpenChange={setShowLeaveDialog} onDecided={reloadFaculty} />
 
       {/* Promotion Dialog */}
       <Dialog open={showPromoDialog} onOpenChange={setShowPromoDialog}>

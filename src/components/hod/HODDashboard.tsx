@@ -1,3 +1,4 @@
+import { InboxCard } from '@/components/workflow/InboxCard';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,12 +21,15 @@ export default function HODDashboard() {
   const [departmentStudents, setDepartmentStudents] = useState<any>([]);
   const [hodApprovals, setHodApprovals] = useState<any>([]);
   const [departmentCalendar, setDepartmentCalendar] = useState<any>([]);
+  // The heading read "Department of Computer Science & Engineering" for every
+  // head of department. The name now comes from the HOD's own department.
+  const [departmentName, setDepartmentName] = useState('');
   const [_apiLoading, _setApiLoading] = useState(true);
   useEffect(() => {
     Promise.allSettled([
       fetchApi('/hod/departmentfaculty').then(d => setDepartmentFaculty(d)),
+      fetchApi('/hod/dashboard').then((d: any) => setDepartmentName(d?.departmentSummary?.name ?? '')),
       fetchApi('/hod/departmentstudents').then(d => setDepartmentStudents(d)),
-      fetchApi('/hod/hodapprovals').then(d => setHodApprovals(d)),
       fetchApi('/hod/departmentcalendar').then(d => setDepartmentCalendar(d)),
     ]).finally(() => _setApiLoading(false));
   }, []);
@@ -51,7 +55,8 @@ export default function HODDashboard() {
   // comparison) — without the explicit check, every unmarked student would be
   // counted as at-risk on attendance grounds they have no data for.
   const atRiskStudents = departmentStudents.filter(s => s.cgpa < 6 || (s.attendance !== null && s.attendance < 65)).length;
-  const pendingApprovals = approvals.filter(a => a.status === 'pending').length;
+  const [pendingCount, setPendingCount] = useState(0);
+  const pendingApprovals = pendingCount;
 
   const studentsByYear = [1, 2, 3, 4].map(y => ({
     year: y,
@@ -109,7 +114,7 @@ export default function HODDashboard() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">HOD Dashboard</h1>
           <p className="text-muted-foreground">
-            Department of Computer Science & Engineering • Academic Year 2025-26
+            {departmentName ? `Department of ${departmentName}` : 'Department'}
           </p>
         </div>
 
@@ -118,7 +123,7 @@ export default function HODDashboard() {
           {[
             { label: 'Faculty (Permanent)', value: permanentFaculty, sub: `+${adjunctFaculty} adjunct/visiting`, icon: Users, color: 'text-blue-600 bg-blue-100', path: '/hod/faculty' },
             { label: 'Total Students', value: totalStudents, sub: studentsByYear.map(s => `Y${s.year}: ${s.count}`).join(' | '), icon: GraduationCap, color: 'text-green-600 bg-green-100', path: '/hod/students' },
-            { label: 'Pending Approvals', value: pendingApprovals, sub: 'Requires your action', icon: Bell, color: 'text-amber-600 bg-amber-100', path: '' },
+            { label: 'Pending Approvals', value: pendingApprovals, sub: 'Requires your action', icon: Bell, color: 'text-amber-600 bg-amber-100', path: '/workflows' },
             { label: 'At-Risk Students', value: atRiskStudents, sub: 'Low CGPA or attendance', icon: AlertTriangle, color: 'text-destructive bg-destructive/10', path: '/hod/students' },
           ].map((stat) => (
             <Card key={stat.label} className="border-border cursor-pointer hover:shadow-md transition-shadow" onClick={() => stat.path && navigate(stat.path)}>
@@ -139,77 +144,7 @@ export default function HODDashboard() {
         <div className="grid gap-6 lg:grid-cols-5">
           {/* Alerts/Approvals – left 3 cols */}
           <div className="lg:col-span-3 space-y-4">
-            <Card className="border-border">
-              <CardHeader className="flex flex-row items-center justify-between pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Bell className="h-5 w-5 text-amber-500" />
-                  Pending Approvals ({pendingApprovals})
-                </CardTitle>
-                {approvals.filter(a => a.status !== 'pending').length > 0 && (
-                  <Badge variant="outline" className="text-[10px]">
-                    {approvals.filter(a => a.status === 'approved').length} approved, {approvals.filter(a => a.status === 'rejected').length} rejected
-                  </Badge>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {approvals.filter(a => a.status === 'pending').length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <CheckCircle className="h-10 w-10 mx-auto mb-2 text-green-500" />
-                    <p className="font-medium">All caught up!</p>
-                    <p className="text-sm">No pending approvals</p>
-                  </div>
-                ) : (
-                  approvals.filter(a => a.status === 'pending').slice(0, 6).map((item) => {
-                    const Icon = approvalIcons[item.type] || FileText;
-                    return (
-                      <div key={item.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted cursor-pointer"
-                          onClick={() => { setSelectedApproval(item); setShowDetailDialog(true); }}>
-                          <Icon className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { setSelectedApproval(item); setShowDetailDialog(true); }}>
-                          <p className="text-sm font-medium text-foreground">{item.title}</p>
-                          <p className="text-xs text-muted-foreground line-clamp-1">{item.details}</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">By {item.requestedBy} • {item.requestedAt}</p>
-                        </div>
-                        <div className="flex shrink-0 gap-1.5">
-                          <Badge variant={item.priority === 'high' ? 'destructive' : item.priority === 'medium' ? 'secondary' : 'outline'} className="text-[10px] capitalize">
-                            {item.priority}
-                          </Badge>
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-100"
-                            onClick={() => handleApprove(item)}>
-                            <CheckCircle className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                            onClick={() => { setSelectedApproval(item); setShowRejectDialog(true); }}>
-                            <XCircle className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-600 hover:bg-blue-100"
-                            onClick={() => handleForward(item)}>
-                            <Forward className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                {/* Show recently processed */}
-                {approvals.filter(a => a.status !== 'pending').length > 0 && (
-                  <div className="pt-2 border-t border-border space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Recently Processed</p>
-                    {approvals.filter(a => a.status !== 'pending').map(item => (
-                      <div key={item.id} className="flex items-center gap-2 text-sm">
-                        {item.status === 'approved' && <CheckCircle className="h-3.5 w-3.5 text-green-600" />}
-                        {item.status === 'rejected' && <XCircle className="h-3.5 w-3.5 text-destructive" />}
-                        {item.status === 'forwarded' && <Forward className="h-3.5 w-3.5 text-blue-600" />}
-                        <span className="text-muted-foreground line-through">{item.title}</span>
-                        <Badge variant={item.status === 'approved' ? 'default' : item.status === 'forwarded' ? 'secondary' : 'destructive'} className="text-[10px] capitalize ml-auto">{item.status}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <InboxCard description="Faculty leave, fee waivers, research, promotions and other requests at the HOD step" limit={6} onCount={setPendingCount} />
 
             {/* Faculty On Leave Alert */}
             {onLeaveFaculty > 0 && (
@@ -229,33 +164,9 @@ export default function HODDashboard() {
               </Card>
             )}
 
-            {/* Announcements from higher-ups */}
-            <Card className="border-border">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Megaphone className="h-5 w-5 text-primary" />
-                  Announcements
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {[
-                  { from: 'Dean – Faculty of Engineering', msg: 'Submit departmental NIRF data by 31 March 2026', date: '2026-03-05', priority: 'high' as const },
-                  { from: 'Registrar Office', msg: 'End-semester exam timetable finalized. Please ensure question papers are submitted by 15 March.', date: '2026-03-04', priority: 'medium' as const },
-                  { from: 'IQAC', msg: 'NAAC Peer Team visit scheduled for May 2026. Prepare departmental SSR sections.', date: '2026-03-01', priority: 'high' as const },
-                ].map((ann, i) => (
-                  <div key={i} className="rounded-lg border border-border p-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-primary">{ann.from}</p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-muted-foreground">{ann.date}</span>
-                        {ann.priority === 'high' && <Badge variant="destructive" className="text-[10px]">Important</Badge>}
-                      </div>
-                    </div>
-                    <p className="mt-1 text-sm text-foreground">{ann.msg}</p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            {/* An "Announcements" card stood here with three fixed notices dated March
+                2026 — the same text for every department, on every day. Notices now
+                reach a head of department through Communication. */}
           </div>
 
           {/* Department Calendar – right 2 cols */}
@@ -279,7 +190,7 @@ export default function HODDashboard() {
                   return (
                     <div key={event.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
                       <div className="text-center">
-                        <p className="text-xs font-bold text-primary">{new Date(event.date).toLocaleDateString('en-US', { month: 'short' })}</p>
+                        <p className="text-xs font-bold text-primary">{new Date(event.date).toLocaleDateString('en-IN', { month: 'short' })}</p>
                         <p className="text-lg font-bold text-foreground">{new Date(event.date).getDate()}</p>
                       </div>
                       <div className="flex-1 min-w-0">
