@@ -174,14 +174,12 @@ export default function RegistrarExamOversight() {
                     )}
                   </div>
                   <div className="flex flex-col gap-1">
-                    {status !== 'published' && (
-                      <Button size="sm" className="h-7 text-xs gap-1" onClick={() => {
-                        if (status === 'moderation') { setSelectedExam(exam); }
-                        else handleAdvanceStatus(exam.id);
-                      }} disabled={isAdvancing || isPublishing}>
-                        {isAdvancing || isPublishing ? 'Updating...' : status === 'moderation' ? <><Send className="h-3 w-3" /> Publish</> : <><CheckCircle className="h-3 w-3" /> Advance</>}
-                      </Button>
-                    )}
+                    {/* Oversight only. The Controller of Examinations moves an exam
+                        through its stages and submits results; the Dean publishes
+                        them (RESULT_PUBLICATION). A second "Advance / Publish" here
+                        changed the same record outside that process. */}
+                    <Badge variant="outline" className="text-[10px] capitalize">{String(status).replace(/_/g, ' ')}</Badge>
+                    {status === 'moderation' && <span className="text-[10px] text-muted-foreground">With CoE for result submission</span>}
                     {/* A "Hall Tickets" button sat here claiming "Hall tickets
                         generated for N students". Nothing was generated: the
                         only hall-ticket route in the API is the student-facing

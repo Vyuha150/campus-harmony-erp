@@ -12,7 +12,7 @@ import {
   Award, CheckCircle, Clock, AlertTriangle, FileText,
   Upload, Send, Eye, Calendar, Building2
 } from 'lucide-react';
-import { fetchApi, putApi } from '@/lib/apiService';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { AccreditationChecklist } from '@/types/registrar';
 
 const statusColors: Record<string, string> = {
@@ -62,14 +62,38 @@ export default function RegistrarAccreditation() {
     }
   };
 
-  const handleSendReminder = (office: string) => {
-    toast({ title: 'Reminder Sent', description: `Reminder sent to ${office} for pending data submission.` });
+  const handleSendReminder = async (item: any) => {
+    try {
+      const result = await postApi<{ recipients: number }>(`/registrar/accreditation/${item.id}/remind`, {});
+      toast(result.recipients > 0
+        ? { title: 'Reminder sent', description: `${item.responsibleOffice} (${result.recipients} user${result.recipients === 1 ? '' : 's'}) will see it in their notifications.` }
+        : { title: 'No one to remind', description: `No user account holds the "${item.responsibleOffice}" office.`, variant: 'destructive' });
+    } catch (error: any) {
+      toast({ title: 'Reminder failed', description: error?.message || 'Please try again.', variant: 'destructive' });
+    }
   };
 
   const naacItems = checklist.filter(c => c.framework === 'NAAC');
   const nirfItems = checklist.filter(c => c.framework === 'NIRF');
   const naacComplete = naacItems.filter(c => ['submitted', 'verified'].includes(c.status)).length;
   const nirfComplete = nirfItems.filter(c => ['submitted', 'verified'].includes(c.status)).length;
+
+  // "Peer team visit in 28 days", "Submission deadline: Mar 15" and "AQAR
+  // deadline: Jun 30" were fixed strings — and the UGC bar was a constant 50%.
+  // Both now come from the checklist items the page already holds.
+  const nextDeadline = (framework: string) => {
+    const open = checklist
+      .filter((c: any) => c.framework === framework && !['submitted', 'verified'].includes(c.status) && c.deadline)
+      .map((c: any) => new Date(c.deadline))
+      .filter((d: Date) => !Number.isNaN(d.getTime()))
+      .sort((a: Date, b: Date) => a.getTime() - b.getTime());
+    if (checklist.filter((c: any) => c.framework === framework).length === 0) return 'No items recorded';
+    return open.length > 0 ? `Next deadline: ${open[0].toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'All items submitted';
+  };
+  const frameworkProgress = (framework: string) => {
+    const items = checklist.filter((c: any) => c.framework === framework);
+    return items.length > 0 ? (items.filter((c: any) => ['submitted', 'verified'].includes(c.status)).length / items.length) * 100 : 0;
+  };
 
   return (
     <DashboardLayout>
@@ -87,8 +111,8 @@ export default function RegistrarAccreditation() {
                 <Badge className="bg-blue-50 text-blue-700">NAAC</Badge>
                 <span className="text-sm font-bold">{naacComplete}/{naacItems.length}</span>
               </div>
-              <Progress value={(naacComplete / naacItems.length) * 100} className="h-2" />
-              <p className="text-xs text-muted-foreground mt-1">Peer team visit in 28 days</p>
+              <Progress value={(naacComplete / Math.max(naacItems.length, 1)) * 100} className="h-2" />
+              <p className="text-xs text-muted-foreground mt-1">{nextDeadline('NAAC')}</p>
             </CardContent>
           </Card>
           <Card>
@@ -98,7 +122,7 @@ export default function RegistrarAccreditation() {
                 <span className="text-sm font-bold">{nirfComplete}/{nirfItems.length}</span>
               </div>
               <Progress value={(nirfComplete / Math.max(nirfItems.length, 1)) * 100} className="h-2" />
-              <p className="text-xs text-muted-foreground mt-1">Submission deadline: Mar 15</p>
+              <p className="text-xs text-muted-foreground mt-1">{nextDeadline('NIRF')}</p>
             </CardContent>
           </Card>
           <Card>
@@ -107,8 +131,8 @@ export default function RegistrarAccreditation() {
                 <Badge className="bg-green-50 text-green-700">UGC</Badge>
                 <span className="text-sm font-bold">{checklist.filter(c => c.framework === 'UGC' && ['submitted', 'verified'].includes(c.status)).length}/{checklist.filter(c => c.framework === 'UGC').length}</span>
               </div>
-              <Progress value={50} className="h-2" />
-              <p className="text-xs text-muted-foreground mt-1">AQAR deadline: Jun 30</p>
+              <Progress value={frameworkProgress('UGC')} className="h-2" />
+              <p className="text-xs text-muted-foreground mt-1">{nextDeadline('UGC')}</p>
             </CardContent>
           </Card>
         </div>
@@ -159,7 +183,7 @@ export default function RegistrarAccreditation() {
                           </Button>
                         )}
                         {['not_started', 'in_progress'].includes(item.status) && (
-                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => handleSendReminder(item.responsibleOffice)}>
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => handleSendReminder(item)}>
                             <Send className="h-3 w-3" /> Remind
                           </Button>
                         )}

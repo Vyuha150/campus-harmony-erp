@@ -37,9 +37,16 @@ export default function RegistrarHR() {
     activeRecruitments: 0,
   });
   const [apiLoading, setApiLoading] = useState(true);
+  // Real promotion cases (HOD → Dean → Registrar → VC) and retirement records.
+  // These two panels were hard-coded names — people and departments that do
+  // not exist here — and "Forward to VC" filed those names into the VC's queue.
+  const [promotions, setPromotions] = useState<any[]>([]);
+  const [retirements, setRetirements] = useState<any[]>([]);
   useEffect(() => {
     fetchApi('/registrar/hr/vacancies').then(d => setVacancies(d)).catch((error) => { console.error('API request failed', error); });
     fetchApi('/registrar/hr/summary').then(d => setEstablishmentSummary(d)).catch((error) => { console.error('API request failed', error); });
+    fetchApi<any[]>('/registrar/promotions').then((d) => setPromotions(Array.isArray(d) ? d : [])).catch(() => setPromotions([]));
+    fetchApi<any[]>('/registrar/retirements').then((d) => setRetirements(Array.isArray(d) ? d : [])).catch(() => setRetirements([]));
     setApiLoading(false);
   }, []);
 
@@ -51,7 +58,6 @@ export default function RegistrarHR() {
   const [newType, setNewType] = useState('teaching');
   const [isCreating, setIsCreating] = useState(false);
   const [isAdvancing, setIsAdvancing] = useState(false);
-  const [forwardingPromotionName, setForwardingPromotionName] = useState<string | null>(null);
 
   useEffect(() => {
     setVacancyList(vacancies || []);
@@ -109,26 +115,10 @@ export default function RegistrarHR() {
     }
   };
 
-  const handleForwardPromotion = async (promotion: { name: string; from: string; to: string; dept: string; years: number }) => {
-    try {
-      setForwardingPromotionName(promotion.name);
-      await postApi('/registrar/hr/promotions/forward', {
-        name: promotion.name,
-        fromDesignation: promotion.from,
-        toDesignation: promotion.to,
-        department: promotion.dept,
-        years: promotion.years,
-      });
-      toast({ title: 'Forwarded', description: `Promotion case for ${promotion.name} forwarded to VC.` });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Could not forward promotion case.', variant: 'destructive' });
-    } finally {
-      setForwardingPromotionName(null);
-    }
-  };
-
-  const teachingFillRate = Math.round((establishmentSummary.teaching.filled / establishmentSummary.teaching.sanctioned) * 100);
-  const nonTeachingFillRate = Math.round((establishmentSummary.nonTeaching.filled / establishmentSummary.nonTeaching.sanctioned) * 100);
+  const teachingFillRate = establishmentSummary.teaching.sanctioned > 0
+    ? Math.round((establishmentSummary.teaching.filled / establishmentSummary.teaching.sanctioned) * 100) : 0;
+  const nonTeachingFillRate = establishmentSummary.nonTeaching.sanctioned > 0
+    ? Math.round((establishmentSummary.nonTeaching.filled / establishmentSummary.nonTeaching.sanctioned) * 100) : 0;
 
   return (
     <DashboardLayout>
@@ -158,7 +148,7 @@ export default function RegistrarHR() {
               <p className="text-xs text-muted-foreground mb-1">Non-Teaching Staff</p>
               <p className="text-xl font-bold">{establishmentSummary.nonTeaching.filled}/{establishmentSummary.nonTeaching.sanctioned}</p>
               <Progress value={nonTeachingFillRate} className="h-2 mt-2" />
-              <p className="text-[10px] text-muted-foreground mt-1">{nonTeachingFillRate}% filled • {establishmentSummary.nonTeaching.sanctioned - establishmentSummary.nonTeaching.filled} vacancies</p>
+              <p className="text-[10px] text-muted-foreground mt-1">{establishmentSummary.nonTeaching.sanctioned > 0 ? `${nonTeachingFillRate}% filled • ${establishmentSummary.nonTeaching.sanctioned - establishmentSummary.nonTeaching.filled} vacancies` : 'No non-teaching posts recorded'}</p>
             </CardContent>
           </Card>
           <Card>
@@ -231,27 +221,19 @@ export default function RegistrarHR() {
               <CardTitle className="text-sm flex items-center gap-2"><TrendingUp className="h-4 w-4 text-primary" /> Pending Promotions</CardTitle>
             </CardHeader>
             <CardContent>
-              {[
-                { name: 'Dr. Sita Raman', from: 'Associate Professor', to: 'Professor', dept: 'Physics', years: 12 },
-                { name: 'Mr. Rajesh Khanna', from: 'Clerk', to: 'Senior Clerk', dept: 'Admin', years: 15 },
-                { name: 'Dr. Kavita Desai', from: 'Assistant Professor', to: 'Associate Professor', dept: 'Chemistry', years: 8 },
-              ].map((p, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg border p-3 mb-2">
+              {promotions.length === 0 && <p className="text-sm text-muted-foreground">No promotion cases. A HOD recommends one from Faculty Management.</p>}
+              {promotions.map((p) => (
+                <div key={p.id} className="mb-2 flex items-center justify-between rounded-lg border p-3">
                   <div>
                     <p className="text-sm font-medium">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">{p.from} → {p.to} • {p.dept} • {p.years} yrs service</p>
+                    <p className="text-xs text-muted-foreground">{p.currentDesignation} → {p.newDesignation}{p.department ? ` • ${p.department}` : ''} • {new Date(p.appliedAt).toLocaleDateString('en-IN')}</p>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={() => handleForwardPromotion(p)}
-                    disabled={forwardingPromotionName === p.name}
-                  >
-                    {forwardingPromotionName === p.name ? 'Forwarding...' : 'Forward to VC'}
-                  </Button>
+                  <Badge variant={p.status === 'approved' ? 'default' : p.status === 'rejected' ? 'destructive' : 'secondary'} className="text-[10px] capitalize">
+                    {p.status === 'pending' && p.waitingOn ? `With ${String(p.waitingOn).replace(/_/g, ' ')}` : p.status}
+                  </Badge>
                 </div>
               ))}
+              {promotions.some((p) => p.waitingOn === 'registrar') && <p className="text-xs text-amber-700">Cases at your step are in Approvals & Workflows (screening committee).</p>}
             </CardContent>
           </Card>
 
@@ -260,18 +242,14 @@ export default function RegistrarHR() {
               <CardTitle className="text-sm flex items-center gap-2"><Clock className="h-4 w-4 text-destructive" /> Upcoming Retirements</CardTitle>
             </CardHeader>
             <CardContent>
-              {[
-                { name: 'Prof. Mohan Lal', dept: 'Mechanical', date: 'April 30, 2026', position: 'Professor' },
-                { name: 'Mr. Dinesh Chand', dept: 'Library', date: 'May 31, 2026', position: 'Senior Librarian' },
-              ].map((r, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg border p-3 mb-2">
+              {retirements.length === 0 && <p className="text-sm text-muted-foreground">No retirements recorded.</p>}
+              {retirements.map((r) => (
+                <div key={r.id} className="mb-2 flex items-center justify-between rounded-lg border p-3">
                   <div>
                     <p className="text-sm font-medium">{r.name}</p>
-                    <p className="text-xs text-muted-foreground">{r.position} • {r.dept} • Retires: {r.date}</p>
+                    <p className="text-xs text-muted-foreground">{r.currentDesignation}{r.department ? ` • ${r.department}` : ''} • {r.yearsOfService} yrs • Retires {new Date(r.lastDate).toLocaleDateString('en-IN')}</p>
                   </div>
-                  <Badge variant="destructive" className="text-[10px]">
-                    <AlertTriangle className="h-3 w-3 mr-1" /> Retiring Soon
-                  </Badge>
+                  <Badge variant={new Date(r.lastDate).getTime() - Date.now() < 180 * 86_400_000 ? 'destructive' : 'secondary'} className="text-[10px] capitalize">{r.status}</Badge>
                 </div>
               ))}
             </CardContent>

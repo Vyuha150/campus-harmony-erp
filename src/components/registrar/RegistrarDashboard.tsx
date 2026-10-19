@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { ApprovalReview } from '@/components/workflow/ApprovalReview';
 import {
   FileText, Users, GraduationCap, ClipboardList, CheckCircle,
   XCircle, AlertTriangle, Clock, ChevronRight, Forward,
@@ -44,12 +45,18 @@ export default function RegistrarDashboard() {
     activeRecruitments: 0,
   });
   const [apiLoading, setApiLoading] = useState(true);
+  // The Registrar's real approvals (final step of faculty leave, certificates,
+  // promotion screening …). The old "files queue" was the legacy approval table,
+  // where any item — an HOD's, the VC's — could be approved from here.
+  const [inbox, setInbox] = useState<any[]>([]);
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const loadInbox = () => fetchApi<any[]>('/workflow/inbox?pageSize=100').then((d) => setInbox(Array.isArray(d) ? d : [])).catch(() => setInbox([]));
   useEffect(() => {
     Promise.all([
       fetchApi('/registrar/exams').then(d => setExamProgress(d || [])).catch((error) => { console.error('API request failed', error); setExamProgress([]); }),
-      fetchApi('/registrar/workflow-files').then(d => setFilesData(d || [])).catch((error) => { console.error('API request failed', error); setFilesData([]); }),
+      loadInbox(),
       fetchApi('/registrar/hr/vacancies').then(d => setVacancies(d || [])).catch((error) => { console.error('API request failed', error); setVacancies([]); }),
-      fetchApi('/registrar/dashboard').then(d => setActiveStudents(d?.stats?.[0]?.value ? parseInt(d.stats[0].value) : 0)).catch((error) => { console.error('API request failed', error); setActiveStudents(0); }),
+      fetchApi('/registrar/dashboard').then(d => setActiveStudents(parseInt(d?.stats?.find((x: any) => x.label === 'Active Students')?.value ?? '0') || 0)).catch((error) => { console.error('API request failed', error); setActiveStudents(0); }),
       fetchApi('/registrar/verifications').then(d => setVerificationCount(Array.isArray(d) ? d.length : 0)).catch((error) => { console.error('API request failed', error); setVerificationCount(0); }),
       fetchApi('/registrar/hr/summary').then(d => setEstablishmentSummary(d)).catch((error) => { console.error('API request failed', error); }),
     ]).finally(() => setApiLoading(false));
@@ -105,9 +112,9 @@ export default function RegistrarDashboard() {
         {/* Summary Stats */}
         <div className="grid gap-4 sm:grid-cols-5">
           {[
-            { label: 'Pending Files', value: pendingFiles.length, icon: FileText, color: 'text-amber-600', onClick: () => {} },
-            { label: 'Active Students', value: activeStudents.toLocaleString('en-IN'), icon: GraduationCap, color: 'text-blue-600', onClick: () => navigate('/registrar/records') },
-            { label: 'Exam Progress', value: `${examProgress.filter(e => e.status === 'published').length}/${examProgress.length}`, icon: ClipboardList, color: 'text-emerald-600', onClick: () => navigate('/registrar/exams') },
+            { label: 'Awaiting your approval', value: inbox.length, icon: FileText, color: 'text-amber-600', onClick: () => navigate('/workflows') },
+            { label: 'Active Students', value: activeStudents.toLocaleString('en-IN'), icon: GraduationCap, color: 'text-blue-600', onClick: () => navigate('/registrar/student-records') },
+            { label: 'Exams results published', value: `${examProgress.filter(e => e.status === 'published').length}/${examProgress.length}`, icon: ClipboardList, color: 'text-emerald-600', onClick: () => navigate('/registrar/exam-oversight') },
             { label: 'Staff Positions', value: `${establishmentSummary?.totalFilled || 0}/${establishmentSummary?.totalSanctioned || 0}`, icon: Users, color: 'text-purple-600', onClick: () => navigate('/registrar/hr') },
             { label: 'Verifications', value: verificationCount.toString(), icon: CheckCircle, color: 'text-primary', onClick: () => navigate('/registrar/queries') },
           ].map(s => (
@@ -124,54 +131,29 @@ export default function RegistrarDashboard() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Pending Files Queue */}
+          {/* Approvals waiting on the Registrar */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-primary" /> Requests & Files Queue</CardTitle>
-                <Badge variant="destructive">{pendingFiles.length}</Badge>
+                <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-primary" /> Awaiting your approval</CardTitle>
+                <Button variant="outline" size="sm" onClick={() => navigate('/workflows')}>All approvals <ChevronRight className="ml-1 h-4 w-4" /></Button>
               </div>
-              <CardDescription>Administrative items requiring your action</CardDescription>
+              <CardDescription>Requests at the Registrar's step — faculty leave, certificates, promotion screening and more</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3 max-h-[420px] overflow-y-auto">
-                {files.map(file => {
-                  const TypeIcon = typeIcons[file.type] || FileText;
-                  return (
-                    <div key={file.id} className="flex items-start gap-3 rounded-lg border p-3 hover:bg-muted/30 transition-colors">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                        <TypeIcon className="h-4 w-4 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <p className="text-sm font-medium truncate">{file.title}</p>
-                          <Badge variant={file.status === 'approved' ? 'default' : file.status === 'rejected' ? 'destructive' : file.status === 'forwarded' ? 'secondary' : 'outline'} className="text-[10px] shrink-0">{file.status}</Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground line-clamp-1">{file.description}</p>
-                        <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground">
-                          <span>{file.submittedBy}</span>
-                          <span>•</span>
-                          <span className={priorityColors[file.priority]}>{file.priority}</span>
-                          <span>•</span>
-                          <span>{file.submittedAt ? new Date(file.submittedAt).toLocaleDateString('en-IN') : 'N/A'}</span>
-                        </div>
-                      </div>
-                      {file.status === 'pending' && (
-                        <div className="flex flex-col gap-1">
-                          <Button size="sm" className="h-6 text-[10px] gap-0.5" onClick={() => { setSelectedFile(file); setActionType('approve'); }}>
-                            <CheckCircle className="h-3 w-3" /> Approve
-                          </Button>
-                          <Button size="sm" variant="destructive" className="h-6 text-[10px] gap-0.5" onClick={() => { setSelectedFile(file); setActionType('reject'); }}>
-                            <XCircle className="h-3 w-3" /> Reject
-                          </Button>
-                          <Button size="sm" variant="outline" className="h-6 text-[10px] gap-0.5" onClick={() => { setSelectedFile(file); setActionType('forward'); }}>
-                            <Forward className="h-3 w-3" /> Forward
-                          </Button>
-                        </div>
-                      )}
+              <div className="max-h-[420px] space-y-3 overflow-y-auto">
+                {inbox.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Nothing is waiting for you ✓</p>}
+                {inbox.map((item) => (
+                  <div key={item.instanceId} className="flex items-start gap-3 rounded-lg border p-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10"><FileText className="h-4 w-4 text-primary" /></div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{item.workflowName}</p>
+                      <p className="text-xs text-muted-foreground">{item.requestedBy ? `From ${item.requestedBy} · ` : ''}{item.step}</p>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">Waiting since {new Date(item.waitingSince).toLocaleDateString('en-IN')}{item.overdue ? ' · overdue' : ''}</p>
                     </div>
-                  );
-                })}
+                    <Button size="sm" onClick={() => setReviewing(item.instanceId)}>Review</Button>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -203,7 +185,7 @@ export default function RegistrarDashboard() {
                   </div>
                 ))}
               </div>
-              <Button variant="outline" className="w-full mt-3 text-xs" onClick={() => navigate('/registrar/exams')}>
+              <Button variant="outline" className="w-full mt-3 text-xs" onClick={() => navigate('/registrar/exam-oversight')}>
                 View Exam Details <ChevronRight className="h-3 w-3 ml-1" />
               </Button>
             </CardContent>
@@ -271,33 +253,7 @@ export default function RegistrarDashboard() {
         </div>
 
         {/* Action Dialog */}
-        <Dialog open={!!selectedFile && !!actionType} onOpenChange={() => { setSelectedFile(null); setActionType(null); setRemarks(''); }}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {actionType === 'approve' ? 'Approve File' : actionType === 'reject' ? 'Reject File' : 'Forward to Vice Chancellor'}
-              </DialogTitle>
-              <DialogDescription>{selectedFile?.title}</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">{selectedFile?.description}</p>
-              {selectedFile?.documents && (
-                <div className="flex gap-1 flex-wrap">
-                  {selectedFile.documents.map(d => (
-                    <Badge key={d} variant="outline" className="text-[10px] gap-1"><FileText className="h-3 w-3" /> {d}</Badge>
-                  ))}
-                </div>
-              )}
-              <Textarea placeholder={actionType === 'reject' ? 'Reason for rejection (required)...' : 'Remarks (optional)...'} value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setSelectedFile(null); setActionType(null); setRemarks(''); }} disabled={isActing}>Cancel</Button>
-              <Button variant={actionType === 'reject' ? 'destructive' : 'default'} onClick={handleAction} disabled={(actionType === 'reject' && !remarks) || isActing}>
-                {isActing ? 'Updating...' : actionType === 'approve' ? 'Confirm Approval' : actionType === 'reject' ? 'Confirm Rejection' : 'Forward to VC'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <ApprovalReview instanceId={reviewing} onClose={() => setReviewing(null)} onDecided={loadInbox} />
       </div>
     </DashboardLayout>
   );

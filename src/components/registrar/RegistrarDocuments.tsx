@@ -15,7 +15,7 @@ import {
   Search, FileText, Upload, Download, Eye, Lock, Unlock,
   Tag, Folder, Calendar, Plus, Filter
 } from 'lucide-react';
-import { fetchApi, postApi, uploadApi } from '@/lib/apiService';
+import { downloadUpload, fetchApi, postApi, uploadApi } from '@/lib/apiService';
 import { AdminDocument } from '@/types/registrar';
 
 const categoryLabels: Record<string, string> = {
@@ -96,13 +96,16 @@ export default function RegistrarDocuments() {
 
     try {
       setUploading(true);
-      const uploadResult: any = await uploadApi(newFile, 'registrar-documents');
+      // Uploaded private by default, so nobody the document was shared with could open it.
+      const uploadResult: any = await uploadApi(newFile, 'registrar-documents', isConfidential
+        ? { visibility: 'role_restricted', allowedRoles: ['registrar', 'vice_chancellor', 'pro_vc', 'principal'] }
+        : { visibility: 'institution' });
       const created = await postApi('/registrar/documents', {
         title: newTitle.trim(),
         category: newCategory,
         tags: newTags.split(',').map(t => t.trim()).filter(Boolean),
         isConfidential,
-        accessRoles: isConfidential ? ['registrar', 'vice_chancellor'] : ['all'],
+        accessRoles: isConfidential ? ['registrar', 'vice_chancellor', 'pro_vc', 'principal'] : ['all'],
         fileSize: formatBytes(newFile.size),
         filePath: uploadResult?.storagePath,
         fileUrl: uploadResult?.url,
@@ -192,7 +195,7 @@ export default function RegistrarDocuments() {
                     size="sm"
                     variant="ghost"
                     className="h-7 w-7 p-0"
-                    onClick={() => doc.fileUrl ? window.open(doc.fileUrl, '_blank', 'noopener,noreferrer') : toast({ title: 'No file available', variant: 'destructive' })}
+                    onClick={() => doc.fileUrl ? downloadUpload(doc.fileUrl, doc.fileName || doc.title).catch((e: any) => toast({ title: 'Download failed', description: e?.message, variant: 'destructive' })) : toast({ title: 'No file attached', description: 'This record was created without a file.', variant: 'destructive' })}
                   >
                     <Eye className="h-3.5 w-3.5" />
                   </Button>
@@ -200,7 +203,7 @@ export default function RegistrarDocuments() {
                     size="sm"
                     variant="ghost"
                     className="h-7 w-7 p-0"
-                    onClick={() => doc.fileUrl ? window.open(doc.fileUrl, '_blank', 'noopener,noreferrer') : toast({ title: 'No file available', variant: 'destructive' })}
+                    onClick={() => doc.fileUrl ? downloadUpload(doc.fileUrl, doc.fileName || doc.title).catch((e: any) => toast({ title: 'Download failed', description: e?.message, variant: 'destructive' })) : toast({ title: 'No file attached', description: 'This record was created without a file.', variant: 'destructive' })}
                   >
                     <Download className="h-3.5 w-3.5" />
                   </Button>

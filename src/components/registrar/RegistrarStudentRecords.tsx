@@ -1,3 +1,4 @@
+import { useTabParam } from '@/hooks/useTabParam';
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -11,10 +12,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Search, Eye, Edit, CheckCircle, XCircle, FileText, Users,
-  GraduationCap, Calendar, Mail, Phone, MapPin, AlertTriangle, Download
+  Search, Eye, Edit, CheckCircle, XCircle, FileText,
+  GraduationCap, Calendar, Mail, AlertTriangle, Download
 } from 'lucide-react';
-import { fetchApi, putApi } from '@/lib/apiService';
+import { downloadUpload, fetchApi, putApi } from '@/lib/apiService';
 import { downloadCsv } from '@/lib/download';
 import { StudentRecord, RecordChangeRequest } from '@/types/registrar';
 
@@ -27,6 +28,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function RegistrarStudentRecords() {
+  const tabParam = useTabParam('records');
   const [studentRecords, setStudentRecords] = useState<any>([]);
   const [recordChangeRequests, setRecordChangeRequests] = useState<any>([]);
   const [apiLoading, setApiLoading] = useState(true);
@@ -54,9 +56,8 @@ export default function RegistrarStudentRecords() {
   }, [recordChangeRequests]);
 
   const filtered = records.filter(r => {
-    const matchSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.rollNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.department.toLowerCase().includes(searchTerm.toLowerCase());
+    const q = searchTerm.toLowerCase();
+    const matchSearch = [r.name, r.rollNo, r.department].some((v) => String(v ?? '').toLowerCase().includes(q));
     const matchStatus = statusFilter === 'all' || r.status === statusFilter;
     return matchSearch && matchStatus;
   });
@@ -64,9 +65,11 @@ export default function RegistrarStudentRecords() {
   const handleApproveChange = async (id: string) => {
     try {
       setIsUpdating(true);
-      await putApi(`/registrar/record-changes/${id}`, { status: 'approved', approvedBy: 'Registrar' });
-      setChanges(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' as const, approvedBy: 'Registrar' } : c));
-      toast({ title: 'Change Approved', description: 'Student record has been updated.' });
+      // Approving applies the correction to the student's record and tells the student.
+      await putApi(`/registrar/record-changes/${id}`, { status: 'approved' });
+      setChanges(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' as const } : c));
+      fetchApi('/registrar/students').then(d => setStudentRecords(d)).catch(() => undefined);
+      toast({ title: 'Change Approved', description: 'The student record is updated and the student has been notified.' });
       setSelectedChange(null);
     } catch (error: any) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -75,10 +78,19 @@ export default function RegistrarStudentRecords() {
     }
   };
 
+  // Rejecting needs a reason; the student is told why.
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
   const handleRejectChange = async (id: string) => {
+    if (rejectNote.trim().length < 10) {
+      toast({ title: 'Give a reason', description: 'At least 10 characters. The student sees it.', variant: 'destructive' });
+      return;
+    }
     try {
       setIsUpdating(true);
-      await putApi(`/registrar/record-changes/${id}`, { status: 'rejected' });
+      await putApi(`/registrar/record-changes/${id}`, { status: 'rejected', note: rejectNote.trim() });
+      setRejecting(null);
+      setRejectNote('');
       setChanges(prev => prev.map(c => c.id === id ? { ...c, status: 'rejected' as const } : c));
       toast({ title: 'Change Rejected', description: 'Record change request has been denied.' });
       setSelectedChange(null);
@@ -97,7 +109,7 @@ export default function RegistrarStudentRecords() {
           <p className="text-muted-foreground">Official student register — corrections, updates, and change approvals</p>
         </div>
 
-        <Tabs defaultValue="records">
+        <Tabs key={tabParam.key} defaultValue={tabParam.defaultValue}>
           <TabsList>
             <TabsTrigger value="records">Student Register</TabsTrigger>
             <TabsTrigger value="changes">Change Requests ({changes.filter(c => c.status === 'pending').length})</TabsTrigger>
@@ -174,7 +186,7 @@ export default function RegistrarStudentRecords() {
                         </div>
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-muted-foreground">Field:</span>
-                          <span className="font-medium">{change.field}</span>
+                          <span className="font-medium capitalize">{String(change.field).replace(/_/g, ' ')}</span>
                         </div>
                         <div className="flex items-center gap-2 text-xs mt-1">
                           <Badge variant="outline" className="text-[10px] line-through">{change.oldValue}</Badge>
@@ -183,8 +195,10 @@ export default function RegistrarStudentRecords() {
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">Reason: {change.reason}</p>
                         <div className="flex gap-1 mt-2">
-                          {change.documents.map(d => (
-                            <Badge key={d} variant="outline" className="text-[10px] gap-1"><FileText className="h-3 w-3" /> {d}</Badge>
+                          {(Array.isArray(change.documents) ? change.documents : []).map((d: string) => (
+                            String(d).startsWith('/api/uploads/')
+                              ? <Button key={d} size="sm" variant="outline" className="h-6 gap-1 text-[10px]" onClick={() => downloadUpload(d, `proof-${change.field}`).catch((e) => toast({ title: 'Could not open', description: e?.message, variant: 'destructive' }))}><FileText className="h-3 w-3" /> View proof</Button>
+                              : <Badge key={d} variant="outline" className="text-[10px] gap-1"><FileText className="h-3 w-3" /> {d}</Badge>
                           ))}
                         </div>
                       </div>
@@ -193,8 +207,8 @@ export default function RegistrarStudentRecords() {
                           <Button size="sm" className="h-7 text-xs gap-1" onClick={() => handleApproveChange(change.id)} disabled={isUpdating}>
                             <CheckCircle className="h-3 w-3" /> {isUpdating ? 'Approving...' : 'Approve'}
                           </Button>
-                          <Button size="sm" variant="destructive" className="h-7 text-xs gap-1" onClick={() => handleRejectChange(change.id)} disabled={isUpdating}>
-                            <XCircle className="h-3 w-3" /> {isUpdating ? 'Rejecting...' : 'Reject'}
+                          <Button size="sm" variant="destructive" className="h-7 text-xs gap-1" onClick={() => { setRejectNote(''); setRejecting(change.id); }} disabled={isUpdating}>
+                            <XCircle className="h-3 w-3" /> Reject
                           </Button>
                         </div>
                       )}
@@ -205,6 +219,20 @@ export default function RegistrarStudentRecords() {
             </div>
           </TabsContent>
         </Tabs>
+
+        <Dialog open={!!rejecting} onOpenChange={(o) => { if (!o) setRejecting(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reject correction</DialogTitle>
+              <DialogDescription>The student is notified with this reason.</DialogDescription>
+            </DialogHeader>
+            <Textarea value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} placeholder="e.g. The proof does not match; attach your 10th certificate" />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRejecting(null)}>Cancel</Button>
+              <Button variant="destructive" disabled={isUpdating} onClick={() => rejecting && handleRejectChange(rejecting)}>{isUpdating ? 'Rejecting...' : 'Reject'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Student Detail Dialog */}
         <Dialog open={!!selectedStudent} onOpenChange={() => setSelectedStudent(null)}>
@@ -223,20 +251,20 @@ export default function RegistrarStudentRecords() {
                   { label: 'Batch', value: selectedStudent?.batch },
                   { label: 'CGPA', value: selectedStudent?.cgpa },
                   { label: 'Status', value: selectedStudent?.status },
+                  { label: 'Semester', value: (selectedStudent as any)?.semester },
                   { label: 'Category', value: selectedStudent?.category },
-                  { label: 'Blood Group', value: selectedStudent?.bloodGroup },
+                  { label: 'Gender', value: (selectedStudent as any)?.gender },
+                  { label: 'Nationality', value: (selectedStudent as any)?.nationality },
+                  { label: 'Home state', value: (selectedStudent as any)?.homeState },
                 ].map(item => (
                   <div key={item.label} className="rounded-lg border p-2">
                     <p className="text-[10px] text-muted-foreground">{item.label}</p>
-                    <p className="text-sm font-medium">{String(item.value)}</p>
+                    <p className="text-sm font-medium capitalize">{item.value === null || item.value === undefined || item.value === '' ? '-' : String(item.value)}</p>
                   </div>
                 ))}
               </div>
               <div className="rounded-lg bg-muted/50 p-3 space-y-2">
                 <div className="flex items-center gap-2 text-sm"><Mail className="h-4 w-4 text-muted-foreground" /> {selectedStudent?.email}</div>
-                <div className="flex items-center gap-2 text-sm"><Phone className="h-4 w-4 text-muted-foreground" /> {selectedStudent?.phone}</div>
-                <div className="flex items-center gap-2 text-sm"><MapPin className="h-4 w-4 text-muted-foreground" /> {selectedStudent?.address}</div>
-                <div className="flex items-center gap-2 text-sm"><Users className="h-4 w-4 text-muted-foreground" /> Father: {selectedStudent?.fatherName}</div>
                 <div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-muted-foreground" /> DOB: {selectedStudent?.dob ? new Date(selectedStudent.dob).toLocaleDateString('en-IN') : 'N/A'}</div>
               </div>
               {/* "Audit Trail" was removed: it reported "12 changes logged for

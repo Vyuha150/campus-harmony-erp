@@ -41,7 +41,8 @@ export default function RegistrarTransfers() {
       const idx = statusSteps.indexOf(transfer?.status);
       if (idx < statusSteps.length - 1) {
         const newStatus = statusSteps[idx + 1];
-        await putApi(`/registrar/transfers/${id}`, { status: newStatus, remarks });
+        // An empty remark was sent as "" and refused, so every step failed.
+        await putApi(`/registrar/transfers/${id}`, { status: newStatus, ...(remarks.trim() ? { remarks: remarks.trim() } : {}) });
         setTransfers(prev => prev.map(t => {
           if (t.id !== id) return t;
           return { ...t, status: newStatus as TransferRequest['status'] };
@@ -58,9 +59,13 @@ export default function RegistrarTransfers() {
   };
 
   const handleReject = async (id: string) => {
+    if (remarks.trim().length < 10) {
+      toast({ title: 'Add a reason', description: 'The student is told why (at least 10 characters).', variant: 'destructive' });
+      return;
+    }
     try {
       setIsUpdating(true);
-      await putApi(`/registrar/transfers/${id}`, { status: 'rejected', remarks });
+      await putApi(`/registrar/transfers/${id}`, { status: 'rejected', remarks: remarks.trim() });
       setTransfers(prev => prev.map(t => t.id === id ? { ...t, status: 'rejected' as const } : t));
       toast({ title: 'Rejected', description: 'Transfer request has been rejected.' });
       setSelectedTransfer(null);
