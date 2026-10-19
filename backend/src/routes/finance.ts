@@ -1,7 +1,10 @@
+import * as payroll from '../modules/finance/payrollService.js';
+import { notifyInApp } from '../lib/inAppNotify.js';
+import { recordFromRequest } from '../lib/audit.js';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, authorizeRoles } from '../middleware/auth.js';
 import { sendError } from '../lib/errors.js';
 import { getTenantContext } from '../lib/tenant.js';
 import { z } from 'zod';
@@ -350,20 +353,39 @@ router.get('/fee-payments', authenticate, async (req: Request, res: Response) =>
 
 router.put('/fee-payments/:id', authenticate, validate({ body: feePaymentStatusUpdateSchema }), async (req: Request, res: Response) => {
   try {
+    // "Mark successful" set status=paid and left paidAmount alone, so the
+    // student's outstanding never changed and no receipt existed.
+    const ctx = getTenantContext(req);
     const id = String(req.params.id);
+    const fee: any = await prisma.feeRecord.findFirst({ where: { id }, include: { student: { select: { userId: true, rollNumber: true } } } });
+    if (!fee) {
+      res.status(404).json({ success: false, message: 'Fee record not found' });
+      return;
+    }
     const payload: any = {};
     if (req.body.status === 'successful') {
+      if (fee.status === 'paid') {
+        res.status(409).json({ success: false, message: 'This fee is already recorded as paid.' });
+        return;
+      }
+      const year = new Date().getFullYear();
+      const count = await prisma.feeRecord.count({ where: { transactionId: { startsWith: `RCPT/${year}/` } } });
       payload.status = 'paid';
       payload.paidDate = new Date();
-    }
-    if (req.body.status === 'pending') {
+      payload.paidAmount = Math.max(0, Number(fee.amount) - Number(fee.waivedAmount ?? 0));
+      payload.transactionId = req.body.reference?.trim() || `RCPT/${year}/${String(count + 1).padStart(5, '0')}`;
+    } else {
       payload.status = 'pending';
     }
-    if (req.body.status === 'failed') {
-      payload.status = 'pending';
+    await prisma.feeRecord.updateMany({ where: { id }, data: payload });
+    await recordFromRequest(req, { action: 'UPDATE', module: 'finance', resource: `FeeRecord:${id}`, details: `${req.body.status === 'successful' ? 'Payment recorded' : 'Payment reverted'} for ${fee.student?.rollNumber} — ${fee.description}${req.body.mode ? ` (${req.body.mode})` : ''}`, oldValue: { status: fee.status, paidAmount: fee.paidAmount }, newValue: payload, severity: 'warning' });
+    if (req.body.status === 'successful' && fee.student?.userId) {
+      await notifyInApp(ctx.institutionId, { userIds: [fee.student.userId] }, {
+        eventType: 'fee.paid', subject: `Payment received: ${fee.description}`, body: `₹${payload.paidAmount.toLocaleString('en-IN')} · receipt ${payload.transactionId}`,
+        relatedEntityType: 'FeeRecord', relatedEntityId: id
+      });
     }
-    const updated = await prisma.feeRecord.update({ where: { id }, data: payload });
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: await prisma.feeRecord.findFirst({ where: { id } }) });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -548,6 +570,7 @@ router.post(
   validate({ body: disbursePayrollSchema }),
   asyncHandler(async (req: Request, res: Response) => {
     const result = await legacy.disbursePayroll(getTenantContext(req), req.body);
+    await payroll.announcePayslips(getTenantContext(req), req.body.month, req.body.year);
     res.json({
       success: true,
       message: `Disbursed ${result.disbursed} record(s), total net ${result.totalNet}. ${result.skipped} already paid.`,
@@ -641,18 +664,72 @@ router.get('/reports', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Build a report as rows the screen downloads (CSV). It used to return a count
+ * and a total, and every "Generate" button said "generated" while producing
+ * nothing. The report is chosen by keywords in `type`.
+ */
 router.post('/reports/generate', authenticate, validate({ body: financeReportGenerateSchema }), async (req: Request, res: Response) => {
   try {
-    const { type, startDate, endDate } = req.body;
-    const where: any = { status: 'paid' };
-    if (startDate) where.paidDate = { gte: new Date(startDate) };
-    if (endDate) where.paidDate = { ...where.paidDate, lte: new Date(endDate) };
-
-    const records = await prisma.feeRecord.findMany({ where, include: { student: { include: { user: true } } } });
-    res.json({
-      success: true,
-      data: { reportType: type, recordCount: records.length, totalAmount: records.reduce((s: number, r: any) => s + r.amount, 0), generatedAt: new Date() }
-    });
+    const { type, startDate, endDate } = req.body as { type: string; startDate?: string; endDate?: string };
+    const from = startDate ? new Date(startDate) : new Date(Date.now() - 365 * 864e5);
+    const to = endDate ? new Date(new Date(endDate).setUTCHours(23, 59, 59, 999)) : new Date();
+    const t = String(type).toLowerCase();
+    const inr = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+    const day = (d: Date | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : '');
+    let title = String(type).replace(/_/g, ' ');
+    let columns: string[] = [];
+    let rows: Array<Array<string | number>> = [];
+    if (/ledger|journal/.test(t)) {
+      const js = await prisma.journalEntry.findMany({ where: { date: { gte: from, lte: to } }, orderBy: { date: 'asc' } });
+      columns = ['Date', 'Entry', 'Description', 'Reference', 'Account', 'Debit', 'Credit', 'Status'];
+      rows = js.flatMap((j: any) => (Array.isArray(j.accounts) ? j.accounts : []).map((a: any) => [day(j.date), j.entryNumber, j.description, j.reference ?? '', a.accountName ?? a.accountCode ?? '', inr(a.debitAmount), inr(a.creditAmount), j.status]));
+    } else if (/payroll|salary|bank/.test(t)) {
+      const ps = await prisma.payrollRecord.findMany({ orderBy: [{ year: 'desc' }, { month: 'asc' }] });
+      columns = ['Month', 'Year', 'Employee ID', 'Name', 'Department', 'Gross', 'Net', 'Status'];
+      rows = ps.map((p: any) => [p.month, p.year, p.employeeId, p.employeeName, p.department, inr(p.grossSalary), inr(p.netSalary), p.status]);
+    } else if (/budget|variance/.test(t)) {
+      const bs = await prisma.budgetAllocation.findMany({ orderBy: { department: 'asc' } });
+      columns = ['Department', 'Category', 'Year', 'Allocated', 'Spent', 'Available', 'Utilisation %'];
+      rows = bs.map((b: any) => [b.department, b.category, b.budgetYear, inr(b.allocatedAmount), inr(b.spentAmount), inr(b.availableAmount), Math.round(b.utilizationPercentage ?? 0)]);
+    } else if (/procure|purchase|vendor/.test(t)) {
+      const pos = await prisma.purchaseOrder.findMany({ where: { orderDate: { gte: from, lte: to } }, include: { vendor: { select: { name: true } } }, orderBy: { orderDate: 'asc' } });
+      columns = ['PO', 'Date', 'Department', 'Vendor', 'Amount', 'Status', 'Paid on'];
+      rows = pos.map((p: any) => [p.poNumber, day(p.orderDate), p.department, p.vendor?.name ?? '', inr(p.totalAmount), p.status, day(p.paymentDate)]);
+    } else if (/defaulter|outstanding|due/.test(t)) {
+      const fs = await prisma.feeRecord.findMany({ where: { status: { in: ['pending', 'overdue', 'partial'] } }, include: { student: { include: { user: { select: { name: true } } } } }, orderBy: { dueDate: 'asc' } });
+      columns = ['Roll no', 'Name', 'Fee', 'Due date', 'Amount', 'Paid', 'Waived', 'Outstanding'];
+      rows = fs.map((f: any) => [f.student?.rollNumber ?? '', f.student?.user?.name ?? '', f.description, day(f.dueDate), inr(f.amount), inr(f.paidAmount), inr(f.waivedAmount), inr(f.amount - f.paidAmount - (f.waivedAmount ?? 0))]);
+    } else if (/income|expenditure|cash|balance|statement|audit|compliance/.test(t)) {
+      // Income & expenditure from what the ERP records: fee receipts in, salaries and paid purchase orders out.
+      const [fees, pay, pos] = await Promise.all([
+        prisma.feeRecord.findMany({ where: { status: 'paid', paidDate: { gte: from, lte: to } }, select: { type: true, paidAmount: true, amount: true } }),
+        prisma.payrollRecord.findMany({ where: { status: 'paid', paymentDate: { gte: from, lte: to } }, select: { netSalary: true, grossSalary: true } }),
+        prisma.purchaseOrder.findMany({ where: { paymentDate: { gte: from, lte: to } }, select: { totalAmount: true, department: true } })
+      ]);
+      const byType = new Map<string, number>();
+      for (const f of fees as any[]) byType.set(f.type, (byType.get(f.type) ?? 0) + (f.paidAmount || f.amount));
+      const income = [...byType.values()].reduce((a, b) => a + b, 0);
+      const salaries = (pay as any[]).reduce((a, p) => a + p.grossSalary, 0);
+      const purchases = (pos as any[]).reduce((a, p) => a + p.totalAmount, 0);
+      title = `Income and expenditure ${day(from)} to ${day(to)}`;
+      columns = ['Section', 'Head', 'Amount'];
+      rows = [
+        ...[...byType.entries()].map(([k, v]) => ['Income', `${k} fees`, inr(v)] as Array<string | number>),
+        ['Income', 'Total income', inr(income)],
+        ['Expenditure', 'Salaries (gross)', inr(salaries)],
+        ['Expenditure', 'Purchases paid', inr(purchases)],
+        ['Expenditure', 'Total expenditure', inr(salaries + purchases)],
+        ['Result', income >= salaries + purchases ? 'Surplus' : 'Deficit', inr(income - salaries - purchases)]
+      ];
+    } else {
+      // Fee collections — the default.
+      const fs = await prisma.feeRecord.findMany({ where: { status: 'paid', paidDate: { gte: from, lte: to } }, include: { student: { include: { user: { select: { name: true } } } } }, orderBy: { paidDate: 'asc' } });
+      columns = ['Date', 'Receipt', 'Roll no', 'Name', 'Fee', 'Type', 'Amount'];
+      rows = fs.map((f: any) => [day(f.paidDate), f.transactionId ?? '', f.student?.rollNumber ?? '', f.student?.user?.name ?? '', f.description, f.type, inr(f.paidAmount || f.amount)]);
+      title = `Fee collections ${day(from)} to ${day(to)}`;
+    }
+    res.json({ success: true, data: { reportType: type, title, columns, rows, recordCount: rows.length, generatedAt: new Date() } });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -809,5 +886,39 @@ router.get('/revenue-streams', authenticate, async (_req: Request, res: Response
     sendError(res, error);
   }
 });
+
+
+// ─── Salary structures, monthly payroll, Tally export ───
+const FINANCE_ONLY = authorizeRoles('finance_officer', 'super_admin');
+const monthYear = z.object({ month: z.enum(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']), year: z.number().int().min(2020).max(2100) }).strict();
+
+router.get('/salary-structures', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await payroll.structures(getTenantContext(req)) });
+}));
+router.put('/salary-structures/:userId', authenticate, FINANCE_ONLY, validate({
+  params: z.object({ userId: entityId }),
+  body: z.object({
+    employeeId: z.string().trim().min(1).max(40), basic: z.number().min(0).max(10000000), daPercent: z.number().min(0).max(300), hraPercent: z.number().min(0).max(100),
+    otherAllowances: z.number().min(0).max(10000000), pfApplicable: z.boolean(), ptApplicable: z.boolean(),
+    bankAccount: z.string().trim().max(30).optional(), ifsc: z.string().trim().max(15).optional(), pan: z.string().trim().max(10).optional()
+  }).strict()
+}), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await payroll.saveStructure(getTenantContext(req), String(req.params.userId), req.body) });
+}));
+router.post('/payroll/generate', authenticate, FINANCE_ONLY, validate({ body: monthYear }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await payroll.generate(getTenantContext(req), req.body.month, req.body.year) });
+}));
+router.post('/payroll/approve', authenticate, FINANCE_ONLY, validate({ body: monthYear }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await payroll.approveMonth(getTenantContext(req), req.body.month, req.body.year) });
+}));
+router.get('/payslips/:id', authenticate, validate({ params: z.object({ id: entityId }) }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await payroll.payslip(getTenantContext(req), String(req.params.id), null) });
+}));
+router.get('/tally-export', authenticate, validate({ query: z.object({ from: z.coerce.date(), to: z.coerce.date() }) }), asyncHandler(async (req: Request, res: Response) => {
+  const q = req.query as unknown as { from: Date; to: Date };
+  const to = new Date(q.to); to.setUTCHours(23, 59, 59, 999);
+  const out = await payroll.tallyExport(getTenantContext(req), q.from, to);
+  res.json({ success: true, data: out });
+}));
 
 export default router;

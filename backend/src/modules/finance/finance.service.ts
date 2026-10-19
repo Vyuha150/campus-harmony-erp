@@ -29,7 +29,7 @@
  * direction that is hardest to notice.
  */
 
-import { basePrisma } from '../../lib/prisma.js';
+import { basePrisma, lockForUpdate } from '../../lib/prisma.js';
 import { mutate, type TransactionClient } from '../../lib/service.js';
 import { recordInTransaction } from '../../lib/audit.js';
 import { withIdempotency } from '../../lib/idempotency.js';
@@ -166,25 +166,20 @@ async function executePayment(
   // happen under load.
   const requestedIds = input.allocations?.map((a) => a.feeRecordId);
 
-  const lockedRecords = requestedIds
-    ? await db.$queryRaw<LockedFeeRecord[]>`
-        SELECT id, "amount", "paidAmount", "waivedAmount", "dueDate", "status", "description", "type"
-        FROM "FeeRecord"
-        WHERE id = ANY(${requestedIds}::text[])
-          AND "institutionId" = ${context.institutionId}
-          AND "studentProfileId" = ${student.id}
-        ORDER BY id
-        FOR UPDATE
-      `
-    : await db.$queryRaw<LockedFeeRecord[]>`
-        SELECT id, "amount", "paidAmount", "waivedAmount", "dueDate", "status", "description", "type"
-        FROM "FeeRecord"
-        WHERE "institutionId" = ${context.institutionId}
-          AND "studentProfileId" = ${student.id}
-          AND "status" NOT IN ('paid', 'waived')
-        ORDER BY id
-        FOR UPDATE
-      `;
+  const feeWhere = requestedIds
+    ? { id: { in: requestedIds }, institutionId: context.institutionId, studentProfileId: student.id }
+    : {
+        institutionId: context.institutionId,
+        studentProfileId: student.id,
+        status: { notIn: ['paid', 'waived'] }
+      };
+
+  await lockForUpdate(db.feeRecord, feeWhere);
+  const lockedRecords: LockedFeeRecord[] = await db.feeRecord.findMany({
+    where: feeWhere,
+    orderBy: { id: 'asc' },
+    select: { id: true, amount: true, paidAmount: true, waivedAmount: true, dueDate: true, status: true, description: true, type: true }
+  });
 
   if (requestedIds) {
     // A record the caller named but that does not belong to this student, or
@@ -727,13 +722,12 @@ export async function cancelReceipt(
       // Reverse the allocations, or the student's ledger keeps credit for money
       // whose receipt has been cancelled.
       for (const allocation of receipt.payment.allocations) {
-        const rows = await db.$queryRaw<LockedFeeRecord[]>`
-          SELECT id, "amount", "paidAmount", "waivedAmount", "dueDate", "status", "description", "type"
-          FROM "FeeRecord"
-          WHERE id = ${allocation.feeRecordId} AND "institutionId" = ${context.institutionId}
-          FOR UPDATE
-        `;
-        const record = rows[0];
+        const recordWhere = { id: allocation.feeRecordId, institutionId: context.institutionId };
+        await lockForUpdate(db.feeRecord, recordWhere);
+        const record: LockedFeeRecord | null = await db.feeRecord.findFirst({
+          where: recordWhere,
+          select: { id: true, amount: true, paidAmount: true, waivedAmount: true, dueDate: true, status: true, description: true, type: true }
+        });
         if (!record) continue;
 
         const newPaid = Math.max(0, round2(record.paidAmount - allocation.amount));

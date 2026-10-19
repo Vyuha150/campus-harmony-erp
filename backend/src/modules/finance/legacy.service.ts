@@ -111,17 +111,24 @@ export async function listJournalEntries(context: TenantContext, page: PageReque
 export async function createJournalEntry(
   context: TenantContext,
   input: {
-    entryNumber: string; description: string; reference?: string | null | undefined;
+    entryNumber?: string | undefined; status?: string | undefined; description: string; reference?: string | null | undefined;
     date?: string | undefined; accounts: Json; totalDebit: number; totalCredit: number;
   }
 ) {
+  let entryNumber: string | undefined = input.entryNumber;
+  if (!entryNumber) {
+    const year = new Date().getFullYear();
+    const n = await basePrisma.journalEntry.count({ where: { institutionId: context.institutionId, entryNumber: { startsWith: `JE/${year}/` } } });
+    entryNumber = `JE/${year}/${String(n + 1).padStart(5, '0')}`;
+  }
+  input = { ...input, entryNumber };
   const clash = await basePrisma.journalEntry.findFirst({
-    where: { institutionId: context.institutionId, entryNumber: input.entryNumber },
+    where: { institutionId: context.institutionId, entryNumber: entryNumber },
     select: { id: true }
   });
   if (clash) {
     throw new ValidationError(
-      `Journal entry ${input.entryNumber} already exists. Entry numbers identify a ledger line and cannot be reused.`,
+      `Journal entry ${entryNumber} already exists. Entry numbers identify a ledger line and cannot be reused.`,
       { field: 'entryNumber' }
     );
   }
@@ -132,14 +139,14 @@ export async function createJournalEntry(
       action: 'CREATE',
       module: 'finance',
       resource: (r: unknown) => `JournalEntry:${(r as { id: string }).id}`,
-      details: `Journal ${input.entryNumber}: ${input.description} (Dr ${input.totalDebit} / Cr ${input.totalCredit})`,
+      details: `Journal ${entryNumber}: ${input.description} (Dr ${input.totalDebit} / Cr ${input.totalCredit})`,
       severity: 'warning'
     },
     async (tx) =>
       tx.journalEntry.create({
         data: {
           institutionId: context.institutionId,
-          entryNumber: input.entryNumber,
+          entryNumber: entryNumber,
           description: input.description,
           reference: input.reference ?? null,
           ...(input.date ? { date: new Date(input.date) } : {}),
@@ -456,7 +463,8 @@ export async function disbursePayroll(
       institutionId: context.institutionId,
       month: input.month,
       year: input.year,
-      status: { not: 'paid' }
+      // Only approved payroll is paid; drafts must be approved first.
+      status: 'approved'
     },
     select: { id: true, netSalary: true }
   });
@@ -472,7 +480,7 @@ export async function disbursePayroll(
 
   if (due.length === 0) {
     throw new ValidationError(
-      `Nothing to disburse for ${input.month} ${input.year}. ${alreadyPaid} record(s) are already paid.`,
+      `Nothing approved to disburse for ${input.month} ${input.year}. ${alreadyPaid} record(s) are already paid; approve the drafts first.`,
       { field: 'month' }
     );
   }

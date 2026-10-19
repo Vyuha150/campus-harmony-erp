@@ -44,7 +44,11 @@ export const createFeeStructureSchema = z
 
 export const createJournalEntrySchema = z
   .object({
-    entryNumber: text(1, 60),
+    // The Accounting screen sends neither an entry number nor anything but a
+    // draft, and every manual entry was refused. The number is generated when
+    // absent; a new entry is always a draft (posting is a separate act).
+    entryNumber: text(1, 60).optional(),
+    status: z.literal('draft').optional(),
     description: text(1, 500),
     reference: z.string().trim().max(120).nullable().optional(),
     date: isoDate.optional(),
@@ -185,7 +189,9 @@ export const payrollQuery = financePage.extend({
 // this schema exists to close, just moved to a different field.
 export const feePaymentStatusUpdateSchema = z
   .object({
-    status: z.enum(['successful', 'pending', 'failed'])
+    status: z.enum(['successful', 'pending', 'failed']),
+    mode: z.enum(['cash', 'dd', 'cheque', 'neft', 'upi', 'card', 'online']).optional(),
+    reference: z.string().trim().max(80).optional()
   })
   .strict();
 
