@@ -25,7 +25,19 @@ export default function RoleSelection() {
       await login(email.trim(), password);
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Unable to sign in. Check your credentials.');
+      // lib/api.ts turns every failure into an ApiError (message + status);
+      // reading err.response showed "check your credentials" even when the
+      // server was down or the login limit had been reached.
+      const status = err?.status as number | undefined;
+      setError(
+        status === undefined || status === 0
+          ? 'Cannot reach the server. Make sure the backend is running, then try again.'
+          : status === 401
+            ? 'Incorrect email or password.'
+            : status === 429
+              ? 'Too many login attempts. Wait 15 minutes and try again.'
+              : err?.message || 'Unable to sign in. Please try again.'
+      );
     } finally {
       setSubmitting(false);
     }

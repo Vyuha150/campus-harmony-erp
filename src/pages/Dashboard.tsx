@@ -6,6 +6,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ROLE_INFO } from '@/types/erp';
+import { firstName } from '@/lib/names';
 
 /**
  * Generic landing page.
@@ -80,7 +81,7 @@ export default function Dashboard() {
       <div className="animate-fade-in space-y-6">
         <div>
           <h1 className="page-title">
-            {greeting}, {user.name.split(' ')[0]}!
+            {greeting}, {firstName(user.name)}!
           </h1>
           <p className="page-description">
             Signed in as {roleInfo?.label ?? user.role}.
