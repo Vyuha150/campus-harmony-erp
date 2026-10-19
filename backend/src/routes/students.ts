@@ -1,11 +1,19 @@
 import type { Request, Response, NextFunction } from 'express';
+import { startApprovalFor } from '../modules/workflow/workflow.service.js';
+import { listCourseMaterials } from '../lib/courseMaterials.js';
 import { Router } from 'express';
+import { notifyInApp } from '../lib/inAppNotify.js';
 import { prisma } from '../lib/prisma.js';
 import { toRoleGrievanceStatus } from '../lib/grievanceStatus.js';
 import { authenticate } from '../middleware/auth.js';
 import { NotFoundError , sendError} from '../lib/errors.js';
 import { getTenantContext } from '../lib/tenant.js';
 import { z } from 'zod';
+import { recordFromRequest } from '../lib/audit.js';
+import { entityId } from '../schemas/common.js';
+import * as examOffice from '../modules/examination/examOffice.js';
+import * as campus from '../modules/campus/campusServices.js';
+import { asyncHandler as wrap } from '../middleware/errorHandler.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import * as libraryService from '../modules/library/library.service.js';
@@ -281,8 +289,10 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
     const profile = await getStudentProfile(userId);
     const ctx = getTenantContext(req);
 
+    // "Active" means this semester. Counting every enrolment the student has
+    // ever had reported last term's finished subjects as active ones.
     const enrollments = await prisma.enrollment.count({
-      where: { studentProfileId: profile.id }
+      where: { studentProfileId: profile.id, semester: profile.semester }
     });
 
     const profileUser = await prisma.user.findFirst({
@@ -369,11 +379,12 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
         studentProfileId: profile.id,
         status: { in: ['pending', 'partial', 'overdue'] }
       },
-      _sum: { amount: true, paidAmount: true }
+      _sum: { amount: true, paidAmount: true, waivedAmount: true }
     });
     const billed = feeTotals._sum.amount ?? 0;
     const paid = feeTotals._sum.paidAmount ?? 0;
-    const outstanding = Math.max(0, billed - paid);
+    // A granted waiver is not owed.
+    const outstanding = Math.max(0, billed - paid - (feeTotals._sum.waivedAmount ?? 0));
 
     // -- Upcoming events, from the real examination schedule ----------------
     const upcoming = await prisma.examSchedule.findMany({
@@ -460,18 +471,24 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
         course: {
           include: {
             faculty: { include: { user: true } },
-            department: true
+            department: true,
+            // The course cards and the dashboard's "Today's classes" read the
+            // timetable from here; it was never included, so both were empty.
+            schedules: true
           }
         }
       }
     });
 
+    // Loaded ONCE. This query sat inside the loop below, so a student with
+    // twelve enrolments fetched their whole attendance history twelve times.
+    const records = await prisma.attendance.findMany({
+      where: { studentProfileId: profile.id },
+      include: { session: true }
+    });
+
     const coursePayload = [];
     for (const enrollment of courses) {
-      const records = await prisma.attendance.findMany({
-        where: { studentProfileId: profile.id },
-        include: { session: true }
-      });
 
       const courseRecords = records.filter((record: any) => record.session?.courseId === enrollment.courseId);
       const totalClasses = courseRecords.length;
@@ -484,8 +501,9 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
 
       // `null`, not 0. "Not yet graded" and "scored zero" are different facts,
       // and collapsing them shows a failing mark to every unassessed student.
-      const numericGrade = enrollment.grade != null ? Number(enrollment.grade) : NaN;
-      const internalMarks = Number.isFinite(numericGrade) ? numericGrade : null;
+      // The numeric column first; the legacy `grade` string only as a fallback.
+      const numericGrade = enrollment.grade != null && enrollment.grade !== '' ? Number(enrollment.grade) : NaN;
+      const internalMarks = enrollment.internalMarks ?? (Number.isFinite(numericGrade) ? numericGrade : null);
 
       coursePayload.push({
         ...enrollment.course,
@@ -495,7 +513,31 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
         absentClasses,
         internalMarks,
         maxInternalMarks: 100,
-        grade: enrollment.grade
+        grade: enrollment.grade,
+        status: 'ongoing'
+      });
+    }
+
+    // Finished semesters. Their subjects are no longer enrolments — they are
+    // published results — so the "All semesters" view showed only the current
+    // term. Each completed subject is listed with its grade.
+    const enrolledIds = new Set(coursePayload.map((c: any) => c.id));
+    const results = await prisma.courseResult.findMany({
+      where: { studentProfileId: profile.id, status: 'published' },
+      include: { course: { include: { faculty: { include: { user: true } }, department: true } } },
+      orderBy: [{ semester: 'desc' }, { attempt: 'desc' }]
+    });
+    const seen = new Set<string>();
+    for (const r of results as any[]) {
+      if (enrolledIds.has(r.courseId) || seen.has(r.courseId)) continue;
+      seen.add(r.courseId);
+      coursePayload.push({
+        ...r.course,
+        schedules: [],
+        attendance: null, totalClasses: 0, presentClasses: 0, absentClasses: 0,
+        internalMarks: r.internalMarks, maxInternalMarks: 40,
+        totalMarks: r.totalMarks, grade: r.letterGrade, gradePoint: r.gradePoint, isPassing: r.isPassing,
+        status: 'completed'
       });
     }
 
@@ -506,6 +548,49 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
 });
 
 // Get Attendance
+/**
+ * The student's own mark for each class held between `from` and `to`
+ * (YYYY-MM-DD, at most 31 days). The timetable shows it on every class, so a
+ * student wrongly marked absent sees it the same day and can tell the teacher.
+ */
+router.get('/attendance/marks', authenticate, async (req: Request, res: Response) => {
+  try {
+    const profile = await getStudentProfile((req as any).user.id);
+    const day = (v: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? '')) ? new Date(`${v}T00:00:00.000Z`) : null);
+    const from = day(req.query.from);
+    const to = day(req.query.to) ?? from;
+    if (!from || !to || to < from || to.getTime() - from.getTime() > 31 * 86_400_000) {
+      res.status(400).json({ success: false, message: 'Give from and to as YYYY-MM-DD, at most 31 days apart' });
+      return;
+    }
+
+    const enrollments = await prisma.enrollment.findMany({ where: { studentProfileId: profile.id }, select: { courseId: true } });
+    const sessions = await prisma.attendanceSession.findMany({
+      where: { courseId: { in: enrollments.map((e: any) => e.courseId) }, date: { gte: from, lt: new Date(to.getTime() + 86_400_000) } },
+      select: { id: true, courseId: true, date: true, startTime: true, endTime: true }
+    });
+    const records = await prisma.attendance.findMany({
+      where: { studentProfileId: profile.id, attendanceSessionId: { in: sessions.map((s: any) => s.id) } },
+      select: { attendanceSessionId: true, status: true }
+    });
+    const status = new Map(records.map((r: any) => [r.attendanceSessionId, r.status]));
+
+    res.json({
+      success: true,
+      data: sessions.map((s: any) => ({
+        courseId: s.courseId,
+        date: s.date.toISOString().slice(0, 10),
+        startTime: s.startTime,
+        endTime: s.endTime,
+        // A session the teacher posted without this student in the list.
+        status: status.get(s.id) ?? 'not_marked'
+      }))
+    });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
 router.get('/attendance', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -516,12 +601,15 @@ router.get('/attendance', authenticate, async (req: Request, res: Response) => {
       include: { course: true }
     });
 
+    // Loaded ONCE. This query sat inside the loop below, so a student with
+    // twelve enrolments fetched their whole attendance history twelve times.
+    const records = await prisma.attendance.findMany({
+      where: { studentProfileId: profile.id },
+      include: { session: true }
+    });
+
     const attendanceData = [];
     for (const enrollment of enrollments) {
-      const records = await prisma.attendance.findMany({
-        where: { studentProfileId: profile.id },
-        include: { session: true }
-      });
 
       const courseRecords = records.filter((r: any) => r.session?.courseId === enrollment.courseId);
       const total = courseRecords.length;
@@ -574,10 +662,14 @@ router.get('/profile', authenticate, async (req: Request, res: Response) => {
       mentorEmail = facultyProfile?.user?.email || null;
     }
 
+    const guardian = ((profile as any).guardian ?? {}) as Record<string, unknown>;
     res.json({
       success: true,
       data: {
         ...profile,
+        // The page reads these flat; guardian is stored as one record.
+        ...guardian,
+        hostelResident: (profile as any).isHosteller ?? false,
         email: user?.email,
         name: user?.name,
         avatar: user?.avatar,
@@ -585,6 +677,47 @@ router.get('/profile', authenticate, async (req: Request, res: Response) => {
         mentorEmail
       }
     });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+const phoneText = z.string().trim().max(20).regex(/^[+0-9 ()-]*$/, 'Use digits, spaces, + ( ) -');
+const addressSchema = z.object({
+  line1: z.string().trim().max(200).optional(), line2: z.string().trim().max(200).optional(),
+  city: z.string().trim().max(100).optional(), state: z.string().trim().max(100).optional(),
+  pincode: z.string().trim().max(12).optional(), country: z.string().trim().max(100).optional()
+}).strict();
+const profileUpdateSchema = z.object({
+  personalEmail: z.union([z.string().trim().email().max(200), z.literal('')]).optional(),
+  phone: phoneText.optional(), alternatePhone: phoneText.optional(),
+  bloodGroup: z.enum(['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']).optional(),
+  permanentAddress: addressSchema.optional(), currentAddress: addressSchema.optional(),
+  guardian: z.object({
+    fatherName: z.string().trim().max(160).optional(), fatherOccupation: z.string().trim().max(160).optional(),
+    fatherPhone: phoneText.optional(), fatherEmail: z.union([z.string().trim().email().max(200), z.literal('')]).optional(),
+    motherName: z.string().trim().max(160).optional(), motherOccupation: z.string().trim().max(160).optional(),
+    motherPhone: phoneText.optional()
+  }).strict().optional()
+}).strict();
+
+/**
+ * The student's own contact and family details. "Edit Profile → Save Changes"
+ * used to close the form and save nothing; the fields did not exist.
+ */
+router.put('/profile', authenticate, validate({ body: profileUpdateSchema }), async (req: Request, res: Response) => {
+  try {
+    const profile: any = await getStudentProfile((req as any).user.id);
+    const data: Record<string, unknown> = {};
+    for (const k of ['personalEmail', 'phone', 'alternatePhone', 'bloodGroup'] as const) {
+      if (req.body[k] !== undefined) data[k] = req.body[k] === '' ? null : req.body[k];
+    }
+    for (const k of ['permanentAddress', 'currentAddress', 'guardian'] as const) {
+      if (req.body[k] !== undefined) data[k] = { ...(profile[k] ?? {}), ...req.body[k] };
+    }
+    await prisma.studentProfile.updateMany({ where: { id: profile.id }, data });
+    await recordFromRequest(req, { action: 'UPDATE', module: 'students', resource: `StudentProfile:${profile.id}`, details: 'Updated own contact details', newValue: data as never });
+    res.json({ success: true, data });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -727,6 +860,8 @@ router.get('/assignments', authenticate, async (req: Request, res: Response) => 
       take: 200,
       where: {
         classId: { in: classIds },
+        // A draft is the teacher's work in progress — students saw it too.
+        status: { not: 'draft' },
         ...(Number.isFinite(semesterQuery) ? { class: { course: { semester: semesterQuery } } } : {})
       },
       include: {
@@ -761,6 +896,8 @@ router.get('/assignments', authenticate, async (req: Request, res: Response) => 
           courseName: assignment.class?.course?.name || '',
           title: assignment.title,
           description: assignment.description,
+          attachmentUrl: assignment.attachmentUrl ?? null,
+          attachmentName: assignment.attachmentName ?? null,
           dueDate: assignment.dueDate,
           maxMarks: assignment.maxMarks,
           status,
@@ -1167,6 +1304,7 @@ router.get('/results/transcript', authenticate, async (req: Request, res: Respon
         success: true,
         data: {
           student,
+          institution: await institutionHeader(getTenantContext(req).institutionId),
           official: true,
           generatedAt: new Date(),
           semesters: semesterResults.map((s) => ({
@@ -1184,6 +1322,8 @@ router.get('/results/transcript', authenticate, async (req: Request, res: Respon
             courseCode: r.course.code,
             courseName: r.course.name,
             credits: r.credits,
+            internalMarks: r.internalMarks,
+            externalMarks: r.externalMarks,
             totalMarks: r.totalMarks,
             maxMarks: r.maxMarks,
             letterGrade: r.letterGrade,
@@ -1331,11 +1471,228 @@ router.get('/fees', authenticate, async (req: Request, res: Response) => {
       where: { studentProfileId: profile.id },
       orderBy: { dueDate: 'asc' }
     });
-    res.json({ success: true, data: fees });
+    // What is actually still owed: a granted waiver was ignored on this screen.
+    res.json({
+      success: true,
+      data: fees.map((f: any) => ({ ...f, outstanding: Math.max(0, Math.round((f.amount - f.paidAmount - (f.waivedAmount ?? 0)) * 100) / 100) }))
+    });
   } catch (error: any) {
     sendError(res, error);
   }
 });
+
+// ─── Fee waiver / scholarship applications ───
+// Blueprint, Fees & Payments: "if they have applied for a refund or have a
+// scholarship, it will reflect here". Approved by HOD → Dean → Finance Officer
+// (SCHOLARSHIP_FEE_WAIVER); a sanctioned amount reduces what is owed.
+const WAIVER_CATEGORIES = ['merit', 'need_based', 'sc_st_freeship', 'sports', 'single_girl_child', 'other'] as const;
+
+router.get('/fee-waivers', authenticate, async (req: Request, res: Response) => {
+  try {
+    const profile = await getStudentProfile((req as any).user.id);
+    const requests = await prisma.feeWaiverRequest.findMany({ where: { studentProfileId: profile.id }, orderBy: { appliedAt: 'desc' } });
+    const fees = await prisma.feeRecord.findMany({ where: { id: { in: requests.map((r: any) => r.feeRecordId) } }, select: { id: true, description: true, type: true, academicYear: true } });
+    const instances = await prisma.workflowInstance.findMany({
+      where: { entityType: 'FeeWaiverRequest', entityId: { in: requests.map((r: any) => r.id) } },
+      include: { definition: { include: { steps: { orderBy: { sequence: 'asc' } } } }, transitions: true }
+    });
+    res.json({
+      success: true,
+      data: requests.map((r: any) => {
+        const inst: any = instances.find((i: any) => i.entityId === r.id);
+        const steps = inst?.definition.steps.map((step: any) => {
+          const decided = inst.transitions.filter((t: any) => t.fromStepId === step.id && t.action !== 'started').pop();
+          return { role: step.assigneeRole, state: decided ? decided.action : step.id === inst.currentStepId && inst.status === 'pending' ? 'current' : 'upcoming', note: decided?.note ?? null };
+        }) ?? [];
+        return { ...r, fee: fees.find((f: any) => f.id === r.feeRecordId) ?? null, instanceId: inst?.id ?? null, steps };
+      })
+    });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+router.post(
+  '/fee-waivers',
+  authenticate,
+  validate({
+    body: z.object({
+      feeRecordId: z.string().trim().min(1).max(200),
+      category: z.enum(WAIVER_CATEGORIES),
+      requestedAmount: z.coerce.number().positive().max(10_000_000),
+      reason: z.string().trim().min(20, 'Explain the request in at least 20 characters').max(2000),
+      documentUrl: z.string().trim().regex(/^\/api\/uploads\/[\w-]+$/).optional(),
+      documentName: z.string().trim().max(300).optional()
+    }).strict()
+  }),
+  async (req: Request, res: Response) => {
+    try {
+      const context = getTenantContext(req);
+      const profile = await getStudentProfile((req as any).user.id);
+      const fee = await prisma.feeRecord.findFirst({ where: { id: req.body.feeRecordId, studentProfileId: profile.id } });
+      if (!fee) {
+        res.status(404).json({ success: false, message: 'Fee not found' });
+        return;
+      }
+      const outstanding = Math.max(0, fee.amount - fee.paidAmount - (fee.waivedAmount ?? 0));
+      if (outstanding <= 0) {
+        res.status(400).json({ success: false, message: 'Nothing is owed on this fee, so there is nothing to waive.' });
+        return;
+      }
+      if (req.body.requestedAmount > outstanding) {
+        res.status(400).json({ success: false, message: `You can ask for at most ₹${outstanding.toLocaleString('en-IN')} — what is still owed on this fee.` });
+        return;
+      }
+      const open = await prisma.feeWaiverRequest.findFirst({ where: { feeRecordId: fee.id, status: 'pending' } });
+      if (open) {
+        res.status(409).json({ success: false, message: 'You already have a waiver application in progress for this fee.' });
+        return;
+      }
+      const created = await prisma.feeWaiverRequest.create({
+        data: {
+          institutionId: context.institutionId, studentProfileId: profile.id, feeRecordId: fee.id,
+          category: req.body.category, requestedAmount: req.body.requestedAmount, reason: req.body.reason,
+          documentUrl: req.body.documentUrl ?? null, documentName: req.body.documentName ?? null, status: 'pending'
+        }
+      });
+      const approval = await startApprovalFor(context, 'SCHOLARSHIP_FEE_WAIVER', 'FeeWaiverRequest', created.id);
+      res.json({ success: true, data: { ...created, approval } });
+    } catch (error: any) {
+      sendError(res, error);
+    }
+  }
+);
+
+// ─── Record corrections ───
+// Blueprint: students "initiate requests … which are then processed by staff".
+// There was no way to ask for a correction; the Registrar's queue only ever
+// held seed data.
+const CORRECTABLE = ['name', 'date_of_birth', 'gender', 'category', 'home_state', 'nationality'] as const;
+
+router.get('/record-changes', authenticate, async (req: Request, res: Response) => {
+  try {
+    const profile = await getStudentProfile((req as any).user.id);
+    const rows = await prisma.recordChangeRequest.findMany({ where: { studentId: profile.id }, orderBy: { requestedAt: 'desc' } });
+    res.json({ success: true, data: rows });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+router.post(
+  '/record-changes',
+  authenticate,
+  validate({ body: z.object({ field: z.enum(CORRECTABLE), newValue: z.string().trim().min(1).max(200), reason: z.string().trim().min(10).max(1000), documentUrl: z.string().trim().regex(/^\/api\/uploads\/[\w-]+$/).optional() }).strict() }),
+  async (req: Request, res: Response) => {
+    try {
+      const profile: any = await getStudentProfile((req as any).user.id);
+      const user: any = await prisma.user.findFirst({ where: { id: profile.userId } });
+      const open = await prisma.recordChangeRequest.findFirst({ where: { studentId: profile.id, field: req.body.field, status: 'pending' } });
+      if (open) {
+        res.status(409).json({ success: false, message: 'You already have a correction to this field waiting for the Registrar.' });
+        return;
+      }
+      const current: Record<string, unknown> = {
+        name: user?.name, date_of_birth: profile.dateOfBirth ? new Date(profile.dateOfBirth).toISOString().slice(0, 10) : null,
+        gender: profile.gender, category: profile.category, home_state: profile.domicileState, nationality: profile.nationality
+      };
+      const created = await prisma.recordChangeRequest.create({
+        data: {
+          studentId: profile.id, studentName: user?.name ?? 'Student', field: req.body.field,
+          oldValue: String(current[req.body.field] ?? '—'), newValue: req.body.newValue, reason: req.body.reason,
+          requestedBy: user?.name ?? 'Student', status: 'pending', documents: req.body.documentUrl ? [req.body.documentUrl] : []
+        } as never
+      });
+      await notifyInApp(getTenantContext(req).institutionId, { roles: ['registrar'] }, {
+        eventType: 'record_change.requested', subject: `Record correction: ${user?.name} (${profile.rollNumber})`,
+        body: `${req.body.field.replace(/_/g, ' ')} → ${req.body.newValue}`, relatedEntityType: 'RecordChangeRequest', relatedEntityId: created.id
+      });
+      res.json({ success: true, data: created });
+    } catch (error: any) {
+      sendError(res, error);
+    }
+  }
+);
+
+// ─── Exam registration, condonation and hall tickets ───
+router.get('/exam-registrations', authenticate, wrap(async (req: Request, res: Response) => {
+  const profile = await getStudentProfile((req as any).user.id);
+  res.json({ success: true, data: await examOffice.studentExams(getTenantContext(req), profile.id) });
+}));
+
+router.post('/exam-registrations/:id/condonation', authenticate, validate({
+  params: z.object({ id: entityId }),
+  body: z.object({ reason: z.string().trim().min(20).max(2000), documentUrl: z.string().trim().regex(/^\/api\/uploads\/[\w-]+$/).optional() }).strict()
+}), wrap(async (req: Request, res: Response) => {
+  const profile = await getStudentProfile((req as any).user.id);
+  res.json({ success: true, data: await examOffice.requestCondonation(getTenantContext(req), profile.id, String(req.params.id), req.body.reason, req.body.documentUrl) });
+}));
+
+router.get('/hall-tickets/:sessionId', authenticate, validate({ params: z.object({ sessionId: entityId }) }), wrap(async (req: Request, res: Response) => {
+  const profile = await getStudentProfile((req as any).user.id);
+  res.json({ success: true, data: await examOffice.hallTicket(getTenantContext(req), profile.id, String(req.params.sessionId)) });
+}));
+
+// ─── Leave / on-duty, hostel and transport ───
+router.get('/leave-requests', authenticate, wrap(async (req: Request, res: Response) => {
+  const profile = await getStudentProfile((req as any).user.id);
+  res.json({ success: true, data: await campus.myLeaves(getTenantContext(req), profile.id) });
+}));
+router.post('/leave-requests', authenticate, validate({ body: z.object({
+  type: z.enum(['leave', 'medical', 'on_duty']), fromDate: z.coerce.date(), toDate: z.coerce.date(),
+  reason: z.string().trim().min(10).max(1000), documentUrl: z.string().trim().regex(/^\/api\/uploads\/[\w-]+$/).optional()
+}).strict() }), wrap(async (req: Request, res: Response) => {
+  const profile = await getStudentProfile((req as any).user.id);
+  res.status(201).json({ success: true, data: await campus.applyLeave(getTenantContext(req), profile.id, req.body) });
+}));
+router.get('/campus-services', authenticate, wrap(async (req: Request, res: Response) => {
+  const profile = await getStudentProfile((req as any).user.id);
+  res.json({ success: true, data: await campus.myServices(getTenantContext(req), profile.id) });
+}));
+router.post('/campus-services', authenticate, validate({ body: z.object({
+  service: z.enum(['hostel', 'transport']), preference: z.record(z.string(), z.unknown()).optional(), note: z.string().trim().max(500).optional()
+}).strict() }), wrap(async (req: Request, res: Response) => {
+  const profile = await getStudentProfile((req as any).user.id);
+  res.status(201).json({ success: true, data: await campus.requestService(getTenantContext(req), profile.id, req.body) });
+}));
+
+// ─── Printable documents ───
+async function institutionHeader(institutionId: string) {
+  const i: any = await prisma.institution.findFirst({ where: { id: institutionId } });
+  return { name: i?.name ?? '', address: [i?.addressLine, i?.city, i?.state, i?.pincode].filter(Boolean).join(', '), phone: i?.phone ?? null, email: i?.email ?? null, website: i?.website ?? null, naacGrade: i?.naacGrade ?? null };
+}
+
+/** An issued certificate, ready to print (bonafide, conduct, transfer …). */
+router.get('/certificates/:id/document', authenticate, validate({ params: z.object({ id: entityId }) }), wrap(async (req: Request, res: Response) => {
+  const ctx = getTenantContext(req);
+  const profile: any = await getStudentProfile(ctx.userId);
+  const cert: any = await prisma.certificateRequest.findFirst({ where: { id: String(req.params.id), studentProfileId: profile.id } });
+  if (!cert) { res.status(404).json({ success: false, message: 'Certificate not found' }); return; }
+  if (!['issued', 'collected'].includes(cert.status)) { res.status(409).json({ success: false, message: 'Only an issued certificate can be printed.' }); return; }
+  const user: any = await prisma.user.findFirst({ where: { id: ctx.userId }, include: { department: true } });
+  const year: any = await prisma.academicYear.findFirst({ where: { isCurrent: true } });
+  res.json({ success: true, data: {
+    institution: await institutionHeader(ctx.institutionId),
+    certificate: { number: cert.certificateNumber, type: cert.type, purpose: cert.purpose, issuedAt: cert.issuedAt },
+    student: { name: user?.name, rollNumber: profile.rollNumber, program: profile.program, branch: profile.branch, department: user?.department?.name, semester: profile.semester, admissionYear: profile.admissionYear, gender: profile.gender, dateOfBirth: profile.dateOfBirth, fatherName: profile.guardian?.fatherName ?? null },
+    academicYear: year?.year ?? null
+  } });
+}));
+
+/** A receipt for a paid fee. */
+router.get('/fees/:id/receipt', authenticate, validate({ params: z.object({ id: entityId }) }), wrap(async (req: Request, res: Response) => {
+  const ctx = getTenantContext(req);
+  const profile: any = await getStudentProfile(ctx.userId);
+  const fee: any = await prisma.feeRecord.findFirst({ where: { id: String(req.params.id), studentProfileId: profile.id } });
+  if (!fee) { res.status(404).json({ success: false, message: 'Fee record not found' }); return; }
+  if (fee.status !== 'paid') { res.status(409).json({ success: false, message: 'A receipt is available once the fee is paid.' }); return; }
+  const user: any = await prisma.user.findFirst({ where: { id: ctx.userId } });
+  res.json({ success: true, data: {
+    institution: await institutionHeader(ctx.institutionId),
+    receipt: { number: fee.transactionId ?? fee.id.slice(0, 8).toUpperCase(), date: fee.paidDate, description: fee.description, type: fee.type, academicYear: fee.academicYear, amount: fee.amount, waived: fee.waivedAmount ?? 0, paid: fee.paidAmount || fee.amount - (fee.waivedAmount ?? 0) },
+    student: { name: user?.name, rollNumber: profile.rollNumber, program: profile.program, branch: profile.branch, semester: profile.semester }
+  } });
+}));
 
 // Pay Fees
 /**
@@ -1382,7 +1739,7 @@ router.post('/fees/pay', authenticate, validate({ body: payFeeSchema }), async (
     const due = feeRecordId
       ? await prisma.feeRecord.findFirst({
           where: { id: String(feeRecordId), studentProfileId: profile.id },
-          select: { id: true, amount: true, paidAmount: true, status: true }
+          select: { id: true, amount: true, paidAmount: true, waivedAmount: true, status: true }
         })
       : null;
 
@@ -1397,7 +1754,7 @@ router.post('/fees/pay', authenticate, validate({ body: payFeeSchema }), async (
         details: due
           ? {
               feeRecordId: due.id,
-              outstanding: Math.max(0, due.amount - (due.paidAmount ?? 0)),
+              outstanding: Math.max(0, due.amount - (due.paidAmount ?? 0) - ((due as any).waivedAmount ?? 0)),
               status: due.status
             }
           : undefined
@@ -1426,6 +1783,60 @@ router.get('/library', authenticate, async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, ...result });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+/**
+ * Library catalogue search for students.
+ *
+ * The catalogue tab used to filter the student's OWN loan history, so a search
+ * for any book they had not borrowed found nothing. The librarian's catalogue
+ * endpoint is not used here because it returns each copy with the current
+ * borrower's roll number. This returns one row per title with availability only.
+ */
+router.get('/library/catalog', authenticate, async (req: Request, res: Response) => {
+  try {
+    const ctx = getTenantContext(req);
+    const q = String(req.query.query ?? '').trim().slice(0, 120);
+    const where: any = { institutionId: ctx.institutionId, status: { in: ['available', 'issued'] } };
+    if (q) {
+      where.OR = [
+        { title: { contains: q, mode: 'insensitive' } },
+        { author: { contains: q, mode: 'insensitive' } },
+        { isbn: { contains: q, mode: 'insensitive' } },
+        { category: { contains: q, mode: 'insensitive' } }
+      ];
+    }
+    const copies = await prisma.libraryBook.findMany({
+      where,
+      select: { isbn: true, title: true, author: true, category: true, publisher: true, edition: true, status: true },
+      orderBy: { title: 'asc' },
+      take: 500
+    });
+    const byTitle = new Map<string, any>();
+    for (const c of copies) {
+      const key = `${c.isbn}|${c.title}`;
+      const row = byTitle.get(key) ?? { isbn: c.isbn, title: c.title, author: c.author, category: c.category, publisher: c.publisher, edition: c.edition, totalCopies: 0, availableCopies: 0 };
+      row.totalCopies += 1;
+      if (c.status === 'available') row.availableCopies += 1;
+      byTitle.set(key, row);
+    }
+    res.json({ success: true, data: [...byTitle.values()] });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+/** Materials for a course this student is enrolled in. */
+router.get('/courses/:id/materials', authenticate, async (req: Request, res: Response) => {
+  try {
+    const profile = await getStudentProfile((req as any).user.id);
+    const courseId = String(req.params.id);
+    const enrolled = await prisma.enrollment.findFirst({ where: { studentProfileId: profile.id, courseId }, select: { id: true } });
+    if (!enrolled) { res.status(404).json({ success: false, message: 'You are not enrolled in this course' }); return; }
+    res.json({ success: true, data: await listCourseMaterials(getTenantContext(req).institutionId, courseId) });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1840,7 +2251,9 @@ router.post('/certificates/request', authenticate, validate({ body: certificateR
         status: 'pending'
       }
     });
-    res.json({ success: true, data: certificate });
+    // No-dues (Finance) → HOD verification → Registrar issue.
+    const approval = await startApprovalFor(getTenantContext(req), 'CERTIFICATE_ISSUE', 'CertificateRequest', certificate.id);
+    res.json({ success: true, data: { ...certificate, approval } });
   } catch (error: any) {
     sendError(res, error);
   }
