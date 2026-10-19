@@ -133,42 +133,6 @@ const IDS = {
 const day = 24 * 60 * 60 * 1000;
 const daysFromNow = (offset: number): Date => new Date(Date.now() + offset * day);
 
-async function assertSeedSchema() {
-  const requiredTables = [
-    'User',
-    'Department',
-    'StudentProfile',
-    'FacultyProfile',
-    'Course',
-    'CourseClass',
-    'Enrollment',
-    'ClassEnrollment',
-    'ModuleConfig',
-    'AcademicYear',
-    'SystemAuditLog',
-    'SystemNotificationRecord',
-    'Company',
-    'PlacementDrive',
-    'SportsTeam',
-    'GrievanceCase',
-    'IDCardRequest',
-  ];
-
-  const tableRows = await prisma.$queryRawUnsafe<Array<{ tablename: string }>>(
-    "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
-  );
-
-  const existingTables = new Set(tableRows.map((row) => row.tablename));
-  const missingTables = requiredTables.filter((tableName) => !existingTables.has(tableName));
-
-  if (missingTables.length > 0) {
-    throw new Error(
-      `Database schema is not up to date. Missing tables: ${missingTables.join(', ')}. ` +
-        "Run your Prisma migrations (or prisma db push) before seeding."
-    );
-  }
-}
-
 async function upsertById(delegate: any, id: string, data: Record<string, unknown>) {
   return delegate.upsert({
     where: { id },
@@ -216,7 +180,6 @@ async function ensureSeedTenant() {
 }
 
 async function main() {
-  await assertSeedSchema();
   await ensureSeedTenant();
 
   const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
@@ -227,7 +190,7 @@ async function main() {
   // institution's department.
   await prisma.department.upsert({
     where: { institutionId_code: { institutionId: SEED_INSTITUTION_ID, code: 'CSE' } },
-    update: { id: IDS.departments.cse, name: 'Computer Science and Engineering', code: 'CSE' },
+    update: { name: 'Computer Science and Engineering', code: 'CSE' },
     create: {
       id: IDS.departments.cse, name: 'Computer Science and Engineering', code: 'CSE',
       institutionId: SEED_INSTITUTION_ID, campusId: SEED_CAMPUS_ID,
@@ -236,7 +199,7 @@ async function main() {
 
   await prisma.department.upsert({
     where: { institutionId_code: { institutionId: SEED_INSTITUTION_ID, code: 'ECE' } },
-    update: { id: IDS.departments.ece, name: 'Electronics and Communication Engineering', code: 'ECE' },
+    update: { name: 'Electronics and Communication Engineering', code: 'ECE' },
     create: {
       id: IDS.departments.ece, name: 'Electronics and Communication Engineering', code: 'ECE',
       institutionId: SEED_INSTITUTION_ID, campusId: SEED_CAMPUS_ID,
@@ -273,7 +236,6 @@ async function main() {
     await prisma.user.upsert({
       where: { email: user.email },
       update: {
-        id: user.id,
         name: user.name,
         role: user.role,
         password: hashedPassword,
@@ -302,7 +264,6 @@ async function main() {
   await prisma.studentProfile.upsert({
     where: { userId: IDS.users.student },
     update: {
-      id: IDS.student.profile,
       rollNumber: 'CH2024CS001',
       program: 'B.Tech',
       branch: 'Computer Science',
@@ -344,7 +305,6 @@ async function main() {
   await prisma.facultyProfile.upsert({
     where: { userId: IDS.users.faculty },
     update: {
-      id: IDS.faculty.profile,
       employeeId: 'EMP-CSE-1001',
       qualification: 'Ph.D. in Computer Science',
       specialization: 'Distributed Systems',
@@ -364,7 +324,6 @@ async function main() {
   await prisma.alumniProfile.upsert({
     where: { userId: IDS.users.alumniOfficer },
     update: {
-      id: IDS.alumni.profile,
       graduationYear: 2019,
       currentCompany: 'Campus Harmony University',
       currentRole: 'Alumni Officer',
@@ -383,7 +342,6 @@ async function main() {
   await prisma.course.upsert({
     where: { institutionId_code: { institutionId: SEED_INSTITUTION_ID, code: 'CSE501' } },
     update: {
-      id: IDS.core.course,
       name: 'Cloud Computing',
       credits: 4,
       semester: 5,
@@ -886,21 +844,11 @@ async function main() {
     timestamp: new Date(),
   });
 
-  // `institutionId` became required on ApprovalItem in migration 0022, when the
-  // approval queue was given a tenant key. This call was not updated, so the
-  // seed threw HERE — at line ~694 of 1829 — and every statement after it was
-  // skipped. Roughly 60% of the seed had never run on a fresh database,
-  // including academicYear, feeStructure, moduleConfig and departmentBudget.
-  await upsertById(prisma.approvalItem, 'seed-approval-1', {
-    institutionId: SEED_INSTITUTION_ID,
-    type: 'fee_waiver',
-    title: 'Merit scholarship partial waiver',
-    details: 'Requesting 25% waiver for high academic performance.',
-    requestedBy: IDS.users.student,
-    amount: 19500,
-    priority: 'high',
-    status: 'pending',
-  });
+  // The seed used to plant a free-standing "fee_waiver" ApprovalItem here. It
+  // was linked to no request and no workflow, so the HOD and VC could
+  // "approve" it and nothing happened. Fee waivers are FeeWaiverRequest rows
+  // started through SCHOLARSHIP_FEE_WAIVER (Fees → Waivers & Scholarships).
+  await prisma.approvalItem.deleteMany({ where: { id: 'seed-approval-1' } });
 
   // A lab facility. Without one, `POST /hod/purchaserequests` refuses every
   // request with "Please select a valid lab from Facility Management" — the
@@ -936,7 +884,6 @@ async function main() {
   await prisma.moduleConfig.upsert({
     where: { name: 'Academic Management' },
     update: {
-      id: 'seed-module-config-1',
       description: 'Course, enrollment, attendance and exams.',
       icon: 'BookOpen',
       enabled: true,
@@ -959,7 +906,6 @@ async function main() {
   await prisma.academicYear.upsert({
     where: { institutionId_year: { institutionId: SEED_INSTITUTION_ID, year: '2025-26' } },
     update: {
-      id: 'seed-academic-year-1',
       startDate: new Date('2025-07-01T00:00:00.000Z'),
       endDate: new Date('2026-06-30T00:00:00.000Z'),
       isCurrent: true,
@@ -1181,14 +1127,13 @@ async function main() {
       }
     },
     update: {
-      id: 'seed-po-1',
       department: 'CSE',
       vendorId: 'seed-vendor-1',
       orderDate: daysFromNow(-4),
       expectedDelivery: daysFromNow(8),
       totalAmount: 148000,
       status: 'pending',
-      items: [{ name: 'Workstation', qty: 2, amount: 148000 }],
+      items: [{ id: 'seed-po-item-1', description: 'Workstation', quantity: 2, unitPrice: 74000, totalPrice: 148000 }],
       approvedBy: IDS.users.finance,
       deliveredDate: null,
       invoiceNumber: null,
@@ -1204,7 +1149,7 @@ async function main() {
       expectedDelivery: daysFromNow(8),
       totalAmount: 148000,
       status: 'pending',
-      items: [{ name: 'Workstation', qty: 2, amount: 148000 }],
+      items: [{ id: 'seed-po-item-1', description: 'Workstation', quantity: 2, unitPrice: 74000, totalPrice: 148000 }],
       approvedBy: IDS.users.finance,
       deliveredDate: null,
       invoiceNumber: null,
@@ -1215,7 +1160,6 @@ async function main() {
   await prisma.journalEntry.upsert({
     where: { entryNumber: 'JE-2026-0001' },
     update: {
-      id: 'seed-journal-entry-1',
       date: new Date(),
       description: 'Tuition receivable for semester 5',
       reference: 'BILL-SEM5-001',
@@ -1261,11 +1205,11 @@ async function main() {
       department: 'CSE',
       designation: 'Professor',
       basicSalary: 120000,
-      allowances: { hra: 24000, da: 12000 },
-      deductions: { tax: 18000 },
+      allowances: [{ name: 'HRA', amount: 24000 }, { name: 'DA', amount: 12000 }],
+      deductions: [{ name: 'Income tax (TDS)', amount: 18000 }],
       grossSalary: 156000,
       netSalary: 138000,
-      status: 'processed',
+      status: 'paid',
       paymentDate: daysFromNow(-1),
       paymentMethod: 'bank_transfer',
     },
@@ -1279,11 +1223,11 @@ async function main() {
       month: 'March',
       year: 2026,
       basicSalary: 120000,
-      allowances: { hra: 24000, da: 12000 },
-      deductions: { tax: 18000 },
+      allowances: [{ name: 'HRA', amount: 24000 }, { name: 'DA', amount: 12000 }],
+      deductions: [{ name: 'Income tax (TDS)', amount: 18000 }],
       grossSalary: 156000,
       netSalary: 138000,
-      status: 'processed',
+      status: 'paid',
       paymentDate: daysFromNow(-1),
       paymentMethod: 'bank_transfer',
     },
@@ -1321,7 +1265,6 @@ async function main() {
   await prisma.company.upsert({
     where: { name: 'FutureTech Solutions' },
     update: {
-      id: 'seed-company-1',
       industry: 'Software',
       email: 'hr@futuretech.example',
       website: 'https://futuretech.example',
@@ -1546,7 +1489,6 @@ async function main() {
     // institution instead, so the upsert key is now the composite.
     where: { academicYear_institutionId: { academicYear: '2025-26', institutionId: SEED_INSTITUTION_ID } },
     update: {
-      id: 'seed-aqar-record-1',
       institutionDetails: { name: 'Campus Harmony University' },
       criteria: { criterion1: 'complete', criterion2: 'in_progress' },
       keyIndicators: { placementRate: '78%' },
@@ -1595,7 +1537,6 @@ async function main() {
       }
     },
     update: {
-      id: 'seed-grievance-case-1',
       complainantId: IDS.users.student,
       complainantName: 'Ananya Student',
       complainantType: 'student',
@@ -1672,7 +1613,6 @@ async function main() {
   await prisma.iDCardRequest.upsert({
     where: { requestNumber: 'IDC-00001' },
     update: {
-      id: 'seed-id-card-request-1',
       institutionId: SEED_INSTITUTION_ID,
       applicantId: IDS.users.student,
       applicantName: 'Ananya Student',
@@ -1709,7 +1649,6 @@ async function main() {
   await prisma.vehiclePass.upsert({
     where: { passNumber: 'VP-00001' },
     update: {
-      id: 'seed-vehicle-pass-1',
       institutionId: SEED_INSTITUTION_ID,
       ownerName: 'Ananya Student',
       ownerType: 'student',
@@ -1775,7 +1714,6 @@ async function main() {
   await prisma.vigilanceCase.upsert({
     where: { caseNumber: 'VIG-00001' },
     update: {
-      id: 'seed-vigilance-case-1',
       institutionId: SEED_INSTITUTION_ID,
       type: 'disciplinary',
       subject: 'Unauthorized hostel entry',
@@ -1814,7 +1752,6 @@ async function main() {
   await prisma.supportTicket.upsert({
     where: { ticketNumber: 'TKT-00001' },
     update: {
-      id: 'seed-support-ticket-1',
       institutionId: SEED_INSTITUTION_ID,
       reportedBy: IDS.users.student,
       reporterType: 'student',
@@ -1859,8 +1796,8 @@ async function main() {
     studentId: IDS.student.profile,
     studentName: 'Ananya Student',
     type: 'intra_university',
-    fromInstitution: 'School of Computing',
-    toInstitution: 'School of AI',
+    fromInstitution: 'Computer Science and Engineering',
+    toInstitution: 'Information Technology',
     program: 'B.Tech CSE',
     reason: 'Specialization preference',
     status: 'pending',
@@ -1871,7 +1808,6 @@ async function main() {
   await prisma.degreeRecord.upsert({
     where: { certificateNo: 'DEG-2026-0001' },
     update: {
-      id: 'seed-degree-record-1',
       studentName: 'Ananya Student',
       rollNo: 'CH2024CS001',
       program: 'B.Tech CSE',
@@ -1941,7 +1877,7 @@ async function main() {
     requesterName: 'ABC Corp HR',
     requesterOrg: 'ABC Corp',
     studentName: 'Ananya Student',
-    studentId: IDS.student.profile,
+    studentId: 'CH2024CS001',
     details: 'Verify degree eligibility status.',
     status: 'pending',
     receivedAt: daysFromNow(-2),
