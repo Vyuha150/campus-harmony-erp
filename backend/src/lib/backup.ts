@@ -12,9 +12,9 @@
  *
  * DESIGN
  *
- *  - `pg_dump` custom format (`-Fc`): compressed, and restorable selectively.
- *  - Every backup is VERIFIED after creation by listing its contents. A dump
- *    that cannot be read is not a backup.
+ *  - `mongodump` gzip archive: one compressed file, restorable per collection.
+ *  - Every backup is VERIFIED after creation by decompressing it end to end. A
+ *    dump that cannot be read is not a backup.
  *  - SHA-256 checksum stored so silent corruption is detectable later.
  *  - `BackupRecord` now reflects reality rather than describing a fiction.
  *  - Restore targets an explicitly-named database and REFUSES to overwrite the
@@ -24,6 +24,8 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
+import os from 'node:os';
+import { createGunzip } from 'node:zlib';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config/env.js';
@@ -43,50 +45,76 @@ export interface BackupResult {
   replicatedTo: string | null;
 }
 
-/** Parsed connection details for the pg_* tools. */
-function connectionFromUrl(url: string) {
-  const parsed = new URL(url);
-  return {
-    host: parsed.hostname,
-    port: parsed.port || '5432',
-    user: decodeURIComponent(parsed.username),
-    password: decodeURIComponent(parsed.password || ''),
-    database: decodeURIComponent(parsed.pathname.replace(/^\//, ''))
-  };
+/** The database name carried in the connection string's path. */
+function databaseFromUrl(url: string): string {
+  return decodeURIComponent(new URL(url).pathname.replace(/^\//, ''));
 }
 
 /**
- * Run a pg_* binary, returning stdout.
+ * Run a MongoDB Database Tools binary (mongodump / mongorestore).
  *
- * The password is passed via `PGPASSWORD` in the child environment rather than
- * on the command line, where it would be visible in the process list.
+ * The connection string — which contains the password — is handed over in a
+ * private `--config` file rather than on the command line, where it would be
+ * visible in the process list. The file is removed as soon as the tool exits.
  */
-function runPgTool(
+async function runMongoTool(
   binary: string,
-  args: string[],
-  env: Record<string, string>
+  args: string[]
 ): Promise<{ stdout: string; stderr: string }> {
+  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'campus-backup-'));
+  const configPath = path.join(configDir, 'tool.yaml');
+  await fs.writeFile(configPath, `uri: ${JSON.stringify(config.database.url)}
+`, { mode: 0o600 });
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const bin = path.join(config.backup.mongoBinDir, binary);
+      const child = spawn(bin, [`--config=${configPath}`, ...args], { windowsHide: true });
+
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => (stdout += chunk.toString()));
+      child.stderr.on('data', (chunk) => (stderr += chunk.toString()));
+
+      child.on('error', (error) =>
+        reject(
+          new Error(
+            `Failed to launch ${binary}: ${error.message}. ` +
+              'Install the MongoDB Database Tools or set MONGO_BIN_DIR.'
+          )
+        )
+      );
+
+      child.on('close', (code) => {
+        if (code === 0) resolve({ stdout, stderr });
+        else reject(new Error(`${binary} exited with code ${code}: ${stderr.slice(-500)}`));
+      });
+    });
+  } finally {
+    await fs.rm(configDir, { recursive: true, force: true });
+  }
+}
+
+/** Decompress the whole archive, returning its uncompressed size. Throws if it is corrupt. */
+async function gunzippedSize(filePath: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const bin = path.join(config.backup.pgBinDir, binary);
-    const child = spawn(bin, args, {
-      env: { ...process.env, ...env },
-      windowsHide: true
-    });
-
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk) => (stdout += chunk.toString()));
-    child.stderr.on('data', (chunk) => (stderr += chunk.toString()));
-
-    child.on('error', (error) =>
-      reject(new Error(`Failed to launch ${binary}: ${error.message}. Is pg_bin configured?`))
-    );
-
-    child.on('close', (code) => {
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`${binary} exited with code ${code}: ${stderr.slice(0, 500)}`));
-    });
+    let bytes = 0;
+    createReadStream(filePath)
+      .on('error', reject)
+      .pipe(createGunzip())
+      .on('data', (chunk: Buffer) => (bytes += chunk.length))
+      .on('end', () => resolve(bytes))
+      .on('error', reject);
   });
+}
+
+/**
+ * mongodump and mongorestore report one line per collection on stderr:
+ * "done dumping db.coll (N documents)" / "finished restoring db.coll (…)".
+ */
+function countCollections(toolOutput: string, verb: 'dumping' | 'restoring'): number {
+  const marker = verb === 'dumping' ? /done dumping /g : /finished restoring /g;
+  return (toolOutput.match(marker) ?? []).length;
 }
 
 async function sha256(filePath: string): Promise<string> {
@@ -171,12 +199,12 @@ export async function createBackup(
   initiatedBy = 'system'
 ): Promise<BackupResult> {
   const startedAt = Date.now();
-  const connection = connectionFromUrl(config.database.url);
+  const database = databaseFromUrl(config.database.url);
 
   await fs.mkdir(config.backup.directory, { recursive: true });
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const fileName = `${connection.database}_${stamp}.dump`;
+  const fileName = `${database}_${stamp}.dump`;
   const filePath = path.join(config.backup.directory, fileName);
 
   logger.info('Backup started', { module: 'backup', operation: 'createBackup', fileName });
@@ -195,35 +223,21 @@ export async function createBackup(
   );
 
   try {
-    // -Fc  custom format: compressed and selectively restorable
-    // -Z9  maximum compression
-    await runPgTool(
-      'pg_dump',
-      [
-        '-h', connection.host,
-        '-p', connection.port,
-        '-U', connection.user,
-        '-d', connection.database,
-        '-Fc',
-        '-Z', '9',
-        '--no-password',
-        '-f', filePath
-      ],
-      { PGPASSWORD: connection.password }
-    );
+    // One gzip-compressed archive of this database only.
+    const dump = await runMongoTool('mongodump', [`--archive=${filePath}`, '--gzip']);
 
     const stats = await fs.stat(filePath);
     if (stats.size === 0) {
-      throw new Error('pg_dump produced an empty file.');
+      throw new Error('mongodump produced an empty file.');
     }
 
-    // VERIFY: a dump that cannot be listed is not a backup. This catches
+    // VERIFY: a dump that cannot be decompressed is not a backup. This catches
     // truncation and corruption at creation time rather than during an incident.
-    const listing = await runPgTool('pg_restore', ['--list', filePath], {});
-    const tableCount = (listing.stdout.match(/TABLE DATA/g) ?? []).length;
+    await gunzippedSize(filePath);
+    const collectionCount = countCollections(dump.stderr, 'dumping');
 
-    if (tableCount === 0) {
-      throw new Error('Backup verification failed: the dump contains no table data.');
+    if (collectionCount === 0) {
+      throw new Error('Backup verification failed: the dump contains no collections.');
     }
 
     const checksum = await sha256(filePath);
@@ -245,7 +259,7 @@ export async function createBackup(
       operation: 'createBackup',
       fileName,
       durationMs,
-      tableCount
+      collectionCount
     });
 
     const replicatedTo = await replicateBackup(filePath, fileName, checksum);
@@ -293,14 +307,11 @@ export async function restoreBackup(options: {
   allowOverwriteLiveDatabase?: boolean;
 }): Promise<{ tablesRestored: number; durationMs: number }> {
   const startedAt = Date.now();
-  const connection = connectionFromUrl(config.database.url);
+  const liveDatabase = databaseFromUrl(config.database.url);
 
-  if (
-    options.targetDatabase === connection.database &&
-    !options.allowOverwriteLiveDatabase
-  ) {
+  if (options.targetDatabase === liveDatabase && !options.allowOverwriteLiveDatabase) {
     throw new Error(
-      `Refusing to restore over the live database "${connection.database}". ` +
+      `Refusing to restore over the live database "${liveDatabase}". ` +
         'Pass allowOverwriteLiveDatabase: true only during a genuine recovery.'
     );
   }
@@ -313,41 +324,23 @@ export async function restoreBackup(options: {
     targetDatabase: options.targetDatabase
   });
 
-  // Recreate the target so the restore starts from a known-empty state.
-  await runPgTool(
-    'psql',
-    ['-h', connection.host, '-p', connection.port, '-U', connection.user,
-     '-d', 'postgres', '-c', `DROP DATABASE IF EXISTS "${options.targetDatabase}"`],
-    { PGPASSWORD: connection.password }
-  );
-  await runPgTool(
-    'psql',
-    ['-h', connection.host, '-p', connection.port, '-U', connection.user,
-     '-d', 'postgres', '-c', `CREATE DATABASE "${options.targetDatabase}"`],
-    { PGPASSWORD: connection.password }
-  );
+  // --drop empties each target collection first, so the restore starts from a
+  // known state; --nsFrom/--nsTo redirect the dump into the named database.
+  const restore = await runMongoTool('mongorestore', [
+    `--archive=${options.filePath}`,
+    '--gzip',
+    '--drop',
+    `--nsInclude=${liveDatabase}.*`,
+    `--nsFrom=${liveDatabase}.*`,
+    `--nsTo=${options.targetDatabase}.*`
+  ]);
 
-  await runPgTool(
-    'pg_restore',
-    ['-h', connection.host, '-p', connection.port, '-U', connection.user,
-     '-d', options.targetDatabase, '--no-password', '--exit-on-error', options.filePath],
-    { PGPASSWORD: connection.password }
-  );
-
-  // Confirm the restore actually produced tables.
-  const count = await runPgTool(
-    'psql',
-    ['-h', connection.host, '-p', connection.port, '-U', connection.user,
-     '-d', options.targetDatabase, '-t', '-A',
-     '-c', "SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'public'"],
-    { PGPASSWORD: connection.password }
-  );
-
-  const tablesRestored = Number(count.stdout.trim());
+  // Confirm the restore actually produced collections.
+  const tablesRestored = countCollections(restore.stderr, 'restoring');
   const durationMs = Date.now() - startedAt;
 
   if (tablesRestored === 0) {
-    throw new Error('Restore completed but the target database contains no tables.');
+    throw new Error('Restore completed but no collections were restored into the target database.');
   }
 
   logger.info('Restore completed', {

@@ -30,7 +30,7 @@ npm run backup:prune
 
 | Command | What it does |
 |---|---|
-| `backup` | `pg_dump -Fc -Z9`, verifies the dump is listable, records SHA-256 and a `BackupRecord` row |
+| `backup` | `mongodump --archive --gzip`, verifies the archive decompresses end to end, records SHA-256 and a `BackupRecord` row |
 | `backup:list` | Backups on disk, newest first |
 | `backup:verify` | **Restore drill** — restores the newest backup into a scratch database and confirms it is usable |
 | `backup:prune` | Deletes backups past `BACKUP_RETENTION_DAYS` |
@@ -40,7 +40,7 @@ npm run backup:prune
 | Variable | Default | Notes |
 |---|---|---|
 | `BACKUP_DIR` | `backups` | **Must be off-host durable storage in production** |
-| `PG_BIN_DIR` | *(PATH)* | Directory holding `pg_dump`/`pg_restore`/`psql` |
+| `MONGO_BIN_DIR` | *(PATH)* | Directory holding `mongodump`/`mongorestore` (MongoDB Database Tools) |
 | `BACKUP_RETENTION_DAYS` | `30` | Confirm against statutory retention for academic records |
 | `BACKUP_VERIFY_DB` | `campus_harmony_restore_check` | Scratch DB for drills. **Never the live database** |
 
@@ -70,7 +70,7 @@ The admitted student (`BTCSE20260001`) and both institutions survived intact —
 
 ## Safety guarantees
 
-1. **A backup is verified at creation.** `pg_restore --list` must show table data, or the backup is marked `failed`. A dump that cannot be read is not a backup.
+1. **A backup is verified at creation.** The archive must decompress cleanly and contain at least one collection, or the backup is marked `failed`. A dump that cannot be read is not a backup.
 2. **Restore refuses to overwrite the live database.** Verified:
    ```
    BLOCKED - Refusing to restore over the live database "campus_harmony".
@@ -119,7 +119,7 @@ The admitted student (`BTCSE20260001`) and both institutions survived intact —
 
 ### Scenario B — total host loss
 
-1. Provision a new host with PostgreSQL and the same major version.
+1. Provision a new MongoDB cluster (Atlas, or a replica set of the same major version).
 2. Retrieve the newest off-host backup.
 3. Create the database, restore, run `prisma migrate deploy`.
 4. Restore uploaded files **separately** — see the gap below.
@@ -136,7 +136,7 @@ These are **not** solved by this work and must not be assumed:
 | **Backups are local-disk only** | A host loss destroys the backups with the data. **This is the largest remaining risk.** | A1-followup |
 | **No off-host replication** | Needs S3/equivalent with server-side encryption | A1-followup |
 | **No automated schedule** | Backups are manual until a cron/scheduled job exists | A1-followup |
-| **Uploaded files are not backed up** | `pg_dump` covers the database only; `uploads/` is on ephemeral local disk | A5 |
+| **Uploaded files are not backed up** | `mongodump` covers the database only; `uploads/` is on ephemeral local disk | A5 |
 | **No PITR** | Only full dumps; WAL archiving would reduce RPO to minutes | A1-followup |
 | **RPO/RTO not agreed** | Measured restore is 2.5s at current volume, but no target has been set with the institution | — |
 | **Encryption at rest not configured** | Dumps are unencrypted on disk | A1-followup |

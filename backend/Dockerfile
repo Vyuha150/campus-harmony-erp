@@ -27,22 +27,28 @@ FROM deps AS build
 WORKDIR /app
 COPY . .
 
-# Generate the Prisma client into node_modules. DATABASE_URL is required by the
-# config module at import time but is NOT used for generation — a placeholder is
-# correct here and never reaches the running container.
-ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
-RUN npx prisma generate
+# Generate the Prisma client into node_modules. The schema reads MONGODB_URI,
+# but generation never connects — a placeholder is correct here. It is scoped to
+# this one command so it cannot leak into the image's environment.
+RUN MONGODB_URI="mongodb://placeholder:placeholder@localhost:27017/placeholder" npx prisma generate
 
 # ─── Stage 3: runtime ─────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
 
 WORKDIR /app
 
-# postgresql-client provides pg_dump / pg_restore / psql, which the backup
+# mongodb-database-tools provides mongodump / mongorestore, which the backup
 # service (src/lib/backup.ts) shells out to. Without it, backups silently
-# cannot run — the exact failure this project already had once.
+# cannot run — the exact failure this project already had once. It is not in
+# Debian's own repositories, so MongoDB's signed apt repository is added.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      openssl ca-certificates postgresql-client tini \
+      openssl ca-certificates tini curl gnupg \
+    && curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc \
+       | gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" \
+       > /etc/apt/sources.list.d/mongodb-org-8.0.list \
+    && apt-get update && apt-get install -y --no-install-recommends mongodb-database-tools \
+    && apt-get purge -y curl gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
@@ -55,7 +61,6 @@ COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
 COPY package.json ./
 COPY prisma ./prisma
-COPY prisma.config.ts ./
 COPY scripts ./scripts
 COPY src ./src
 COPY tsconfig.json ./

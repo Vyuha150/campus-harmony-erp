@@ -87,7 +87,7 @@ async function main() {
         targetDatabase: config.backup.verifyDatabase
       });
 
-      console.log(`  tables restored   ${result.tablesRestored}`);
+      console.log(`  collections restored   ${result.tablesRestored}`);
       console.log(`  duration          ${(result.durationMs / 1000).toFixed(1)}s`);
       console.log('');
       console.log('  RESULT: PASS — this backup is restorable.');

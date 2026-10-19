@@ -7,7 +7,7 @@
  *   1. Files are LOST on container replacement or redeploy.
  *   2. A second instance cannot serve a file uploaded to the first — which is
  *      blocker F2 for horizontal scaling.
- *   3. `pg_dump` covers the database only, so uploaded files are in NO backup.
+ *   3. `mongodump` covers the database only, so uploaded files are in NO backup.
  *
  * The interface below lets the same `FileMetadata` row resolve through local
  * disk in development and object storage in production, without any calling
