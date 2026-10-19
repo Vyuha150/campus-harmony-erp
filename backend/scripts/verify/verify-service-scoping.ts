@@ -37,11 +37,13 @@ const pass = (m: string) => { console.log(`  PASS  ${m}`); checks++; };
 const fail = (m: string) => { console.log(`  FAIL  ${m}`); failures++; checks++; };
 
 async function plantRival() {
-  await basePrisma.$executeRawUnsafe(`DELETE FROM "SportsTeam" WHERE id='${PROBE}'`);
-  await basePrisma.$executeRawUnsafe(
-    `INSERT INTO "SportsTeam" (id,"institutionId",sport,category,level,coach,season,status)
-     VALUES ('${PROBE}','${RIVAL}','Probe','Probe','university','UNTOUCHED','2026','active')`
-  );
+  await basePrisma.sportsTeam.deleteMany({ where: { id: PROBE } });
+  await basePrisma.sportsTeam.create({
+    data: {
+      id: PROBE, institutionId: RIVAL, sport: 'Probe', category: 'Probe',
+      level: 'university', coach: 'UNTOUCHED', season: '2026', status: 'active'
+    }
+  });
 }
 
 async function main() {
@@ -109,9 +111,7 @@ async function main() {
       : fail(`findMany returned ${read.length} row(s) from another institution`);
   });
 
-  const after = await basePrisma.$queryRawUnsafe<{ coach: string }[]>(
-    `SELECT coach FROM "SportsTeam" WHERE id='${PROBE}'`
-  );
+  const after = await basePrisma.sportsTeam.findMany({ where: { id: PROBE }, select: { coach: true } });
   after[0]?.coach === 'UNTOUCHED'
     ? pass('the rival row is byte-for-byte unchanged')
     : fail(`the rival row was modified: ${after[0]?.coach}`);
@@ -144,14 +144,12 @@ async function main() {
     }
   });
 
-  const survived = await basePrisma.$queryRawUnsafe<{ coach: string }[]>(
-    `SELECT coach FROM "SportsTeam" WHERE id='${PROBE}'`
-  );
+  const survived = await basePrisma.sportsTeam.findMany({ where: { id: PROBE }, select: { coach: true } });
   survived.length === 1 && survived[0]?.coach === 'UNTOUCHED'
     ? pass('the rival row survived both, unchanged')
     : fail(`the rival row was written or removed: ${JSON.stringify(survived)}`);
 
-  await basePrisma.$executeRawUnsafe(`DELETE FROM "SportsTeam" WHERE id='${PROBE}'`);
+  await basePrisma.sportsTeam.deleteMany({ where: { id: PROBE } });
   await basePrisma.$disconnect();
 
   console.log('');

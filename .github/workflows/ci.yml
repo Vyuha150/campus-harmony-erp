@@ -48,7 +48,7 @@ jobs:
         working-directory: backend
         run: npx prisma generate
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/placeholder
+          MONGODB_URI: mongodb://placeholder:placeholder@localhost:27017/placeholder
 
       - name: Typecheck backend
         working-directory: backend
@@ -86,7 +86,7 @@ jobs:
         working-directory: backend
         run: npx prisma generate
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/placeholder
+          MONGODB_URI: mongodb://placeholder:placeholder@localhost:27017/placeholder
 
       # Includes the source-level guards that fail if data fabrication, the
       # hardcoded JWT secret, or unscoped tenant models are reintroduced.
@@ -94,29 +94,22 @@ jobs:
         working-directory: backend
         run: npm test
 
-  # ── Gate 3: migrations ──────────────────────────────────────────────────────
-  # Catches a migration that works against a developer's drifted database but
-  # fails on a clean one — the failure mode that makes a deploy unrecoverable.
-  migrations:
-    name: Migration validation
+  # ── Gate 3: schema and seed ─────────────────────────────────────────────────
+  # MongoDB has no migration history to replay, so this gate checks the schema
+  # itself, then — when a database is available — that the indexes apply and the
+  # seed still runs against it.
+  #
+  # The live steps need a REPLICA SET (the services use transactions), so they
+  # run against a dedicated Atlas database supplied as the CI_MONGODB_URI
+  # repository secret. Without the secret they are skipped rather than failing:
+  # forks and first-time contributors have no access to it.
+  schema:
+    name: Schema validation
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: campus_harmony_ci
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campus_harmony_ci
+      MONGODB_URI: ${{ secrets.CI_MONGODB_URI || 'mongodb://placeholder:placeholder@localhost:27017/placeholder' }}
+      HAS_DATABASE: ${{ secrets.CI_MONGODB_URI != '' }}
       NODE_ENV: test
       JWT_SECRET: ci-only-secret-value-at-least-32-characters-long
       ALLOW_SEED: 'yes'
@@ -133,42 +126,21 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Validate the Prisma schema
+        working-directory: backend
+        run: npx prisma validate
+
       - name: Generate Prisma client
         working-directory: backend
         run: npx prisma generate
 
-      - name: Apply migrations to an EMPTY database
+      - name: Apply indexes to the CI database
+        if: env.HAS_DATABASE == 'true'
         working-directory: backend
-        run: npx prisma migrate deploy
+        run: npx prisma db push --skip-generate
 
-      # `migrate diff --exit-code` returns 2 when the schema and the migration
-      # history disagree — i.e. someone edited schema.prisma without generating
-      # a migration.
-      # This gate NEVER RAN. `--shadow-database-url` is not an option on
-      # `prisma migrate diff` in this Prisma version, so the command exited on a
-      # usage error every time — and `continue-on-error: true` swallowed it, so
-      # the step reported success while checking nothing. The shadow database
-      # comes from prisma.config.ts, which already reads SHADOW_DATABASE_URL.
-      #
-      # Once it actually ran it immediately found real drift: four tables whose
-      # foreign keys and indexes exist in the migrations but were never declared
-      # in schema.prisma, so the next `migrate dev` would have generated a
-      # migration DROPPING them. Now blocking.
-      - name: Create shadow database for the drift check
-        run: |
-          PGPASSWORD=postgres psql -h localhost -U postgres             -c "CREATE DATABASE campus_harmony_ci_shadow;"
-
-      - name: Assert schema matches migration history
-        working-directory: backend
-        env:
-          SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campus_harmony_ci_shadow
-        run: |
-          npx prisma migrate diff             --from-migrations prisma/migrations             --to-schema prisma/schema.prisma             --exit-code && echo "Schema and migrations are in sync." || {
-              echo "::error::schema.prisma has changes with no corresponding migration."
-              exit 1
-            }
-
-      - name: Seed (proves the seed still runs against a fresh schema)
+      - name: Seed (proves the seed still runs against the schema)
+        if: env.HAS_DATABASE == 'true'
         working-directory: backend
         run: npx prisma db seed
 
@@ -180,21 +152,9 @@ jobs:
       # a student with 92 credits. Only a real database, driven through the
       # real services, exercises the connection.
       - name: Verify results publication recomputes CGPA
+        if: env.HAS_DATABASE == 'true'
         working-directory: backend
         run: npm run verify:results
-
-      - name: Verify backup and restore
-        working-directory: backend
-        env:
-          PG_BIN_DIR: /usr/lib/postgresql/17/bin
-          BACKUP_DIR: backups
-          BACKUP_VERIFY_DB: campus_harmony_ci_restore
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-17 || sudo apt-get install -y -qq postgresql-client
-          export PG_BIN_DIR=$(dirname $(which pg_dump))
-          npm run backup
-          npm run backup:verify
 
   # ── Gate 4: security ────────────────────────────────────────────────────────
   security:
@@ -284,7 +244,7 @@ jobs:
         run: |
           set +e
           OUTPUT=$(docker run --rm \
-            -e DATABASE_URL=postgresql://u:p@localhost:5432/db \
+            -e MONGODB_URI=mongodb://u:p@localhost:27017/db \
             campus-harmony-backend:ci 2>&1)
           CODE=$?
           set -e

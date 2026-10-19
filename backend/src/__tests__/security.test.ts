@@ -5,7 +5,7 @@
  * corresponds to a P0/P1 finding from /docs/system-audit/17_MASTER_GAP_REGISTER.md.
  *
  * These are pure unit tests — no database or running server required, so they
- * are safe to run in CI. End-to-end HTTP tests against a disposable Postgres
+ * are safe to run in CI. End-to-end HTTP tests against a disposable MongoDB
  * are tracked as T-213.
  *
  * Run: npm test

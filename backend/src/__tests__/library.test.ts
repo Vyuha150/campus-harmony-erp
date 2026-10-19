@@ -199,14 +199,14 @@ describe('library module guarantees', () => {
   });
 
   it('circulation reads lock the copy before deciding availability', async () => {
-    // Without FOR UPDATE, two concurrent issues both see `available` and both
+    // Without the write lock, two concurrent issues both see `available` and both
     // succeed — one physical book, two borrowers.
     const { readFileSync } = await import('node:fs');
     const service = readFileSync(
       new URL('../modules/library/library.service.ts', import.meta.url),
       'utf8'
     );
-    const locks = service.match(/FOR UPDATE/g) ?? [];
+    const locks = service.match(/await lockForUpdate\(db\.libraryBook/g) ?? [];
     expect(locks.length).toBeGreaterThanOrEqual(3);
   });
 

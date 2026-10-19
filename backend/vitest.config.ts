@@ -9,7 +9,7 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
       JWT_SECRET: 'test-only-secret-value-at-least-32-characters-long',
-      DATABASE_URL: 'postgresql://test:test@localhost:5432/test?schema=public'
+      MONGODB_URI: 'mongodb://test:test@localhost:27017/test'
     }
   }
 });

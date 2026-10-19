@@ -16,7 +16,7 @@
  * it. The defect was in the wiring between correct parts, so the check has to
  * run the wiring — against a real database, through the real services.
  *
- * Run by the `migrations` CI job, which already provisions PostgreSQL and
+ * Run by the `migrations` CI job, which runs against the CI MongoDB database and
  * seeds it. Exits non-zero on failure.
  */
 
