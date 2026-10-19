@@ -6,6 +6,13 @@ import { authenticate } from '../middleware/auth.js';
 import { NotFoundError , sendError} from '../lib/errors.js';
 import { getTenantContext } from '../lib/tenant.js';
 import { recordFromRequest } from '../lib/audit.js';
+import { startApprovalFor, startWorkflow } from '../modules/workflow/workflow.service.js';
+import { ensureDefinition } from '../modules/workflow/bridge.js';
+import { LESSON_PLAN_FLOW } from '../modules/workflow/builtins.js';
+import { listCourseMaterials } from '../lib/courseMaterials.js';
+import * as resultsFlow from '../modules/examination/resultsFlow.js';
+import { notifyInApp } from '../lib/inAppNotify.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { entityId } from '../schemas/common.js';
@@ -24,7 +31,9 @@ import {
   researchProjectCreateSchema,
   facultyGrievanceCreateSchema,
   grievanceRespondSchema,
-  facultyClassMessageCreateSchema
+  facultyClassMessageCreateSchema,
+  patentCreateSchema,
+  counselingNoteStatusSchema
 } from '../modules/faculty/faculty.schemas.js';
 
 const router = Router();
@@ -95,17 +104,21 @@ async function getFacultyProfile(userId: string) {
 async function attendancePercentageByStudent(studentProfileIds: string[]): Promise<Map<string, number>> {
   if (studentProfileIds.length === 0) return new Map();
 
-  const records = await prisma.attendance.findMany({
+  // Counted by the database, one row per student and status. Loading every
+  // attendance record instead grows with class size and term length — a single
+  // 30-student class passes the 1,000-row read cap within a month.
+  const counts = await prisma.attendance.groupBy({
+    by: ['studentProfileId', 'status'],
     where: { studentProfileId: { in: studentProfileIds } },
-    select: { studentProfileId: true, status: true }
+    _count: { _all: true }
   });
 
   const totals = new Map<string, { present: number; total: number }>();
-  for (const record of records) {
-    const bucket = totals.get(record.studentProfileId) ?? { present: 0, total: 0 };
-    bucket.total += 1;
-    if (record.status === 'present') bucket.present += 1;
-    totals.set(record.studentProfileId, bucket);
+  for (const row of counts) {
+    const bucket = totals.get(row.studentProfileId) ?? { present: 0, total: 0 };
+    bucket.total += row._count._all;
+    if (row.status === 'present') bucket.present += row._count._all;
+    totals.set(row.studentProfileId, bucket);
   }
 
   const percentages = new Map<string, number>();
@@ -318,9 +331,34 @@ router.get('/profile/leave-history', authenticate, async (req: Request, res: Res
       orderBy: { appliedAt: 'desc' }
     });
 
+    // Where each leave is in its approval. A leave approved by the HOD still
+    // read "pending" with no hint that it had moved on to the Dean.
+    const instances = await prisma.workflowInstance.findMany({
+      where: { entityType: 'LeaveRequest', entityId: { in: leaves.map((l: any) => l.id) } },
+      include: { definition: { include: { steps: { orderBy: { sequence: 'asc' } } } }, transitions: true },
+      orderBy: { startedAt: 'desc' }
+    });
+    const approvalFor = (leaveId: string) => {
+      const inst: any = instances.find((i: any) => i.entityId === leaveId);
+      if (!inst) return null;
+      return {
+        instanceId: inst.id,
+        status: inst.status,
+        steps: inst.definition.steps.map((step: any) => {
+          const decided = inst.transitions.filter((t: any) => t.fromStepId === step.id && t.action !== 'started').pop();
+          return {
+            role: step.assigneeRole,
+            name: step.name,
+            state: decided ? decided.action : step.id === inst.currentStepId && inst.status === 'pending' ? 'current' : 'upcoming'
+          };
+        })
+      };
+    };
+
     res.json({
       success: true,
       data: leaves.map((leave: any) => ({
+        approval: approvalFor(leave.id),
         id: leave.id,
         type: leave.type,
         fromDate: leave.fromDate.toLocaleDateString('en-IN'),
@@ -367,7 +405,10 @@ router.post('/profile/leave-request', authenticate, validate({ body: leaveReques
       }
     });
 
-    res.json({ success: true, data: created });
+    // Routed for approval (HOD → Dean → Registrar). Its outcome is written back
+    // to the leave request when the last step decides.
+    const approval = await startApprovalFor(getTenantContext(req), 'FACULTY_LEAVE', 'LeaveRequest', created.id);
+    res.json({ success: true, data: { ...created, approval } });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -387,9 +428,32 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
         department: true,
         schedules: true,
         enrollments: { include: { student: true } },
+        lessonPlans: { select: { status: true } },
         classes: { where: { facultyId: profile.id }, orderBy: { section: 'asc' } }
       }
     });
+
+    // `averageAttendance: 85, syllabusCompletion: 60, averageScore: 72` were
+    // literals — identical for every course of every faculty member, on the
+    // screen a teacher reads to judge how their own class is going. Each is now
+    // computed, and `null` when there is nothing to compute it from: a course
+    // with no sessions held has no attendance figure, not a plausible 85%.
+    const figures = new Map<string, { averageAttendance: number | null; syllabusCompletion: number | null; averageScore: number | null }>();
+    for (const c of courses as any[]) {
+      const [marked, present] = await Promise.all([
+        prisma.attendance.count({ where: { session: { courseId: c.id } } }),
+        prisma.attendance.count({ where: { session: { courseId: c.id }, status: 'present' } })
+      ]);
+      const scores = c.enrollments
+        .map((e: any) => e.internalMarks ?? (e.grade != null && e.grade !== '' ? Number(e.grade) : NaN))
+        .filter((v: number) => Number.isFinite(v));
+      const taught = c.lessonPlans.filter((p: any) => p.status === 'completed').length;
+      figures.set(c.id, {
+        averageAttendance: marked > 0 ? Math.round((present / marked) * 100) : null,
+        syllabusCompletion: c.lessonPlans.length > 0 ? Math.round((taught / c.lessonPlans.length) * 100) : null,
+        averageScore: scores.length > 0 ? Math.round(scores.reduce((s: number, v: number) => s + v, 0) / scores.length) : null
+      });
+    }
 
     res.json({
       success: true,
@@ -401,7 +465,7 @@ router.get('/courses', authenticate, async (req: Request, res: Response) => {
         program: c.enrollments[0]?.student?.program || 'UG Programme',
         section: c.classes?.[0]?.section || c.enrollments[0]?.student?.section || 'A',
         batch: c.classes?.[0]?.batch || '',
-        schedule: c.schedules, averageAttendance: 85, syllabusCompletion: 60, averageScore: 72
+        schedule: c.schedules, ...figures.get(c.id)
       }))
     });
   } catch (error: any) {
@@ -462,118 +526,37 @@ router.get('/current-semester', authenticate, async (req: Request, res: Response
   }
 });
 
-router.put('/courses/:id/details', authenticate, validate({ params: z.object({ id: entityId }), body: courseDetailsUpdateSchema }), async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.id;
-    const userRole = String((req as any).user?.role || '');
-    const profile = await getFacultyProfile(userId);
-    const courseId = String(req.params.id);
-    const {
-      code,
-      name,
-      credits,
-      semester,
-      className,
-      section,
-      batch,
-      schedule
-    } = req.body || {};
+// PUT /courses/:id/details removed. It let a faculty member rewrite their own
+// course's code, credits, semester and timetable. Those belong to the HOD
+// (Workload & Timetable); the faculty screen now shows them read-only.
 
-    const attemptsTimetableOrClassroomUpdate =
-      schedule !== undefined ||
-      className !== undefined ||
-      section !== undefined ||
-      batch !== undefined;
+/** Each of my courses' lesson plan: weeks planned / taught and where its approval stands. */
+router.get('/courses/lesson-plan-status', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const profile = await getFacultyProfile((req as any).user.id);
+  const courses: any[] = await prisma.course.findMany({ where: { facultyId: profile.id }, include: { lessonPlans: { select: { status: true } } }, orderBy: [{ semester: 'asc' }, { code: 'asc' }] } as never);
+  res.json({ success: true, data: courses.map((c) => ({
+    courseId: c.id, code: c.code, name: c.name, semester: c.semester,
+    weeks: c.lessonPlans.length, completed: c.lessonPlans.filter((w: any) => w.status === 'completed').length,
+    status: c.lessonPlanStatus ?? 'draft', note: c.lessonPlanNote ?? null
+  })) });
+}));
 
-    if (userRole === 'faculty' && attemptsTimetableOrClassroomUpdate) {
-      res.status(403).json({ success: false, message: 'Only HOD/Dean can update class timetable or classroom' });
-      return;
-    }
-
-    const course = await prisma.course.findFirst({ where: { id: courseId, facultyId: profile.id } });
-    if (!course) {
-      res.status(404).json({ success: false, message: 'Course not found for this faculty' });
-      return;
-    }
-
-    const updatedCourse = await prisma.course.update({
-      where: { id: courseId },
-      data: {
-        ...(code ? { code: String(code).trim() } : {}),
-        ...(name ? { name: String(name).trim() } : {}),
-        ...(Number.isFinite(Number(credits)) ? { credits: Number(credits) } : {}),
-        ...(Number.isFinite(Number(semester)) ? { semester: Number(semester) } : {})
-      },
-      include: { schedules: true, department: true }
-    });
-
-    const classRecord = await prisma.courseClass.findFirst({
-      where: { courseId: updatedCourse.id, facultyId: profile.id },
-      orderBy: { section: 'asc' }
-    });
-
-    let updatedClass = classRecord;
-    if (classRecord) {
-      updatedClass = await prisma.courseClass.update({
-        where: { id: classRecord.id },
-        data: {
-          ...(typeof className === 'string' ? { name: className.trim() } : {}),
-          ...(typeof section === 'string' && section.trim() ? { section: section.trim() } : {}),
-          ...(typeof batch === 'string' ? { batch: batch.trim() || null } : {})
-        }
-      });
-    }
-
-    if (Array.isArray(schedule)) {
-      await prisma.courseSchedule.deleteMany({ where: { courseId: updatedCourse.id } });
-
-      const normalizedSchedule = schedule
-        .filter((item: any) => item && item.day && item.startTime && item.endTime)
-        .map((item: any) => ({
-          courseId: updatedCourse.id,
-          day: String(item.day),
-          startTime: String(item.startTime),
-          endTime: String(item.endTime),
-          room: String(item.room || 'TBA'),
-          type: String(item.type || 'lecture')
-        }));
-
-      if (normalizedSchedule.length > 0) {
-        await prisma.courseSchedule.createMany({ data: normalizedSchedule });
-      }
-    }
-
-    const refreshedCourse = await prisma.course.findUnique({
-      where: { id: updatedCourse.id },
-      include: {
-        department: true,
-        schedules: true,
-        enrollments: { include: { student: true } }
-      }
-    });
-
-    res.json({
-      success: true,
-      data: {
-        id: refreshedCourse?.id,
-        code: refreshedCourse?.code,
-        name: refreshedCourse?.name,
-        credits: refreshedCourse?.credits,
-        semester: refreshedCourse?.semester,
-        classId: updatedClass?.id || null,
-        className: updatedClass?.name || null,
-        section: updatedClass?.section || refreshedCourse?.enrollments?.[0]?.student?.section || 'A',
-        batch: updatedClass?.batch || '',
-        department: refreshedCourse?.department?.name,
-        totalStudents: refreshedCourse?.enrollments?.length || 0,
-        program: refreshedCourse?.enrollments?.[0]?.student?.program || 'UG Programme',
-        schedule: refreshedCourse?.schedules || []
-      }
-    });
-  } catch (error: any) {
-    sendError(res, error);
+/** Send the course's lesson plan to the HOD (then the Dean) for approval. */
+router.post('/courses/:courseId/lesson-plan/submit', authenticate, validate({ params: z.object({ courseId: entityId }) }), asyncHandler(async (req: Request, res: Response) => {
+  const ctx = getTenantContext(req);
+  const profile = await getFacultyProfile(ctx.userId);
+  const course: any = await prisma.course.findFirst({ where: { id: String(req.params.courseId), facultyId: profile.id } });
+  if (!course) { res.status(404).json({ success: false, message: 'Course not found for this faculty' }); return; }
+  if (course.lessonPlanStatus === 'submitted' || course.lessonPlanStatus === 'approved') {
+    res.status(409).json({ success: false, message: `The lesson plan is already ${course.lessonPlanStatus}.` }); return;
   }
-});
+  const weeks = await db.facultyLessonPlan.count({ where: { courseId: course.id } });
+  if (weeks < 4) { res.status(400).json({ success: false, message: `Plan at least 4 weeks before submitting (${weeks} so far).` }); return; }
+  await ensureDefinition(ctx, LESSON_PLAN_FLOW);
+  await prisma.course.updateMany({ where: { id: course.id }, data: { lessonPlanStatus: 'submitted', lessonPlanNote: null } });
+  const started = await startWorkflow(ctx, { code: LESSON_PLAN_FLOW.code, entityType: 'Course', entityId: course.id });
+  res.json({ success: true, data: { status: 'submitted', waitingOn: started.assigneeRole } });
+}));
 
 router.get('/courses/lesson-plans', authenticate, async (req: Request, res: Response) => {
   try {
@@ -775,23 +758,139 @@ router.get('/attendance/sessions', authenticate, async (req: Request, res: Respo
   }
 });
 
+/**
+ * A calendar day as stored on AttendanceSession.date: midnight UTC of the
+ * YYYY-MM-DD the faculty member picked. The seed and every write use this, so
+ * one class on one day is always the same session.
+ */
+function attendanceDay(value: unknown): Date | null {
+  const text = String(value ?? '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const day = new Date(`${text}T00:00:00.000Z`);
+  return Number.isNaN(day.getTime()) ? null : day;
+}
+const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * The course if this faculty member teaches it — or is covering that class on
+ * that date (a HOD-arranged ClassSubstitution). Null otherwise.
+ */
+async function courseForAttendance(facultyProfileId: string, courseId: string, day: Date | null, startTime: string | null) {
+  const own = await prisma.course.findFirst({ where: { id: courseId, facultyId: facultyProfileId } });
+  if (own) return own;
+  if (!day || !startTime) return null;
+  const cover = await db.classSubstitution.findFirst({ where: { courseId, date: day, startTime, substituteFacultyId: facultyProfileId } });
+  return cover ? prisma.course.findFirst({ where: { id: courseId } }) : null;
+}
+
+/**
+ * The faculty member's classes on a date, from the timetable — whether or not
+ * attendance has been taken yet. The old screen listed only sessions that
+ * already existed, so a scheduled class had nothing to mark.
+ */
+router.get('/attendance/classes', authenticate, async (req: Request, res: Response) => {
+  try {
+    const profile = await getFacultyProfile((req as any).user.id);
+    const day = attendanceDay(req.query.date) ?? attendanceDay(new Date().toISOString());
+    if (!day) throw new NotFoundError('Date');
+    const weekday = WEEKDAY[day.getUTCDay()]!;
+
+    const courses = await prisma.course.findMany({
+      where: { facultyId: profile.id },
+      include: { schedules: true }
+    });
+    const courseIds = courses.map((c: any) => c.id);
+    const [sessions, enrolled] = await Promise.all([
+      prisma.attendanceSession.findMany({
+        where: { courseId: { in: courseIds }, date: { gte: day, lt: new Date(day.getTime() + 86_400_000) } },
+        include: { records: { select: { status: true } } }
+      }),
+      prisma.enrollment.groupBy({ by: ['courseId'], where: { courseId: { in: courseIds } }, _count: { _all: true } })
+    ]);
+    const enrolledBy = new Map(enrolled.map((e: any) => [e.courseId, e._count._all]));
+
+    // Cover arranged by the HOD for this date — classes I take for someone
+    // else, and my own classes someone else is taking.
+    const covers = await db.classSubstitution.findMany({
+      where: { date: day, OR: [{ substituteFacultyId: profile.id }, { courseId: { in: courseIds } }] }
+    });
+    const coverCourses = await prisma.course.findMany({
+      where: { id: { in: covers.filter((c: any) => c.substituteFacultyId === profile.id).map((c: any) => c.courseId) } },
+      include: { schedules: true }
+    });
+    const coverSessions = await prisma.attendanceSession.findMany({
+      where: { courseId: { in: coverCourses.map((c: any) => c.id) }, date: { gte: day, lt: new Date(day.getTime() + 86_400_000) } },
+      include: { records: { select: { status: true } } }
+    });
+    const coverEnrolled = await prisma.enrollment.groupBy({ by: ['courseId'], where: { courseId: { in: coverCourses.map((c: any) => c.id) } }, _count: { _all: true } });
+
+    const classes = courses.flatMap((course: any) =>
+      (course.schedules || [])
+        .filter((slot: any) => String(slot.day).toLowerCase() === weekday.toLowerCase())
+        .map((slot: any) => {
+          const session: any = sessions.find((x: any) => x.courseId === course.id && x.startTime === slot.startTime);
+          const records = session?.records ?? [];
+          return {
+            courseId: course.id, courseCode: course.code, courseName: course.name, semester: course.semester,
+            startTime: slot.startTime, endTime: slot.endTime, room: slot.room, type: slot.type,
+            totalStudents: enrolledBy.get(course.id) ?? 0,
+            sessionId: session?.id ?? null,
+            taken: records.length > 0,
+            presentCount: records.filter((r: any) => r.status === 'present' || r.status === 'late').length,
+            absentCount: records.filter((r: any) => r.status === 'absent').length
+          };
+        })
+    );
+
+    for (const cls of classes as any[]) {
+      const cover = covers.find((c: any) => c.courseId === cls.courseId && c.startTime === cls.startTime && c.substituteFacultyId !== profile.id);
+      if (cover) cls.coveredBy = (await prisma.facultyProfile.findFirst({ where: { id: cover.substituteFacultyId }, include: { user: true } }))?.user?.name ?? 'another teacher';
+    }
+    for (const cover of covers.filter((c: any) => c.substituteFacultyId === profile.id)) {
+      const course: any = coverCourses.find((c: any) => c.id === cover.courseId);
+      if (!course) continue;
+      const slot = course.schedules.find((x: any) => x.id === cover.scheduleId);
+      const session: any = coverSessions.find((x: any) => x.courseId === course.id && x.startTime === cover.startTime);
+      const records = session?.records ?? [];
+      classes.push({
+        courseId: course.id, courseCode: course.code, courseName: course.name, semester: course.semester,
+        startTime: cover.startTime, endTime: cover.endTime, room: slot?.room ?? 'TBA', type: slot?.type ?? 'Lecture',
+        totalStudents: (coverEnrolled.find((e: any) => e.courseId === course.id) as any)?._count?._all ?? 0,
+        sessionId: session?.id ?? null,
+        taken: records.length > 0,
+        presentCount: records.filter((r: any) => r.status === 'present' || r.status === 'late').length,
+        absentCount: records.filter((r: any) => r.status === 'absent').length,
+        substitution: true
+      } as any);
+    }
+    classes.sort((x: any, y: any) => x.startTime.localeCompare(y.startTime));
+
+    res.json({ success: true, data: { date: day.toISOString().slice(0, 10), weekday, classes } });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+/** Students of one of the faculty member's courses, with any marks already saved for that class. */
 router.get('/attendance/roster', authenticate, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const semesterQuery = req.query.semester ? Number(req.query.semester) : undefined;
-    const courseIdQuery = req.query.courseId ? String(req.query.courseId) : undefined;
-    const profile = await getFacultyProfile(userId);
-    const where: any = { facultyId: profile.id };
-    if (courseIdQuery) where.id = courseIdQuery;
-    if (Number.isFinite(semesterQuery)) where.semester = semesterQuery;
-    const course = await prisma.course.findFirst({
-      where
-    });
-
+    const profile = await getFacultyProfile((req as any).user.id);
+    const courseId = req.query.courseId ? String(req.query.courseId) : '';
+    const day = attendanceDay(req.query.date);
+    const startTime = req.query.startTime ? String(req.query.startTime) : null;
+    const course = await courseForAttendance(profile.id, courseId, day, startTime);
     if (!course) {
       res.json({ success: true, data: [] });
       return;
     }
+
+    const session = day && startTime
+      ? await prisma.attendanceSession.findFirst({
+          where: { courseId, startTime, date: { gte: day, lt: new Date(day.getTime() + 86_400_000) } },
+          include: { records: true }
+        })
+      : null;
+    const saved = new Map((session?.records ?? []).map((r: any) => [r.studentProfileId, r.status]));
 
     const enrollments = await prisma.enrollment.findMany({
       where: { courseId: course.id },
@@ -800,18 +899,27 @@ router.get('/attendance/roster', authenticate, async (req: Request, res: Respons
 
     res.json({
       success: true,
-      data: enrollments.map((enrollment: any) => ({
-        studentId: enrollment.student.id,
-        rollNumber: enrollment.student.rollNumber,
-        name: enrollment.student.user?.name || enrollment.student.rollNumber,
-        status: 'present'
-      }))
+      data: enrollments
+        .map((enrollment: any) => ({
+          studentId: enrollment.student.id,
+          rollNumber: enrollment.student.rollNumber,
+          name: enrollment.student.user?.name || enrollment.student.rollNumber,
+          // null = not marked yet. Defaulting everyone to "present" recorded
+          // students as present without the teacher ever looking at them.
+          status: saved.get(enrollment.student.id) ?? null
+        }))
+        .sort((x: any, y: any) => String(x.rollNumber).localeCompare(String(y.rollNumber)))
     });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
+/**
+ * Post or update attendance for one class on one day. Taking it again for the
+ * same class replaces the earlier marks — it used to add a second session, so
+ * a correction counted the class twice in every student's percentage.
+ */
 router.post('/attendance/mark', authenticate, validate({ body: attendanceMarkSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -820,39 +928,60 @@ router.post('/attendance/mark', authenticate, validate({ body: attendanceMarkSch
 
     // courseId is client-supplied — without this, a faculty member could
     // mark attendance for a course (and its students) that isn't theirs.
-    const course = await prisma.course.findFirst({ where: { id: courseId, facultyId: profile.id } });
+    const day = attendanceDay(date instanceof Date ? date.toISOString() : date);
+    const course = await courseForAttendance(profile.id, courseId, day, startTime);
     if (!course) {
       res.status(404).json({ success: false, message: 'Course not found for this faculty' });
       return;
     }
 
-    const session = await prisma.attendanceSession.create({
-      data: { courseId, facultyId: profile.id, date: new Date(date), startTime, endTime, type: type || 'lecture' }
-    });
-
-    if (students && Array.isArray(students)) {
-      // Each studentId is also client-supplied — restrict to students
-      // actually enrolled in this course, so attendance can't be recorded
-      // for an arbitrary (or foreign-institution) studentProfileId.
-      const enrolled = await prisma.enrollment.findMany({
-        where: { courseId, studentProfileId: { in: students.map((s: any) => s.studentId) } },
-        select: { studentProfileId: true }
-      });
-      const enrolledIds = new Set(enrolled.map((e: any) => e.studentProfileId));
-      const validStudents = students.filter((s: any) => enrolledIds.has(s.studentId));
-
-      if (validStudents.length > 0) {
-        await prisma.attendance.createMany({
-          data: validStudents.map((s: any) => ({
-            attendanceSessionId: session.id,
-            studentProfileId: s.studentId,
-            status: s.status
-          }))
-        });
-      }
+    if (!day) {
+      res.status(400).json({ success: false, message: 'A valid class date is required' });
+      return;
+    }
+    // A class that has not happened yet cannot have attendance.
+    const todayUtc = attendanceDay(new Date().toISOString())!;
+    if (day.getTime() > todayUtc.getTime() + 86_400_000) {
+      res.status(400).json({ success: false, message: 'Attendance cannot be posted for a future date' });
+      return;
     }
 
-    res.json({ success: true, data: session });
+    // Each studentId is also client-supplied — restrict to students
+    // actually enrolled in this course, so attendance can't be recorded
+    // for an arbitrary (or foreign-institution) studentProfileId.
+    const list = Array.isArray(students) ? students : [];
+    const enrolled = await prisma.enrollment.findMany({
+      where: { courseId, studentProfileId: { in: list.map((s: any) => s.studentId) } },
+      select: { studentProfileId: true }
+    });
+    const enrolledIds = new Set(enrolled.map((e: any) => e.studentProfileId));
+    const validStudents = list.filter((s: any) => enrolledIds.has(s.studentId));
+    if (validStudents.length === 0) {
+      res.status(400).json({ success: false, message: 'Mark at least one enrolled student' });
+      return;
+    }
+
+    const existing = await prisma.attendanceSession.findFirst({
+      where: { courseId, startTime, date: { gte: day, lt: new Date(day.getTime() + 86_400_000) } }
+    });
+    const session = existing ?? await prisma.attendanceSession.create({
+      data: { courseId, facultyId: profile.id, date: day, startTime, endTime, type: (type || 'lecture').toLowerCase() }
+    });
+
+    if (existing) await prisma.attendance.deleteMany({ where: { attendanceSessionId: session.id } });
+    await prisma.attendance.createMany({
+      data: validStudents.map((s: any) => ({ attendanceSessionId: session.id, studentProfileId: s.studentId, status: s.status }))
+    });
+
+    await recordFromRequest(req, {
+      action: existing ? 'UPDATE' : 'CREATE',
+      module: 'attendance',
+      resource: `AttendanceSession:${session.id}`,
+      details: `${existing ? 'Updated' : 'Posted'} attendance for ${course.code} on ${day.toISOString().slice(0, 10)} ${startTime}`
+    });
+
+    const present = validStudents.filter((s: any) => s.status !== 'absent').length;
+    res.json({ success: true, data: { ...session, updated: !!existing, presentCount: present, absentCount: validStudents.length - present } });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -905,6 +1034,13 @@ router.get('/assignments', authenticate, async (req: Request, res: Response) => 
       orderBy: { dueDate: 'desc' }
     });
 
+    const sizes = await db.classEnrollment.groupBy({
+      by: ['classId'],
+      where: { classId: { in: [...new Set(assignments.map((a: any) => a.classId))] } },
+      _count: { _all: true }
+    });
+    const classSize = new Map<string, number>(sizes.map((x: any) => [x.classId, x._count._all]));
+
     res.json({
       success: true,
       data: assignments.map((a: any) => ({
@@ -918,9 +1054,13 @@ router.get('/assignments', authenticate, async (req: Request, res: Response) => 
         courseCode: a.class?.course?.code || '',
         courseName: a.class?.course?.name || '',
         title: a.title, description: a.description, dueDate: a.dueDate, maxMarks: a.maxMarks,
+        attachmentUrl: a.attachmentUrl ?? null, attachmentName: a.attachmentName ?? null,
         status: a.status, type: 'assignment',
         totalSubmissions: a.submissions.length,
-        pendingEvaluation: a.submissions.filter((s: any) => s.status === 'submitted').length
+        pendingEvaluation: a.submissions.filter((s: any) => s.status === 'submitted').length,
+        gradedCount: a.submissions.filter((s: any) => s.status === 'evaluated').length,
+        classSize: classSize.get(a.classId) ?? 0,
+        notSubmitted: Math.max(0, (classSize.get(a.classId) ?? 0) - a.submissions.length)
       }))
     });
   } catch (error: any) {
@@ -932,7 +1072,7 @@ router.post('/assignments', authenticate, validate({ body: assignmentCreateSchem
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
-    const { classId, title, description, dueDate, maxMarks, status } = req.body;
+    const { classId, title, description, dueDate, maxMarks, status, attachmentUrl, attachmentName } = req.body;
 
     const classRecord = await db.courseClass.findFirst({ where: { id: classId, facultyId: profile.id }, include: { course: true } });
     if (!classRecord) {
@@ -941,7 +1081,10 @@ router.post('/assignments', authenticate, validate({ body: assignmentCreateSchem
     }
 
     const assignment = await db.assignment.create({
-      data: { classId, title, description, dueDate: new Date(dueDate), maxMarks, status: status || 'published' }
+      data: {
+        classId, title, description, dueDate: new Date(dueDate), maxMarks, status: status || 'published',
+        attachmentUrl: attachmentUrl ?? null, attachmentName: attachmentUrl ? attachmentName ?? 'Assignment brief' : null
+      }
     });
     res.json({
       success: true,
@@ -965,7 +1108,7 @@ router.put('/assignments/:id', authenticate, validate({ params: z.object({ id: e
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
     const id = String(req.params.id);
-    const { title, description, dueDate, maxMarks, status } = req.body;
+    const { title, description, dueDate, maxMarks, status, attachmentUrl, attachmentName } = req.body;
 
     // Assignment has no institutionId of its own — `update({ where: { id }
     // })` cannot carry the ownership check, so `updateMany` + a
@@ -978,7 +1121,8 @@ router.put('/assignments/:id', authenticate, validate({ params: z.object({ id: e
         ...(description !== undefined ? { description } : {}),
         ...(dueDate !== undefined ? { dueDate: new Date(dueDate) } : {}),
         ...(maxMarks !== undefined ? { maxMarks } : {}),
-        ...(status !== undefined ? { status } : {})
+        ...(status !== undefined ? { status } : {}),
+        ...(attachmentUrl !== undefined ? { attachmentUrl, attachmentName: attachmentUrl ? attachmentName ?? 'Assignment brief' : null } : {})
       }
     });
     if (changed.count === 0) {
@@ -1021,6 +1165,106 @@ router.get('/assignments/:id/submissions', authenticate, async (req: Request, re
     sendError(res, error);
   }
 });
+
+/** An assignment of this faculty member's, or null. */
+async function ownAssignment(facultyProfileId: string, assignmentId: string) {
+  return db.assignment.findFirst({ where: { id: assignmentId, class: { facultyId: facultyProfileId } } });
+}
+
+/**
+ * Every student of the assignment's class with their submission, if any. The
+ * submissions list showed only students who had submitted, so there was no
+ * way to see — or mark — who had not.
+ */
+router.get('/assignments/:id/roster', authenticate, validate({ params: z.object({ id: entityId }) }), async (req: Request, res: Response) => {
+  try {
+    const profile = await getFacultyProfile((req as any).user.id);
+    const assignment = await ownAssignment(profile.id, String(req.params.id));
+    if (!assignment) {
+      res.status(404).json({ success: false, message: 'Assignment not found for this faculty' });
+      return;
+    }
+    const [members, submissions] = await Promise.all([
+      db.classEnrollment.findMany({ where: { classId: assignment.classId }, include: { student: { include: { user: true } } } }),
+      prisma.submission.findMany({ where: { assignmentId: assignment.id } })
+    ]);
+    const byStudent = new Map(submissions.map((x: any) => [x.studentProfileId, x]));
+    res.json({
+      success: true,
+      data: members
+        .map((m: any) => {
+          const sub: any = byStudent.get(m.studentProfileId);
+          return {
+            studentId: m.studentProfileId,
+            rollNumber: m.student?.rollNumber,
+            studentName: m.student?.user?.name,
+            submissionId: sub?.id ?? null,
+            submitted: !!sub,
+            submittedAt: sub?.submittedAt ?? null,
+            late: !!sub && new Date(sub.submittedAt) > new Date(assignment.dueDate),
+            status: sub?.status ?? 'not_submitted',
+            marks: sub?.obtainedMarks ?? null,
+            feedback: sub?.feedback ?? null,
+            fileUrl: sub?.fileUrl ?? null
+          };
+        })
+        .sort((x: any, y: any) => String(x.rollNumber).localeCompare(String(y.rollNumber)))
+    });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+/**
+ * Mark a student as submitted (e.g. a paper handed in by hand) or not
+ * submitted. "Not submitted" removes the submission, including any marks and
+ * file — the screen asks before doing that to a graded one.
+ */
+router.put(
+  '/assignments/:id/students/:studentId/submission',
+  authenticate,
+  validate({ params: z.object({ id: entityId, studentId: entityId }), body: z.object({ submitted: z.boolean() }).strict() }),
+  async (req: Request, res: Response) => {
+    try {
+      const profile = await getFacultyProfile((req as any).user.id);
+      const assignment = await ownAssignment(profile.id, String(req.params.id));
+      if (!assignment) {
+        res.status(404).json({ success: false, message: 'Assignment not found for this faculty' });
+        return;
+      }
+      const studentId = String(req.params.studentId);
+      const member = await db.classEnrollment.findFirst({ where: { classId: assignment.classId, studentProfileId: studentId } });
+      if (!member) {
+        res.status(404).json({ success: false, message: 'This student is not in the class' });
+        return;
+      }
+      const existing = await prisma.submission.findFirst({ where: { assignmentId: assignment.id, studentProfileId: studentId } });
+
+      if (req.body.submitted) {
+        const sub = existing ?? await prisma.submission.create({
+          data: { assignmentId: assignment.id, studentProfileId: studentId, status: 'submitted', submittedAt: new Date() }
+        });
+        await recordFromRequest(req, {
+          action: 'UPDATE', module: 'faculty', resource: `Submission:${sub.id}`,
+          details: `Marked ${member.studentProfileId} as submitted for assignment ${assignment.id}`
+        });
+        res.json({ success: true, data: { submitted: true, submissionId: sub.id } });
+        return;
+      }
+
+      if (existing) {
+        await prisma.submission.deleteMany({ where: { id: existing.id } });
+        await recordFromRequest(req, {
+          action: 'DELETE', module: 'faculty', resource: `Submission:${existing.id}`,
+          details: `Marked ${studentId} as not submitted for assignment ${assignment.id} (marks: ${existing.obtainedMarks ?? 'none'})`
+        });
+      }
+      res.json({ success: true, data: { submitted: false, submissionId: null } });
+    } catch (error: any) {
+      sendError(res, error);
+    }
+  }
+);
 
 router.get('/assignments/submissions', authenticate, async (req: Request, res: Response) => {
   try {
@@ -1067,6 +1311,15 @@ router.put('/assignments/:id/submissions/:subId/grade', authenticate, validate({
     const profile = await getFacultyProfile(userId);
     const subId = String(req.params.subId);
     const { marks, feedback } = req.body;
+    const owning: any = await prisma.assignment.findFirst({ where: { id: String(req.params.id), class: { facultyId: profile.id } }, select: { maxMarks: true, title: true } });
+    if (!owning) {
+      res.status(404).json({ success: false, message: 'Assignment not found for this faculty' });
+      return;
+    }
+    if (typeof marks === 'number' && (marks < 0 || marks > owning.maxMarks)) {
+      res.status(400).json({ success: false, message: `Marks must be between 0 and ${owning.maxMarks}.` });
+      return;
+    }
     // Submission has no institutionId of its own — `update({ where: { id }
     // })` cannot carry the ownership check, so `updateMany` + an
     // assignment/class-derived filter, then re-read, is the pattern this
@@ -1079,7 +1332,13 @@ router.put('/assignments/:id/submissions/:subId/grade', authenticate, validate({
       res.status(404).json({ success: false, message: 'Submission not found for this faculty' });
       return;
     }
-    const updated = await prisma.submission.findFirst({ where: { id: subId } });
+    const updated: any = await prisma.submission.findFirst({ where: { id: subId }, include: { student: { select: { userId: true } } } });
+    if (updated?.student?.userId) {
+      await notifyInApp(getTenantContext(req).institutionId, { userIds: [updated.student.userId] }, {
+        eventType: 'assignment.graded', subject: `Graded: ${owning.title}`, body: `${marks}/${owning.maxMarks}${feedback ? ` — ${feedback}` : ''}`,
+        relatedEntityType: 'Assignment', relatedEntityId: String(req.params.id)
+      });
+    }
     res.json({ success: true, data: updated });
   } catch (error: any) {
     sendError(res, error);
@@ -1114,7 +1373,10 @@ router.get('/marks/:courseId', authenticate, async (req: Request, res: Response)
       // marked showed a full row of fabricated component scores that summed to
       // zero, rather than a blank, ungraded row.
       data: enrollments.map((e: any) => {
-        const numeric = e.grade != null && e.grade !== '' ? Number(e.grade) : NaN;
+        // `internalMarks` is the numeric record; `grade` is the legacy string
+        // the screen also writes. Reading only `grade` left marks recorded by
+        // any other route (import, the examination module) invisible here.
+        const numeric = e.internalMarks ?? (e.grade != null && e.grade !== '' ? Number(e.grade) : NaN);
         return {
           studentId: e.student.id,
           rollNumber: e.student.rollNumber,
@@ -1174,6 +1436,27 @@ router.put('/marks/:courseId', authenticate, validate({ params: z.object({ cours
     sendError(res, error);
   }
 });
+
+// ─── End-semester marks (the examination chain) ───
+/** Papers of my courses with every registered candidate and their marks so far. */
+router.get('/exam-marks', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const profile = await getFacultyProfile((req as any).user.id);
+  res.json({ success: true, data: await resultsFlow.facultySheets(getTenantContext(req), profile.id) });
+}));
+
+/** Enter or correct paper marks; the course total combines internals 40 : paper 60. */
+router.put(
+  '/exam-marks/:scheduleId',
+  authenticate,
+  validate({
+    params: z.object({ scheduleId: entityId }),
+    body: z.object({ entries: z.array(z.object({ studentProfileId: entityId, externalMarks: z.number().min(0).max(1000).nullable().optional(), absent: z.boolean().optional() }).strict()).min(1).max(500) }).strict()
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const profile = await getFacultyProfile((req as any).user.id);
+    res.json({ success: true, data: await resultsFlow.saveFacultyMarks(getTenantContext(req), profile.id, String(req.params.scheduleId), req.body.entries) });
+  })
+);
 
 // ─── Mentoring ───
 router.get('/mentees', authenticate, async (req: Request, res: Response) => {
@@ -1243,6 +1526,44 @@ router.post('/mentees/:id/notes', authenticate, validate({ params: z.object({ id
   }
 });
 
+/** Update a counselling note's follow-up state — "open" until the student has been seen. */
+router.put('/mentees/:id/notes/:noteId', authenticate,
+  validate({ params: z.object({ id: entityId, noteId: entityId }), body: counselingNoteStatusSchema }),
+  async (req: Request, res: Response) => {
+  try {
+    const profile = await getFacultyProfile((req as any).user.id);
+    const assignment = await db.menteeAssignment.findUnique({
+      where: { facultyId_studentId: { facultyId: profile.id, studentId: String(req.params.id) } }
+    });
+    if (!assignment) { res.status(404).json({ success: false, message: 'Mentee not found' }); return; }
+    const data: Record<string, unknown> = { status: req.body.status };
+    if (req.body.followUpDate !== undefined) data.followUpDate = req.body.followUpDate ? new Date(req.body.followUpDate) : null;
+    // Scoped to this mentor's own mentee: a note id alone cannot reach another's.
+    const changed = await db.counselingNote.updateMany({ where: { id: String(req.params.noteId), menteeAssignId: assignment.id }, data });
+    if (changed.count === 0) { res.status(404).json({ success: false, message: 'Note not found' }); return; }
+    res.json({ success: true, data: await db.counselingNote.findFirst({ where: { id: String(req.params.noteId) } }) });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+/**
+ * Materials uploaded for one of this faculty member's courses.
+ *
+ * Files are stored by the uploads module with `relatedEntityType: 'Course'`;
+ * the "Upload Material" button had no handler and nothing listed them.
+ */
+router.get('/courses/:id/materials', authenticate, validate({ params: z.object({ id: entityId }) }), async (req: Request, res: Response) => {
+  try {
+    const profile = await getFacultyProfile((req as any).user.id);
+    const course = await prisma.course.findFirst({ where: { id: String(req.params.id), facultyId: profile.id }, select: { id: true } });
+    if (!course) { res.status(404).json({ success: false, message: 'Course not found for this faculty' }); return; }
+    res.json({ success: true, data: await listCourseMaterials(getTenantContext(req).institutionId, course.id) });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
 // ─── Research ───
 router.get('/research/publications', authenticate, async (req: Request, res: Response) => {
   try {
@@ -1251,12 +1572,9 @@ router.get('/research/publications', authenticate, async (req: Request, res: Res
     const pubs = await prisma.publication.findMany({ where: { facultyProfileId: profile.id }, orderBy: { year: 'desc' } });
     res.json({
       success: true,
-      data: pubs.map((publication: any) => ({
-        ...publication,
-        authors: ['Primary Author'],
-        indexing: 'Scopus',
-        citations: 0
-      }))
+      // Authors, indexing and citations were literals ('Primary Author',
+      // 'Scopus', 0) on every paper. None is recorded, so none is asserted.
+      data: pubs.map((publication: any) => ({ ...publication, authors: [], indexing: null, citations: null }))
     });
   } catch (error: any) {
     sendError(res, error);
@@ -1271,7 +1589,9 @@ router.post('/research/publications', authenticate, validate({ body: publication
     const pub = await prisma.publication.create({
       data: { facultyProfileId: profile.id, title, journal, year, status: status || 'submitted' }
     });
-    res.json({ success: true, data: pub });
+    // Indexing and affiliation are checked by the HOD, then locked by IQAC.
+    const approval = await startApprovalFor(getTenantContext(req), 'PUBLICATION_VERIFICATION', 'Publication', pub.id);
+    res.json({ success: true, data: { ...pub, approval } });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1284,11 +1604,12 @@ router.get('/research/projects', authenticate, async (req: Request, res: Respons
     const projects = await prisma.researchProject.findMany({ where: { facultyProfileId: profile.id } });
     res.json({
       success: true,
+      // Start and end were both "today" for every project — nothing stored them.
       data: projects.map((project: any) => ({
         ...project,
-        coInvestigators: [],
-        startDate: new Date().toLocaleDateString('en-IN'),
-        endDate: new Date().toLocaleDateString('en-IN')
+        coInvestigators: project.coInvestigators ?? [],
+        startDate: project.startDate ? new Date(project.startDate).toLocaleDateString('en-IN') : null,
+        endDate: project.endDate ? new Date(project.endDate).toLocaleDateString('en-IN') : null
       }))
     });
   } catch (error: any) {
@@ -1298,7 +1619,41 @@ router.get('/research/projects', authenticate, async (req: Request, res: Respons
 
 router.get('/research/patents', authenticate, async (req: Request, res: Response) => {
   try {
-    res.json({ success: true, data: [] });
+    const profile = await getFacultyProfile((req as any).user.id);
+    const patents = await prisma.patent.findMany({ where: { facultyProfileId: profile.id }, orderBy: { createdAt: 'desc' } });
+    res.json({
+      success: true,
+      data: patents.map((p: any) => ({
+        ...p,
+        filingDate: p.filingDate ? new Date(p.filingDate).toLocaleDateString('en-IN') : null,
+        grantDate: p.grantDate ? new Date(p.grantDate).toLocaleDateString('en-IN') : null
+      }))
+    });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+router.post('/research/patents', authenticate, validate({ body: patentCreateSchema }), async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: (req as any).user.id }, select: { name: true } });
+    const profile = await getFacultyProfile((req as any).user.id);
+    const { title, applicationNumber, filingDate, jurisdiction, inventors } = req.body;
+    const patent = await prisma.patent.create({
+      data: {
+        facultyProfileId: profile.id,
+        title,
+        applicationNumber: applicationNumber ?? null,
+        filingDate: filingDate ? new Date(filingDate) : null,
+        jurisdiction: jurisdiction ?? 'India',
+        // The filer is always an inventor; others are added by name.
+        inventors: Array.from(new Set([user?.name ?? 'Faculty', ...(inventors ?? [])])),
+        status: 'filed'
+      }
+    });
+    // HOD recommendation → IPR cell review → filing fee (NAAC 3.3).
+    const approval = await startApprovalFor(getTenantContext(req), 'INNOVATION_IPR_FILING', 'Patent', patent.id);
+    res.status(201).json({ success: true, data: { ...patent, approval } });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1349,25 +1704,42 @@ router.get('/dashboard/tasks', authenticate, async (req: Request, res: Response)
       ? classes.filter((item: any) => item.course?.semester === semesterQuery)
       : classes;
     const assignments = await db.assignment.findMany({
-      where: { classId: { in: filteredClasses.map((item: any) => item.id) } },
+      where: { classId: { in: filteredClasses.map((item: any) => item.id) }, status: 'published' },
       include: {
-        submissions: true,
+        submissions: { select: { status: true } },
         class: { include: { course: true } }
       },
       orderBy: { dueDate: 'asc' },
       take: 10
     });
+    const sizes = await db.classEnrollment.groupBy({
+      by: ['classId'],
+      where: { classId: { in: [...new Set(assignments.map((a: any) => a.classId))] } },
+      _count: { _all: true }
+    });
+    const classSize = new Map<string, number>(sizes.map((x: any) => [x.classId, x._count._all]));
 
     res.json({
       success: true,
-      data: assignments.map((assignment: any) => ({
-        id: assignment.id,
-        task: assignment.title,
-        course: assignment.class?.course?.code,
-        semester: assignment.class?.course?.semester,
-        className: assignment.class?.name || `${assignment.class?.course?.code || ''} - ${assignment.class?.section || ''}`,
-        urgent: assignment.submissions.some((submission: any) => submission.status === 'submitted')
-      }))
+      data: assignments.map((assignment: any) => {
+        const submitted = assignment.submissions.length;
+        const toGrade = assignment.submissions.filter((x: any) => x.status === 'submitted').length;
+        const size = classSize.get(assignment.classId) ?? 0;
+        return {
+          id: assignment.id,
+          task: assignment.title,
+          course: assignment.class?.course?.code,
+          semester: assignment.class?.course?.semester,
+          className: assignment.class?.name || `${assignment.class?.course?.code || ''} - ${assignment.class?.section || ''}`,
+          dueDate: assignment.dueDate,
+          classSize: size,
+          submitted,
+          toGrade,
+          notSubmitted: Math.max(0, size - submitted),
+          // Work is waiting on the teacher.
+          urgent: toGrade > 0
+        };
+      })
     });
   } catch (error: any) {
     sendError(res, error);
@@ -1498,11 +1870,18 @@ router.post('/research/projects', authenticate, validate({ body: researchProject
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
-    const { title, fundingAgency, amount, status } = req.body;
+    const { title, fundingAgency, amount, status, startDate, endDate, coInvestigators } = req.body;
     const project = await prisma.researchProject.create({
-      data: { facultyProfileId: profile.id, title, fundingAgency, amount, status: status || 'submitted' }
+      data: {
+        facultyProfileId: profile.id, title, fundingAgency, amount, status: status || 'submitted',
+        startDate: startDate ? new Date(startDate) : null,
+        endDate: endDate ? new Date(endDate) : null,
+        coInvestigators: coInvestigators ?? []
+      }
     });
-    res.json({ success: true, data: project });
+    // HOD → Dean (Research) → Finance → VC; status becomes "ongoing" when sanctioned.
+    const approval = await startApprovalFor(getTenantContext(req), 'RESEARCH_PROJECT_SANCTION', 'ResearchProject', project.id);
+    res.json({ success: true, data: { ...project, approval } });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1647,8 +2026,13 @@ router.post('/grievances', authenticate, validate({ body: facultyGrievanceCreate
         subject: grievance.subject,
         description: grievance.description,
         priority: grievance.severity,
+        severity: grievance.severity,
         status: toRoleGrievanceStatus(grievance.status, 'faculty'),
         submittedAt: grievance.submissionDate,
+        // `type` was missing here but present in the list endpoint, and the
+        // page calls `g.type.replace(...)` — so the new item crashed the page
+        // to a blank screen until a reload fetched the list instead.
+        type: 'submitted',
         filedBy: 'Self',
         filedAt: new Date(grievance.submissionDate).toLocaleDateString('en-IN')
       }
@@ -1722,6 +2106,11 @@ router.post('/messages', authenticate, validate({ body: facultyClassMessageCreat
 
     const msg = await db.classMessage.create({
       data: { courseId, courseCode, subject, message, facultyId: profile.id, recipients: enrollmentCount }
+    });
+    // Students only found a class message if they opened the messages page.
+    const enrolled = await prisma.enrollment.findMany({ where: { courseId }, select: { student: { select: { userId: true } } } });
+    await notifyInApp(getTenantContext(req).institutionId, { userIds: enrolled.map((e: any) => e.student?.userId).filter(Boolean) }, {
+      eventType: 'class.message', subject: `${course.code}: ${subject}`, body: String(message).slice(0, 300), relatedEntityType: 'ClassMessage', relatedEntityId: msg.id
     });
     res.json({ success: true, data: msg });
   } catch (error: any) {

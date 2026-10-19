@@ -26,6 +26,8 @@ import { z } from 'zod';
 
 const trimmed = (max: number) => z.string().trim().min(1).max(max);
 const optionalTrimmed = (max: number) => z.string().trim().max(max).optional();
+/** A file previously stored through POST /api/uploads. */
+const uploadUrl = z.string().trim().regex(/^\/api\/uploads\/[\w-]+$/, 'Attach a file uploaded through the app');
 
 /** PUT /profile — every field falsy-guarded, so all three stay optional. */
 export const facultyProfileUpdateSchema = z
@@ -122,10 +124,13 @@ export const assignmentCreateSchema = z
   .object({
     classId: trimmed(200),
     title: trimmed(300),
-    description: trimmed(10000),
+    // Optional: an attached question paper often says it all.
+    description: z.string().trim().max(10000).default(''),
     dueDate: z.coerce.date(),
     maxMarks: z.coerce.number().int().min(0).max(1000),
-    status: optionalTrimmed(40)
+    status: optionalTrimmed(40),
+    attachmentUrl: uploadUrl.optional(),
+    attachmentName: optionalTrimmed(300)
   })
   .strict();
 
@@ -136,7 +141,10 @@ export const assignmentUpdateSchema = z
     description: optionalTrimmed(10000),
     dueDate: z.coerce.date().optional(),
     maxMarks: z.coerce.number().int().min(0).max(1000).optional(),
-    status: optionalTrimmed(40)
+    status: optionalTrimmed(40),
+    // null removes the attachment.
+    attachmentUrl: uploadUrl.nullable().optional(),
+    attachmentName: optionalTrimmed(300).nullable()
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update.' });
@@ -191,7 +199,29 @@ export const researchProjectCreateSchema = z
     title: trimmed(500),
     fundingAgency: trimmed(300),
     amount: z.coerce.number().min(0).max(1000000000),
-    status: optionalTrimmed(40)
+    status: optionalTrimmed(40),
+    startDate: z.coerce.date().optional(),
+    endDate: z.coerce.date().optional(),
+    coInvestigators: z.array(z.string().trim().min(1).max(160)).max(20).optional()
+  })
+  .strict();
+
+/** POST /research/patents. */
+export const patentCreateSchema = z
+  .object({
+    title: trimmed(500),
+    applicationNumber: optionalTrimmed(80),
+    filingDate: z.coerce.date().optional(),
+    jurisdiction: optionalTrimmed(80),
+    inventors: z.array(z.string().trim().min(1).max(160)).max(30).optional()
+  })
+  .strict();
+
+/** PUT /mentees/:id/notes/:noteId — the follow-up's state. */
+export const counselingNoteStatusSchema = z
+  .object({
+    status: z.enum(['open', 'in_progress', 'completed']),
+    followUpDate: z.coerce.date().nullable().optional()
   })
   .strict();
 
