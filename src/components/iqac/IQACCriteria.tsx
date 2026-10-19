@@ -1,3 +1,6 @@
+import { NaacReadiness } from '@/components/iqac/NaacReadiness';
+import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
+import { documentDetails } from './qualityDocumentDetails';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +13,7 @@ import { createIQACAction, fetchIQACCriteriaProgress, fetchIQACDocuments } from 
 import { useToast } from '@/hooks/use-toast';
 
 export default function IQACCriteria() {
+  const [details, setDetails] = useState<Details | null>(null);
   const { toast } = useToast();
   const [criteriaProgress, setCriteriaProgress] = useState<any>([]);
   const [qualityDocuments, setQualityDocuments] = useState<any>([]);
@@ -98,10 +102,11 @@ export default function IQACCriteria() {
             <h1 className="text-3xl font-bold text-foreground">NAAC Criteria Progress</h1>
             <p className="text-muted-foreground">Track SSR data compilation across all 7 NAAC criteria</p>
           </div>
-          <Badge variant="outline" className="text-lg px-4 py-2">
-            Overall: {overallProgress}% • Docs: {totalDocs}/{totalRequired}
-          </Badge>
+          {/* The old "Overall %" averaged metric targets and disagreed with the readiness score below. */}
+          <Badge variant="outline" className="px-4 py-2">Evidence documents: {totalDocs}</Badge>
         </div>
+
+        <NaacReadiness />
 
         {/* Summary Bar */}
         <Card>
@@ -199,7 +204,7 @@ export default function IQACCriteria() {
                               <Badge variant={d.status === 'approved' ? 'default' : d.status === 'needs_revision' ? 'destructive' : 'secondary'} className="capitalize">
                                 {d.status.replace('_', ' ')}
                               </Badge>
-                              <Button variant="ghost" size="sm"><Eye className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="sm" title="View document" onClick={() => setDetails(documentDetails(d))}><Eye className="h-4 w-4" /></Button>
                             </div>
                           </div>
                         ))}
@@ -236,6 +241,7 @@ export default function IQACCriteria() {
           </Card>
         )}
       </div>
+      <DetailsDialog details={details} onClose={() => setDetails(null)} />
     </DashboardLayout>
   );
 }

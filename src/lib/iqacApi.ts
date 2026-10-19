@@ -36,7 +36,8 @@ export async function fetchIQACCriteriaProgress(): Promise<CriteriaProgress[]> {
   ]);
 
   const docs = safeArray<any>(documents);
-  const categories = Object.keys(groupedMetrics || {});
+  // `live` and `academicYear` ride along with the grouped metrics; they are not categories.
+  const categories = Object.keys(groupedMetrics || {}).filter((k) => Array.isArray((groupedMetrics as any)[k]) && k !== 'live');
   categories.sort((a, b) => {
     const aIndex = CATEGORY_ORDER.indexOf(a);
     const bIndex = CATEGORY_ORDER.indexOf(b);
@@ -187,4 +188,16 @@ export async function generateAQAR(academicYear: string) {
 
 export async function updateAQAR(id: string, payload: Record<string, unknown>) {
   return putApi(`/iqac/reports/${id}`, payload);
+}
+
+export async function fetchNaacReadiness() {
+  return fetchApi<any[]>('/iqac/readiness');
+}
+
+export async function requestCriterionSignoff(checklistId: string) {
+  return postApi(`/iqac/checklist/${checklistId}/signoff`, {});
+}
+
+export async function submitAQAR(id: string) {
+  return postApi(`/iqac/reports/${id}/submit`, {});
 }

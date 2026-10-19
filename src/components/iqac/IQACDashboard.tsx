@@ -1,3 +1,5 @@
+import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
+import { documentDetails, ReviewActions } from './qualityDocumentDetails';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -6,16 +8,37 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Award, AlertTriangle, FileText, BarChart3, Download, ClipboardList, Star, Send } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { createIQACFeedbackForm, fetchIQACActions, fetchIQACCriteriaProgress, fetchIQACDocuments, fetchIQACFeedbackSummaries, generateAQAR } from '@/lib/iqacApi';
+import { createIQACFeedbackForm, fetchIQACActions, fetchIQACCriteriaProgress, fetchIQACDocuments, fetchIQACFeedbackSummaries, generateAQAR, updateIQACDocument } from '@/lib/iqacApi';
 import { useToast } from '@/hooks/use-toast';
 
 export default function IQACDashboard() {
+  const [details, setDetails] = useState<Details | null>(null);
   const { toast } = useToast();
   const [criteriaProgress, setCriteriaProgress] = useState<any>([]);
   const [iqacActionItems, setIqacActionItems] = useState<any>([]);
   const [feedbackSummaries, setFeedbackSummaries] = useState<any>([]);
   const [qualityDocuments, setQualityDocuments] = useState<any>([]);
   const [apiLoading, setApiLoading] = useState(true);
+
+  // "Review" had no handler. It now opens the document with Approve /
+  // Needs revision, saved through PUT /iqac/documents/:id.
+  const reviewDocument = async (doc: any, status: 'approved' | 'needs_revision', comment: string) => {
+    try {
+      await updateIQACDocument(doc.id, { status, ...(comment ? { reviewComments: comment } : {}) });
+      toast({ title: status === 'approved' ? 'Document approved' : 'Sent back for revision', description: doc.title });
+      setDetails(null);
+      await loadDashboardData();
+    } catch (error: any) {
+      toast({ title: 'Review failed', description: error?.message || 'Please try again.', variant: 'destructive' });
+    }
+  };
+  const openReview = (doc: any) => {
+    const base = documentDetails(doc);
+    setDetails({
+      ...base,
+      footer: <div className="space-y-3">{base.footer}<ReviewActions onDecide={(status, comment) => reviewDocument(doc, status, comment)} /></div>
+    });
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -73,6 +96,14 @@ export default function IQACDashboard() {
     ? Math.round(criteriaProgress.reduce((a, b) => a + b.dataProgress, 0) / criteriaProgress.length)
     : 0;
 
+  // "4.1/5" was a literal, and disagreed with the Feedback Analysis page built
+  // from the same forms. Weighted by respondents, or a dash when none exist.
+  const rated = (feedbackSummaries as any[]).filter((f) => Number(f.respondents) > 0 && Number(f.averageRating) > 0);
+  const respondents = rated.reduce((sum, f) => sum + Number(f.respondents), 0);
+  const feedbackScore = respondents > 0
+    ? `${(rated.reduce((sum, f) => sum + Number(f.averageRating) * Number(f.respondents), 0) / respondents).toFixed(1)}/5`
+    : '—';
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -89,9 +120,9 @@ export default function IQACDashboard() {
 
         {/* Key Metrics */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Award className="h-8 w-8 text-primary" /><div><p className="text-xs text-muted-foreground">NAAC Grade</p><p className="text-2xl font-bold">A+</p></div></div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Award className="h-8 w-8 text-primary" /><div><p className="text-xs text-muted-foreground">NAAC Grade</p><p className="text-2xl font-bold" title="No accreditation grade is recorded for this institution">—</p></div></div></CardContent></Card>
           <Card><CardContent className="p-4"><div className="flex items-center gap-3"><BarChart3 className="h-8 w-8 text-green-600" /><div><p className="text-xs text-muted-foreground">Data Progress</p><p className="text-2xl font-bold">{overallProgress}%</p></div></div></CardContent></Card>
-          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Star className="h-8 w-8 text-amber-500" /><div><p className="text-xs text-muted-foreground">Feedback Score</p><p className="text-2xl font-bold">4.1/5</p></div></div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Star className="h-8 w-8 text-amber-500" /><div><p className="text-xs text-muted-foreground">Feedback Score</p><p className="text-2xl font-bold">{feedbackScore}</p></div></div></CardContent></Card>
           <Card><CardContent className="p-4"><div className="flex items-center gap-3"><ClipboardList className="h-8 w-8 text-blue-600" /><div><p className="text-xs text-muted-foreground">Action Items</p><p className="text-2xl font-bold">{iqacActionItems.length}</p></div></div></CardContent></Card>
           <Card><CardContent className="p-4"><div className="flex items-center gap-3"><FileText className="h-8 w-8 text-purple-600" /><div><p className="text-xs text-muted-foreground">Documents</p><p className="text-2xl font-bold">{qualityDocuments.length}</p></div></div></CardContent></Card>
         </div>
@@ -172,7 +203,7 @@ export default function IQACDashboard() {
                   <td className="px-4 py-3"><Badge variant="outline" className="capitalize">{d.documentType}</Badge></td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{d.uploadedBy}</td>
                   <td className="px-4 py-3"><Badge variant={d.status === 'approved' ? 'default' : d.status === 'needs_revision' ? 'destructive' : 'secondary'} className="capitalize">{d.status.replace('_',' ')}</Badge></td>
-                  <td className="px-4 py-3"><Button variant="ghost" size="sm">Review</Button></td>
+                  <td className="px-4 py-3"><Button variant="ghost" size="sm" onClick={() => openReview(d)}>Review</Button></td>
                 </tr>
               ))}
             </tbody></table></div></CardContent></Card>
@@ -196,6 +227,7 @@ export default function IQACDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+      <DetailsDialog details={details} onClose={() => setDetails(null)} />
     </DashboardLayout>
   );
 }

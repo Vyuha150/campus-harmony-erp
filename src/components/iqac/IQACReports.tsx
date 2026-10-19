@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Calendar, FileText, Users, Download, Plus, MapPin, CheckCircle2, Send } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { fetchApi } from '@/lib/apiService';
-import { createIQACMeeting, fetchAQARReports, fetchIQACCriteriaProgress, fetchIQACMeetings, generateAQAR, updateAQAR, updateIQACMeeting } from '@/lib/iqacApi';
+import { createIQACMeeting, fetchAQARReports, fetchIQACCriteriaProgress, fetchIQACMeetings, generateAQAR, submitAQAR, updateAQAR, updateIQACMeeting } from '@/lib/iqacApi';
 import { useToast } from '@/hooks/use-toast';
 
 export default function IQACReports() {
@@ -161,7 +161,7 @@ export default function IQACReports() {
   const handleSendInvites = async (meeting: any) => {
     try {
       await updateIQACMeeting(meeting.id, { status: 'scheduled' });
-      toast({ title: 'Invites sent', description: 'Meeting invite status has been recorded.' });
+      toast({ title: 'Meeting confirmed', description: 'Marked as scheduled. Email the agenda to members from your mail client — the ERP does not send meeting invites.' });
     } catch (error: any) {
       toast({ title: 'Invite failed', description: error?.message || 'Unable to send invites.', variant: 'destructive' });
     }
@@ -287,6 +287,18 @@ export default function IQACReports() {
                 />
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" size="sm" onClick={handleSaveDraft}>Save Draft</Button>
+                  {activeAqar?.id && !['submitted', 'approved'].includes(activeAqar.status) && (
+                    <Button size="sm" onClick={async () => {
+                      try {
+                        await submitAQAR(activeAqar.id);
+                        setActiveAqar({ ...activeAqar, status: 'submitted' });
+                        toast({ title: 'AQAR submitted', description: 'The Principal, then the Vice-Chancellor, approve it in Approvals.' });
+                      } catch (error: any) {
+                        toast({ title: 'Could not submit', description: error?.message, variant: 'destructive' });
+                      }
+                    }}>Submit for approval</Button>
+                  )}
+                  {activeAqar?.status && <Badge variant={activeAqar.status === 'approved' ? 'default' : 'secondary'} className="capitalize">{activeAqar.status}</Badge>}
                   <Button size="sm" onClick={handleSubmitForReview}><Send className="mr-2 h-4 w-4" />Submit for Review</Button>
                 </div>
               </CardContent>
