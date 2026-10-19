@@ -1,5 +1,8 @@
 import type { Request, Response } from 'express';
+import { publishedOutcomes, outcomeFor, combineOutcomes, passPercentage } from '../lib/courseOutcomes.js';
 import { Router } from 'express';
+import { syncComputedMetrics } from '../modules/hod/accreditation.service.js';
+import * as workflowService from '../modules/workflow/workflow.service.js';
 import path from 'node:path';
 import multer from 'multer';
 import { prisma } from '../lib/prisma.js';
@@ -14,6 +17,8 @@ import { createStorageProvider, buildStorageKey } from '../lib/storage.js';
 import { config } from '../config/env.js';
 import { ALLOWED_TYPES } from './uploads.js';
 import * as workflow from '../modules/workflow/workflow.service.js';
+import { notifyInApp } from '../lib/inAppNotify.js';
+import * as resultsFlow from '../modules/examination/resultsFlow.js';
 import { openInstanceFor, ensureDefinition } from '../modules/workflow/bridge.js';
 import { PURCHASE_REQUEST, CURRICULUM_PROPOSAL } from '../modules/workflow/builtins.js';
 import { z } from 'zod';
@@ -89,6 +94,25 @@ const accreditationUpload = multer({
   }
 });
 
+
+/**
+ * Ids of every account in a department.
+ *
+ * `ApprovalItem` and `GrievanceCase` carry no department column — only the id
+ * of the person who raised them. Without this, each HOD's approvals queue and
+ * grievance list held every department's items: the ECE head saw, and could
+ * decide, a CSE student's fee-waiver request.
+ */
+async function departmentUserIds(departmentId: string): Promise<string[]> {
+  const users = await prisma.user.findMany({ where: { departmentId }, select: { id: true } });
+  return users.map((u) => u.id);
+}
+
+/** A grievance is a department's when its complainant is, or it was routed there by name. */
+function departmentGrievanceScope(department: { name: string; code: string }, userIds: string[]) {
+  return { OR: [{ complainantId: { in: userIds } }, { department: { in: [department.name, department.code] } }] };
+}
+
 async function getHODDepartment(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { department: true } });
   if (!user?.departmentId) {
@@ -132,17 +156,21 @@ async function resolveStudentProfileIdsByEmails(departmentId: string, emails: st
 async function attendancePercentageByStudent(studentProfileIds: string[]): Promise<Map<string, number>> {
   if (studentProfileIds.length === 0) return new Map();
 
-  const records = await prisma.attendance.findMany({
+  // Counted by the database, one row per student and status. Loading every
+  // attendance record instead grows with class size and term length — a single
+  // 30-student class passes the 1,000-row read cap within a month.
+  const counts = await prisma.attendance.groupBy({
+    by: ['studentProfileId', 'status'],
     where: { studentProfileId: { in: studentProfileIds } },
-    select: { studentProfileId: true, status: true }
+    _count: { _all: true }
   });
 
   const totals = new Map<string, { present: number; total: number }>();
-  for (const record of records) {
-    const bucket = totals.get(record.studentProfileId) ?? { present: 0, total: 0 };
-    bucket.total += 1;
-    if (record.status === 'present') bucket.present += 1;
-    totals.set(record.studentProfileId, bucket);
+  for (const row of counts) {
+    const bucket = totals.get(row.studentProfileId) ?? { present: 0, total: 0 };
+    bucket.total += row._count._all;
+    if (row.status === 'present') bucket.present += row._count._all;
+    totals.set(row.studentProfileId, bucket);
   }
 
   const percentages = new Map<string, number>();
@@ -193,12 +221,14 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
     const totalStudents = await prisma.user.count({ where: { departmentId: department.id, role: 'student' } });
     const totalFaculty = await prisma.user.count({ where: { departmentId: department.id, role: 'faculty' } });
     const courses = await prisma.course.count({ where: { departmentId: department.id } });
-    const pendingApprovals = await prisma.approvalItem.count({ where: { status: 'pending' } });
+    const pendingApprovals = await prisma.approvalItem.count({
+      where: { status: 'pending', requestedBy: { in: await departmentUserIds(department.id) } }
+    });
 
-    const [deptEnrollments, deptStudentProfileIds] = await Promise.all([
-      prisma.enrollment.findMany({
-        where: { course: { departmentId: department.id } },
-        select: { grade: true }
+    const [deptCourses, deptStudentProfileIds] = await Promise.all([
+      prisma.course.findMany({
+        where: { departmentId: department.id },
+        select: { id: true, enrollments: { select: { grade: true } } }
       }),
       prisma.studentProfile.findMany({
         where: { user: { departmentId: department.id, role: 'student' } },
@@ -206,16 +236,10 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
       })
     ]);
 
-    const gradedEnrollments = deptEnrollments.filter((e) => e.grade);
-    const avgPassPercentage =
-      gradedEnrollments.length > 0
-        ? Math.round(
-            (gradedEnrollments.filter((e) => !['F', 'I'].includes(String(e.grade))).length /
-              gradedEnrollments.length) *
-              100 *
-              10
-          ) / 10
-        : null;
+    // From published results (see lib/courseOutcomes.ts), not the legacy
+    // Enrollment.grade column the results engine never writes.
+    const deptPublished = await publishedOutcomes(deptCourses.map((c) => c.id));
+    const avgPassPercentage = combineOutcomes(deptCourses.map((c) => outcomeFor(c, deptPublished))).passPercentage;
 
     const attendanceByStudent = await attendancePercentageByStudent(deptStudentProfileIds.map((s) => s.id));
     const avgAttendance =
@@ -283,7 +307,12 @@ router.get('/faculty', authenticate, async (req: Request, res: Response) => {
 // ─── Approvals ───
 router.get('/approvals', authenticate, async (req: Request, res: Response) => {
   try {
-    const approvals = await prisma.approvalItem.findMany({ orderBy: { requestedAt: 'desc' } });
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new Error('Department unassigned');
+    const approvals = await prisma.approvalItem.findMany({
+      where: { requestedBy: { in: await departmentUserIds(department.id) } },
+      orderBy: { requestedAt: 'desc' }
+    });
     res.json({ success: true, data: approvals });
   } catch (error: any) {
     sendError(res, error);
@@ -314,7 +343,7 @@ router.put('/approvals/:id', authenticate, validate({ body: hodApprovalDecisionS
     // cannot filter a unique-key update. Without this, knowing an id from another
     // institution was enough to decide their approval.
     const result = await prisma.approvalItem.updateMany({
-      where: { id, status: 'pending' },
+      where: { id, status: 'pending', requestedBy: { in: await departmentUserIds((await getHODDepartment((req as any).user.id))!.id) } },
       data: {
         status,
         decidedBy: ctx.userId,
@@ -596,6 +625,7 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
       where: { departmentId: department.id },
       include: { faculty: { include: { user: true } }, enrollments: true }
     });
+    const published = await publishedOutcomes(courses.map((c: any) => c.id));
 
     res.json({
       success: true,
@@ -607,30 +637,15 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
       // plausible-looking score. The distribution is a real tally, not an
       // invented percentage split.
       data: courses.map((c: any) => {
-        const total = c.enrollments.length;
-        // GRADED, not all enrollments. `Number(null)` is `0` in JavaScript, so
-        // an ungraded enrollment — `grade` is `null` — was silently treated as
-        // a real numeric score of 0: it counted toward `failed`, dragged down
-        // `avgScore`, and could even set `highestScore` on a course where
-        // nobody had been graded at all. Excluding it here is not the same fix
-        // as the `null` fallback already applied below; that fallback only
-        // covered the case of NO numeric marks at all, not a mix of graded and
-        // ungraded students.
-        const graded = c.enrollments.filter((e: any) => e.grade != null && e.grade !== '');
-        const passed = graded.filter((e: any) => !['F', 'I'].includes(String(e.grade))).length;
-        const numericMarks = graded
-          .map((e: any) => Number(e.grade))
-          .filter((v: number) => Number.isFinite(v));
+        const outcome = outcomeFor(c, published);
         return {
           courseCode: c.code, courseName: c.name, faculty: c.faculty?.user?.name || 'N/A',
-          totalStudents: total, passed, failed: graded.length - passed,
-          passPercentage: graded.length > 0 ? Math.round((passed / graded.length) * 100) : null,
-          avgScore:
-            numericMarks.length > 0
-              ? Math.round(numericMarks.reduce((s: number, v: number) => s + v, 0) / numericMarks.length)
-              : null,
-          highestScore: numericMarks.length > 0 ? Math.max(...numericMarks) : null,
-          gradeDistribution: tallyGrades(c.enrollments)
+          semester: c.semester,
+          totalStudents: Math.max(c.enrollments.length, outcome.assessed), passed: outcome.passed, failed: outcome.failed,
+          passPercentage: passPercentage(outcome),
+          avgScore: outcome.avgScore,
+          highestScore: outcome.highestScore,
+          gradeDistribution: outcome.gradeDistribution
         };
       })
     });
@@ -819,55 +834,81 @@ router.put('/faculty/:id/roles', authenticate, validate({ params: z.object({ id:
   }
 });
 
+/**
+ * The HOD's decision on one faculty leave.
+ *
+ * This used to set the faculty member's LATEST leave — whatever its state, even
+ * one already decided or withdrawn — straight to "approved", skipping the Dean
+ * and Registrar, with no department check; with no leave at all it errored. It
+ * is now the HOD step of the leave's own approval (FACULTY_LEAVE): approving
+ * forwards it to the Dean, rejecting ends it. Only a leave waiting on the HOD,
+ * from the HOD's own department, can be decided.
+ */
 router.put('/faculty/:id/leave', authenticate, validate({ params: z.object({ id: entityId }), body: facultyLeaveDecisionSchema }), async (req: Request, res: Response) => {
   try {
-    const id = String(req.params.id);
-    const action = String(req.body?.action || 'approve');
-    const facultyProfile = await prisma.facultyProfile.findUnique({ where: { userId: id } });
-
+    const context = getTenantContext(req);
+    const department = await getHODDepartment(context.userId);
+    const facultyProfile = await prisma.facultyProfile.findFirst({
+      where: { userId: String(req.params.id), user: { departmentId: department?.id ?? '' } }
+    });
     if (!facultyProfile) {
-      res.status(404).json({ success: false, message: 'Faculty profile not found' });
+      res.status(404).json({ success: false, message: 'Faculty member not found in your department' });
       return;
     }
-
-    const latestLeave = await prisma.leaveRequest.findFirst({
-      where: { facultyProfileId: facultyProfile.id },
-      orderBy: { appliedAt: 'desc' }
-    });
-
-    if (!latestLeave) {
-      res.status(404).json({ success: false, message: 'No leave request found' });
+    const leave = await prisma.leaveRequest.findFirst({ where: { id: String(req.body.leaveId), facultyProfileId: facultyProfile.id } });
+    if (!leave) {
+      res.status(404).json({ success: false, message: 'Leave request not found' });
       return;
     }
-
-    const status = action === 'reject' ? 'rejected' : 'approved';
-    const updated = await prisma.leaveRequest.update({
-      where: { id: latestLeave.id },
-      data: { status }
+    const instance = await prisma.workflowInstance.findFirst({
+      where: { entityType: 'LeaveRequest', entityId: leave.id, status: 'pending' }
     });
-
-    res.json({ success: true, data: updated });
+    if (!instance) {
+      res.status(409).json({ success: false, message: `This leave is already ${leave.status}; there is nothing to decide.` });
+      return;
+    }
+    const result = await workflowService.act(context, instance.id, req.body.action === 'reject' ? 'rejected' : 'approved', req.body.note);
+    res.json({ success: true, data: result });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.post('/faculty/:id/promotion-recommendation', authenticate, validate({ params: z.object({ id: entityId }), body: promotionRecommendationSchema }), async (req: Request, res: Response) => {
+/**
+ * Recommend a faculty member for promotion (Career Advancement Scheme).
+ *
+ * Was an untracked queue item titled with a raw user id. It now opens a
+ * PromotionRequest in FACULTY_PROMOTION_CAS: the HOD's recommendation is the
+ * first step, then Dean → Registrar (screening) → Vice-Chancellor, whose
+ * approval changes the faculty member's designation.
+ */
+router.post('/faculty/:id/promotion-recommendation', authenticate, authorizeRoles('hod'), validate({ params: z.object({ id: entityId }), body: promotionRecommendationSchema }), async (req: Request, res: Response) => {
   try {
-    const id = String(req.params.id);
-    const reason = String(req.body?.reason || 'Promotion recommendation');
-    const item = await prisma.approvalItem.create({
+    const ctx = getTenantContext(req);
+    const department = await getHODDepartment(ctx.userId);
+    const faculty: any = await prisma.user.findFirst({ where: { id: String(req.params.id), departmentId: department?.id ?? '' }, include: { facultyProfile: true } });
+    if (!faculty?.facultyProfile) {
+      res.status(404).json({ success: false, message: 'Faculty member not found in your department' });
+      return;
+    }
+    const open = await prisma.promotionRequest.findFirst({ where: { facultyProfileId: faculty.facultyProfile.id, status: 'pending' } });
+    if (open) {
+      res.status(409).json({ success: false, message: `${faculty.name} already has a promotion case in progress.` });
+      return;
+    }
+    const promotion = await prisma.promotionRequest.create({
       data: {
-        institutionId: getTenantContext(req).institutionId,
-        type: 'promotion_recommendation',
-        title: `Promotion recommendation: ${id}`,
-        details: reason,
-        requestedBy: (req as any).user.id,
-        priority: 'high',
-        status: 'pending'
+        institutionId: ctx.institutionId, facultyProfileId: faculty.facultyProfile.id,
+        currentDesignation: faculty.designation ?? 'Faculty', newDesignation: req.body.newDesignation,
+        reason: req.body.reason ?? null, status: 'pending'
       }
     });
-    res.json({ success: true, data: item });
+    const approval = await workflow.startApprovalFor(ctx, 'FACULTY_PROMOTION_CAS', 'PromotionRequest', promotion.id);
+    if (approval) {
+      // The recommendation itself is the HOD step.
+      await workflow.act(ctx, approval.instanceId, 'approved', req.body.reason ?? 'Recommended by HOD');
+    }
+    res.json({ success: true, data: { ...promotion, instanceId: approval?.instanceId ?? null } });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1018,9 +1059,15 @@ router.post('/students/:id/counseling-note', authenticate, validate({ params: z.
   }
 });
 
-router.get('/hodapprovals', authenticate, async (_req: Request, res: Response) => {
+router.get('/hodapprovals', authenticate, async (req: Request, res: Response) => {
   try {
-    const approvals = await prisma.approvalItem.findMany({ orderBy: { requestedAt: 'desc' }, take: 30 });
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new Error('Department unassigned');
+    const approvals = await prisma.approvalItem.findMany({
+      where: { requestedBy: { in: await departmentUserIds(department.id) } },
+      orderBy: { requestedAt: 'desc' },
+      take: 30
+    });
     res.json({
       success: true,
       data: approvals.map((item: any) => ({
@@ -1184,8 +1231,7 @@ router.post('/workload/course', authenticate, authorizeRoles('hod', 'dean'), val
     const studentProfileIds = await resolveStudentProfileIdsByEmails(department.id, emails);
     if (studentProfileIds.length > 0) {
       await prisma.classEnrollment.createMany({
-        data: studentProfileIds.map((studentProfileId: string) => ({ classId: createdClass.id, studentProfileId })),
-        skipDuplicates: true
+        data: studentProfileIds.map((studentProfileId: string) => ({ classId: createdClass.id, studentProfileId }))
       });
     }
 
@@ -1336,8 +1382,7 @@ router.put('/workload/course/:id', authenticate, authorizeRoles('hod', 'dean'), 
       await prisma.classEnrollment.deleteMany({ where: { classId } });
       if (studentProfileIds.length > 0) {
         await prisma.classEnrollment.createMany({
-          data: studentProfileIds.map((studentProfileId: string) => ({ classId, studentProfileId })),
-          skipDuplicates: true
+          data: studentProfileIds.map((studentProfileId: string) => ({ classId, studentProfileId }))
         });
       }
     }
@@ -1407,44 +1452,24 @@ router.get('/courseresults', authenticate, async (req: Request, res: Response) =
       where: { departmentId: department.id },
       include: { faculty: { include: { user: true } }, enrollments: true }
     });
+    const published = await publishedOutcomes(courses.map((c: any) => c.id));
 
     res.json({
       success: true,
       data: courses.map((course: any) => {
-        const totalStudents = course.enrollments.length;
-        // GRADED, not all enrollments — see the identical fix in GET /results.
-        // `Number(null)` is `0` in JavaScript, so `numericMarks` previously
-        // included every ungraded enrollment as a real score of 0, and
-        // `passPercentage`/`failed` were computed against the full roster
-        // rather than the students actually assessed.
-        const graded = course.enrollments.filter((enrollment: any) => enrollment.grade != null && enrollment.grade !== '');
-        const numericMarks = graded.map((enrollment: any) => Number(enrollment.grade)).filter((value: number) => Number.isFinite(value));
-        const passed = graded.filter((enrollment: any) => {
-          const value = Number(enrollment.grade);
-          if (Number.isFinite(value)) return value >= 35;
-          return !['F', 'I'].includes(String(enrollment.grade));
-        }).length;
-
-        // `65` / `95` / a fixed 25%-35%-40% split were literals — see the
-        // identical fabrication in GET /results above, fixed the same way:
-        // null when there is nothing to average, a real tally instead of an
-        // invented distribution.
-        const avgScore = numericMarks.length > 0
-          ? Math.round(numericMarks.reduce((sum: number, value: number) => sum + value, 0) / numericMarks.length)
-          : null;
-        const highestScore = numericMarks.length > 0 ? Math.max(...numericMarks) : null;
-
+        const outcome = outcomeFor(course, published);
         return {
           courseCode: course.code,
           courseName: course.name,
           faculty: course.faculty?.user?.name || 'Unassigned',
-          totalStudents,
-          passed,
-          failed: graded.length - passed,
-          passPercentage: graded.length > 0 ? Math.round((passed / graded.length) * 100) : null,
-          avgScore,
-          highestScore,
-          gradeDistribution: tallyGrades(course.enrollments)
+          semester: course.semester,
+          totalStudents: Math.max(course.enrollments.length, outcome.assessed),
+          passed: outcome.passed,
+          failed: outcome.failed,
+          passPercentage: passPercentage(outcome),
+          avgScore: outcome.avgScore,
+          highestScore: outcome.highestScore,
+          gradeDistribution: outcome.gradeDistribution
         };
       })
     });
@@ -1453,72 +1478,56 @@ router.get('/courseresults', authenticate, async (req: Request, res: Response) =
   }
 });
 
-router.post('/courseresults/:courseCode/verify', authenticate, async (req: Request, res: Response) => {
-  try {
-    const courseCode = String(req.params.courseCode);
-    const item = await prisma.approvalItem.create({
-      data: {
-        institutionId: getTenantContext(req).institutionId,
-        type: 'result_verification',
-        title: `Result verified: ${courseCode}`,
-        details: 'Verified by HOD',
-        requestedBy: (req as any).user.id,
-        priority: 'high',
-        status: 'approved'
-      }
-    });
-    res.json({ success: true, data: item });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
+// ─── End-semester result verification ───
+// "Verify" and "Forward to CoE" used to write approval rows already marked
+// approved that nothing read. Verification now moves the paper's results to
+// `verified`, which is what the CoE moderates.
+router.get('/exam-results', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const department = await getHODDepartment((req as any).user.id);
+  res.json({ success: true, data: await resultsFlow.departmentSheets(getTenantContext(req), department!.id) });
+}));
 
+router.post('/exam-results/:scheduleId/verify', authenticate, authorizeRoles('hod'), validate({ params: z.object({ scheduleId: entityId }) }), asyncHandler(async (req: Request, res: Response) => {
+  const department = await getHODDepartment((req as any).user.id);
+  res.json({ success: true, data: await resultsFlow.verifyCourse(getTenantContext(req), department!.id, String(req.params.scheduleId)) });
+}));
+
+router.post('/exam-results/:scheduleId/return', authenticate, authorizeRoles('hod'), validate({ params: z.object({ scheduleId: entityId }), body: z.object({ reason: z.string().trim().min(10).max(1000) }).strict() }), asyncHandler(async (req: Request, res: Response) => {
+  const department = await getHODDepartment((req as any).user.id);
+  res.json({ success: true, data: await resultsFlow.returnCourse(getTenantContext(req), department!.id, String(req.params.scheduleId), req.body.reason) });
+}));
+
+/**
+ * Schedule remedial classes for a course. Was an approval row marked approved
+ * that nobody saw; now the course's teacher and its students are told.
+ */
 router.post('/courseresults/:courseCode/remedial', authenticate, validate({ body: remedialNoteSchema }), async (req: Request, res: Response) => {
   try {
+    const ctx = getTenantContext(req);
+    const department = await getHODDepartment(ctx.userId);
     const courseCode = String(req.params.courseCode);
     const note = String(req.body?.note || 'Remedial class scheduled');
-    const item = await prisma.approvalItem.create({
-      data: {
-        institutionId: getTenantContext(req).institutionId,
-        type: 'remedial',
-        title: `Remedial for ${courseCode}`,
-        details: note,
-        requestedBy: (req as any).user.id,
-        priority: 'medium',
-        status: 'approved'
-      }
-    });
-    res.json({ success: true, data: item });
+    const course: any = await prisma.course.findFirst({ where: { code: courseCode, departmentId: department!.id }, include: { faculty: true, enrollments: { include: { student: true } } } });
+    if (!course) throw new NotFoundError('Course in your department');
+    const userIds = [course.faculty?.userId, ...course.enrollments.map((e: any) => e.student?.userId)].filter(Boolean);
+    await notifyInApp(ctx.institutionId, { userIds }, { eventType: 'course.remedial', subject: `Remedial classes: ${course.code} ${course.name}`, body: note, relatedEntityType: 'Course', relatedEntityId: course.id });
+    await recordFromRequest(req, { action: 'CREATE', module: 'hod', resource: `Course:${course.id}`, details: `Remedial classes announced for ${course.code}`, newValue: { note } });
+    res.json({ success: true, data: { notified: userIds.length } });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.post('/courseresults/forward-coe', authenticate, async (req: Request, res: Response) => {
-  try {
-    const item = await prisma.approvalItem.create({
-      data: {
-        institutionId: getTenantContext(req).institutionId,
-        type: 'forward_to_coe',
-        title: 'Results forwarded to CoE',
-        details: 'Department results forwarded for publication',
-        requestedBy: (req as any).user.id,
-        priority: 'high',
-        status: 'approved'
-      }
-    });
-    res.json({ success: true, data: item });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
 
 router.get('/accreditationdata', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const department = await getHODDepartment(userId);
     if (!department) throw new Error('Department unassigned');
-    const data = await db.accreditationData.findMany({ where: { departmentId: department.id } });
+    // Refresh the figures gathered from the ERP before showing them.
+    const year = await syncComputedMetrics(getTenantContext(req).institutionId, department.id, userId);
+    const requested = req.query.year ? String(req.query.year) : year;
+    const data = await db.accreditationData.findMany({ where: { departmentId: department.id, year: requested }, orderBy: [{ criterion: 'asc' }, { metric: 'asc' }] });
     res.json({
       success: true,
       data: data.map((item: any) => ({
@@ -1528,9 +1537,16 @@ router.get('/accreditationdata', authenticate, async (req: Request, res: Respons
         value: item.value,
         year: item.year,
         status: item.status,
+        source: item.source ?? 'manual',
+        basis: item.basis ?? null,
+        documentUrl: item.documentUrl ?? null,
+        documentName: item.documentName ?? null,
+        verifiedBy: item.verifiedBy ?? null,
+        verifiedAt: item.verifiedAt ?? null,
         lastUpdated: new Date(item.lastUpdated).toLocaleDateString('en-IN'),
         updatedBy: item.updatedBy
-      }))
+      })),
+      meta: { academicYear: year }
     });
   } catch (error: any) {
     sendError(res, error);
@@ -1550,6 +1566,7 @@ router.post('/accreditationdata', authenticate, validate({ body: accreditationDa
         value,
         year,
         status: 'pending',
+        source: 'manual',
         updatedBy: userId,
         departmentId: department.id
       }
@@ -1568,12 +1585,25 @@ router.put('/accreditationdata/:id', authenticate,
     const department = await getHODDepartment(userId);
     if (!department) throw new Error('Department unassigned');
     const id = String(req.params.id);
+    const current = await db.accreditationData.findFirst({ where: { id, departmentId: department.id } });
+    if (!current) {
+      res.status(404).json({ success: false, message: 'Accreditation record not found for this department' });
+      return;
+    }
+    // A computed figure comes from the ERP; correct the source records instead.
+    if (current.source === 'computed' && (req.body.value !== undefined || req.body.metric !== undefined || req.body.criterion !== undefined)) {
+      res.status(400).json({ success: false, message: 'This figure is computed from the ERP. Correct the underlying records (courses, results, research …) and it updates itself.' });
+      return;
+    }
     // Same fix as PUT /accreditation/:id above: no institutionId column,
     // so `updateMany` + a department-derived filter, then re-read.
     const changed = await db.accreditationData.updateMany({
       where: { id, departmentId: department.id },
       data: {
         ...req.body,
+        // An edited manual value has to be verified again.
+        ...(req.body.value !== undefined && req.body.status === undefined && current.status === 'complete' ? { status: 'needs_review' } : {}),
+        ...(req.body.status === 'complete' ? { verifiedBy: userId, verifiedAt: new Date() } : {}),
         updatedBy: userId,
         lastUpdated: new Date()
       }
@@ -2022,7 +2052,7 @@ router.post('/curriculum-proposals', authenticate, authorizeRoles('hod'), valida
         type: String(type),
         title: String(title),
         description: String(description),
-        bosApproved: false,
+        bosApproved: req.body.bosApproved === true,
         status: 'pending_dean'
       }
     });
@@ -2187,6 +2217,19 @@ router.post('/communication/messages', authenticate, validate({ body: hodCommuni
         type: 'announcement'
       }
     });
+    // The message was stored and nobody was told: deliver it to the audience.
+    const ctx = getTenantContext(req);
+    let target: { userIds?: string[]; roles?: string[]; departmentId?: string | null };
+    if (audience.startsWith('class:')) {
+      const enrolled = await prisma.classEnrollment.findMany({ where: { classId: audience.slice(6) }, select: { student: { select: { userId: true } } } });
+      target = { userIds: enrolled.map((e: any) => e.student?.userId).filter(Boolean) };
+    } else {
+      target = { roles: audience === 'students' ? ['student'] : audience === 'faculties' ? ['faculty'] : ['student', 'faculty'], departmentId: department.id };
+    }
+    await notifyInApp(ctx.institutionId, { ...target, excludeUserId: userId }, {
+      eventType: 'department.message', subject: `${department.code ?? department.name}: ${subject}`, body: String(message).slice(0, 300),
+      relatedEntityType: 'BroadcastMessage', relatedEntityId: created.id
+    });
     res.json({
       success: true,
       data: {
@@ -2264,9 +2307,14 @@ router.get('/communication/recipient-options', authenticate, async (req: Request
   }
 });
 
-router.get('/grievances', authenticate, async (_req: Request, res: Response) => {
+router.get('/grievances', authenticate, async (req: Request, res: Response) => {
   try {
-    const grievances = await prisma.grievanceCase.findMany({ orderBy: { submissionDate: 'desc' } });
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new Error('Department unassigned');
+    const grievances = await prisma.grievanceCase.findMany({
+      where: departmentGrievanceScope(department, await departmentUserIds(department.id)),
+      orderBy: { submissionDate: 'desc' }
+    });
     res.json({
       success: true,
       data: grievances.map((item: any) => ({
@@ -2298,7 +2346,11 @@ router.get('/grievances/:id', authenticate, async (req: Request, res: Response) 
       return;
     }
 
-    const grievance = await prisma.grievanceCase.findUnique({ where: { id } });
+    const department = await getHODDepartment((req as any).user.id);
+    if (!department) throw new Error('Department unassigned');
+    const grievance = await prisma.grievanceCase.findFirst({
+      where: { id, ...departmentGrievanceScope(department, await departmentUserIds(department.id)) }
+    });
     if (!grievance) {
       res.status(404).json({ success: false, message: 'Grievance case not found' });
       return;
@@ -2325,7 +2377,11 @@ router.put('/grievances/:id', authenticate, validate({ params: z.object({ id: en
 
     const normalizedStatus = fromRoleGrievanceStatus(status, 'hod');
 
-    const existing = await prisma.grievanceCase.findUnique({ where: { id } });
+    const department = await getHODDepartment(userId);
+    if (!department) throw new Error('Department unassigned');
+    const existing = await prisma.grievanceCase.findFirst({
+      where: { id, ...departmentGrievanceScope(department, await departmentUserIds(department.id)) }
+    });
     if (!existing) {
       res.status(404).json({ success: false, message: 'Grievance case not found' });
       return;
@@ -2834,5 +2890,29 @@ router.post('/inventory/export', authenticate, async (req: Request, res: Respons
     sendError(res, error);
   }
 });
+
+
+// ─── Lesson plans and syllabus coverage ───
+router.get('/lesson-plans', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const department = await getHODDepartment((req as any).user.id);
+  const courses: any[] = await prisma.course.findMany({
+    where: { departmentId: department!.id },
+    include: { lessonPlans: { orderBy: { weekNumber: 'asc' } }, faculty: { include: { user: { select: { name: true } } } } },
+    orderBy: [{ semester: 'asc' }, { code: 'asc' }]
+  } as never);
+  const now = Date.now();
+  res.json({ success: true, data: courses.map((c) => {
+    const weeks = c.lessonPlans as any[];
+    const done = weeks.filter((w) => w.status === 'completed').length;
+    const due = weeks.filter((w) => new Date(w.plannedDate).getTime() <= now).length;
+    return {
+      courseId: c.id, code: c.code, name: c.name, semester: c.semester, faculty: c.faculty?.user?.name ?? 'Unassigned',
+      weeksPlanned: weeks.length, weeksCompleted: done, weeksDue: due, behindBy: Math.max(0, due - done),
+      coverage: weeks.length ? Math.round((done / weeks.length) * 100) : 0,
+      status: c.lessonPlanStatus ?? (weeks.length ? 'draft' : 'not_started'),
+      weeks: weeks.map((w) => ({ week: w.weekNumber, topic: w.topic, plannedDate: w.plannedDate, status: w.status }))
+    };
+  }) });
+}));
 
 export default router;

@@ -87,13 +87,16 @@ export const facultyRolesUpdateSchema = z
 /** PUT /faculty/:id/leave. */
 export const facultyLeaveDecisionSchema = z
   .object({
-    action: z.enum(['approve', 'reject']).optional()
+    leaveId: z.string().trim().min(1).max(200),
+    action: z.enum(['approve', 'reject']),
+    note: z.string().trim().max(1000).optional()
   })
   .strict();
 
 /** POST /faculty/:id/promotion-recommendation. */
 export const promotionRecommendationSchema = z
   .object({
+    newDesignation: trimmed(120),
     reason: optionalTrimmed(2000)
   })
   .strict();
@@ -238,7 +241,10 @@ export const curriculumProposalCreateSchema = z
   .object({
     type: z.enum(['new_course', 'syllabus_update', 'program_change', 'elective_addition']),
     title: trimmed(200),
-    description: trimmed(4000)
+    description: trimmed(4000),
+    // The form's "Approved by the Board of Studies" checkbox; refused before,
+    // so every proposal failed to submit.
+    bosApproved: z.boolean().optional()
   })
   .strict();
 
