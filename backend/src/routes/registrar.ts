@@ -1,9 +1,13 @@
+import * as campus from '../modules/campus/campusServices.js';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { sendError } from '../lib/errors.js';
+import { sendError, NotFoundError } from '../lib/errors.js';
+import { notifyInApp } from '../lib/inAppNotify.js';
 import * as exams from '../modules/coe/exams.service.js';
+import * as workflow from '../modules/workflow/workflow.service.js';
+import { authorizeRoles } from '../middleware/auth.js';
 import { updateExamSchema } from '../modules/coe/exams.schema.js';
 import { getTenantContext } from '../lib/tenant.js';
 import * as registrarService from '../modules/registrar/registrar.service.js';
@@ -45,19 +49,26 @@ function normalizeSemester(value: unknown) {
 // ─── Dashboard ───
 router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
   try {
-    const activeStudents = await prisma.user.count({ where: { role: 'student' } });
-    const pendingCertificates = await prisma.certificateRequest.count({ where: { status: 'pending' } });
-    const gatePasses = await prisma.gatePass.count({ where: { status: 'pending' } });
-    const openVacancies = await prisma.vacancy.count({ where: { status: 'advertised' } });
+    const ctx = getTenantContext(req);
+    // "Gate Passes" was a security-office count; "Pending Certificates" counted a
+    // status nothing used. These are the Registrar's own queues.
+    const [activeStudents, toIssue, openVacancies, verifications, awaiting] = await Promise.all([
+      prisma.user.count({ where: { role: 'student' } }),
+      prisma.certificateRequest.count({ where: { status: 'approved' } }),
+      prisma.vacancy.count({ where: { status: { notIn: ['closed', 'joined'] } } }),
+      prisma.verificationRequest.count({ where: { status: { in: ['pending', 'processing'] } } }),
+      workflow.inbox(ctx, { page: 1, pageSize: 1 })
+    ]);
 
     res.json({
       success: true,
       data: {
         stats: [
-          { label: "Active Students", value: activeStudents.toString(), icon: "Users" },
-          { label: "Pending Certificates", value: pendingCertificates.toString(), icon: "FileText", color: "text-warning" },
-          { label: "Gate Passes", value: gatePasses.toString(), icon: "ArrowRightLeft", color: "text-blue-500" },
-          { label: "Open Vacancies", value: openVacancies.toString(), icon: "Briefcase", color: "text-purple-500" }
+          { label: "Awaiting your approval", value: String(awaiting.meta.total), icon: "FileText", color: "text-warning" },
+          { label: "Certificates to issue", value: toIssue.toString(), icon: "Award", color: "text-blue-500" },
+          { label: "Verification requests", value: verifications.toString(), icon: "Search", color: "text-purple-500" },
+          { label: "Open Vacancies", value: openVacancies.toString(), icon: "Briefcase", color: "text-purple-500" },
+          { label: "Active Students", value: activeStudents.toString(), icon: "Users" }
         ]
       }
     });
@@ -75,7 +86,7 @@ router.get('/students', authenticate, async (req: Request, res: Response) => {
     if (search) { where.name = { contains: search, mode: 'insensitive' }; }
 
     const students = await prisma.user.findMany({
-      where, include: { studentProfile: true, department: true }, take: 100
+      where, include: { studentProfile: true, department: true }, orderBy: { name: 'asc' }, take: 500
     });
 
     res.json({
@@ -85,10 +96,15 @@ router.get('/students', authenticate, async (req: Request, res: Response) => {
         if (semester && s.studentProfile?.semester !== parseInt(semester as string)) return false;
         return true;
       }).map((s: any) => ({
-        id: s.id, name: s.name, email: s.email, rollNumber: s.studentProfile?.rollNumber,
+        id: s.id, profileId: s.studentProfile?.id ?? null, name: s.name, email: s.email, rollNumber: s.studentProfile?.rollNumber,
+        // The register page reads rollNo / batch; it crashed on search without them.
+        rollNo: s.studentProfile?.rollNumber ?? '', batch: s.studentProfile?.batch ?? String(s.studentProfile?.admissionYear ?? ''),
         program: s.studentProfile?.program, semester: s.studentProfile?.semester,
-        section: s.studentProfile?.section, department: s.department?.name,
-        admissionYear: s.studentProfile?.admissionYear, cgpa: s.studentProfile?.cgpa, status: 'active'
+        section: s.studentProfile?.section, department: s.department?.name ?? '',
+        admissionYear: s.studentProfile?.admissionYear, cgpa: s.studentProfile?.cgpa,
+        category: s.studentProfile?.category ?? null, gender: s.studentProfile?.gender ?? null,
+        dob: s.studentProfile?.dateOfBirth ?? null, nationality: s.studentProfile?.nationality ?? null,
+        homeState: s.studentProfile?.domicileState ?? null, status: s.deletedAt ? 'discontinued' : 'active'
       }))
     });
   } catch (error: any) {
@@ -146,6 +162,27 @@ router.put(
 );
 
 // ─── Record Change Requests ───
+/** Fields a correction can change, and where each lives. */
+const RECORD_FIELDS: Record<string, { on: 'user' | 'profile'; column: string; kind?: 'date' }> = {
+  name: { on: 'user', column: 'name' },
+  date_of_birth: { on: 'profile', column: 'dateOfBirth', kind: 'date' },
+  gender: { on: 'profile', column: 'gender' },
+  category: { on: 'profile', column: 'category' },
+  home_state: { on: 'profile', column: 'domicileState' },
+  nationality: { on: 'profile', column: 'nationality' }
+};
+
+async function applyRecordChange(request: { studentId: string; field: string; newValue: string }): Promise<boolean> {
+  const target = RECORD_FIELDS[request.field];
+  if (!target) return false;
+  const profile: any = await prisma.studentProfile.findFirst({ where: { id: request.studentId } });
+  if (!profile) return false;
+  const value = target.kind === 'date' ? new Date(request.newValue) : request.newValue;
+  if (target.on === 'user') await prisma.user.updateMany({ where: { id: profile.userId }, data: { [target.column]: value } });
+  else await prisma.studentProfile.updateMany({ where: { id: profile.id }, data: { [target.column]: value } });
+  return true;
+}
+
 router.get('/record-changes', authenticate, async (req: Request, res: Response) => {
   try {
     const requests = await prisma.recordChangeRequest.findMany({ orderBy: { requestedAt: 'desc' } });
@@ -165,14 +202,32 @@ router.put(
   validate({ params: z.object({ id: entityId }), body: decideRequestSchema }),
   asyncHandler(async (req: Request, res: Response) => {
     const body = req.body as { status: string; note?: string };
-    const updated = await registrarService.decideRequest(getTenantContext(req), {
+    const ctx = getTenantContext(req);
+    const request: any = await prisma.recordChangeRequest.findFirst({ where: { id: String(req.params.id) } });
+    if (!request) throw new NotFoundError('Record change request');
+    if (request.status !== 'pending') {
+      res.status(409).json({ success: false, message: `This request is already ${request.status}.` });
+      return;
+    }
+    const updated = await registrarService.decideRequest(ctx, {
       model: 'recordChangeRequest',
       entity: 'RecordChangeRequest',
       id: String(req.params.id),
       status: body.status,
       note: body.note
     });
-    res.json({ success: true, data: updated });
+    // Approving used to change only the request's status, never the record.
+    let applied = false;
+    if (body.status === 'approved') applied = await applyRecordChange(request);
+    const profile: any = await prisma.studentProfile.findFirst({ where: { id: request.studentId } });
+    if (profile) {
+      await notifyInApp(ctx.institutionId, { userIds: [profile.userId] }, {
+        eventType: `record_change.${body.status}`, subject: `Your ${request.field} correction was ${body.status}`,
+        body: body.status === 'approved' ? (applied ? `Your record now shows: ${request.newValue}.` : 'Approved; the office will update the paper file.') : (body.note ?? 'Contact the Registrar\'s office.'),
+        relatedEntityType: 'RecordChangeRequest', relatedEntityId: request.id
+      });
+    }
+    res.json({ success: true, data: { ...updated, applied } });
   })
 );
 
@@ -210,31 +265,100 @@ router.put(
   authenticate,
   validate({ params: z.object({ id: entityId }), body: updateTransferRequestSchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const updated = await updateTenantEntity(getTenantContext(req), {
+    const ctx = getTenantContext(req);
+    const before: any = await prisma.transferRequest.findFirst({ where: { id: String(req.params.id) } });
+    if (!before) throw new NotFoundError('Transfer request');
+    const updated = await updateTenantEntity(ctx, {
       model: 'transferRequest',
       entity: 'TransferRequest',
       module: 'registrar',
       id: String(req.params.id),
       data: req.body as Record<string, unknown>
     });
-
-    res.json({ success: true, data: updated });
+    // Completing an intra-university transfer moves the student to the new department.
+    let moved = false;
+    if (req.body.status === 'completed' && before.status !== 'completed' && before.type === 'intra_university') {
+      const to: any = await prisma.department.findFirst({ where: { name: before.toInstitution } });
+      const profile: any = await prisma.studentProfile.findFirst({ where: { OR: [{ id: before.studentId }, { userId: before.studentId }] } });
+      if (to && profile) {
+        await prisma.user.updateMany({ where: { id: profile.userId }, data: { departmentId: to.id } });
+        await prisma.studentProfile.updateMany({ where: { id: profile.id }, data: { branch: to.name } });
+        moved = true;
+      }
+    }
+    // A transfer names the student by profile id (seed) or user id (the Registrar's student list).
+    const student: any = await prisma.studentProfile.findFirst({ where: { OR: [{ id: before.studentId }, { userId: before.studentId }] } });
+    if (student && req.body.status) {
+      await notifyInApp(ctx.institutionId, { userIds: [student.userId] }, {
+        eventType: 'transfer.updated', subject: `Your transfer request: ${String(req.body.status).replace(/_/g, ' ')}`,
+        body: req.body.remarks ?? (moved ? `You are now in ${before.toInstitution}.` : 'See the Registrar\'s office for details.'),
+        relatedEntityType: 'TransferRequest', relatedEntityId: before.id
+      });
+    }
+    res.json({ success: true, data: { ...(updated as object), moved } });
   })
 );
 
 // ─── Certificates ───
+const CERT_PREFIX: Record<string, string> = { bonafide: 'BON', transcript: 'TRN', migration: 'MIG', transfer: 'TC', degree: 'DEG', provisional: 'PRV', character: 'CHR' };
+const certStatus = (status: string) => (status === 'processing' ? 'pending' : status);
+
+/**
+ * Every certificate request, with where its approval stands. A request is
+ * approved by Finance (no dues) → HOD (verified) → Registrar (CERTIFICATE_ISSUE);
+ * once approved the Registrar issues it (a verifiable number) and records collection.
+ */
 router.get('/certificates', authenticate, async (req: Request, res: Response) => {
   try {
     const certs = await prisma.certificateRequest.findMany({
-      include: { student: { include: { user: true } } },
+      include: { student: { include: { user: { include: { department: true } } } } },
       orderBy: { requestedAt: 'desc' }
+    });
+    const instances = await prisma.workflowInstance.findMany({
+      where: { entityType: 'CertificateRequest', entityId: { in: certs.map((c: any) => c.id) } },
+      include: { definition: { include: { steps: { orderBy: { sequence: 'asc' } } } }, transitions: true },
+      orderBy: { startedAt: 'desc' }
     });
     res.json({
       success: true,
-      data: certs.map((c: any) => ({
-        id: c.id, type: c.type, status: c.status, requestedAt: c.requestedAt,
-        studentName: c.student.user.name, rollNumber: c.student.rollNumber, remarks: c.remarks
-      }))
+      data: certs.map((c: any) => {
+        const inst: any = instances.find((i: any) => i.entityId === c.id);
+        const steps = inst?.definition.steps.map((step: any) => {
+          const decided = inst.transitions.filter((t: any) => t.fromStepId === step.id && t.action !== 'started').pop();
+          return { role: step.assigneeRole, state: decided ? decided.action : step.id === inst.currentStepId && inst.status === 'pending' ? 'current' : 'upcoming' };
+        }) ?? [];
+        return {
+          id: c.id, type: c.type, purpose: c.purpose, copies: c.copies, fee: c.fee,
+          status: certStatus(c.status), requestedAt: c.requestedAt,
+          certificateNumber: c.certificateNumber ?? null, issuedAt: c.issuedAt ?? null, collectedAt: c.collectionDate ?? null,
+          studentName: c.student.user.name, rollNumber: c.student.rollNumber, program: c.student.program,
+          department: c.student.user.department?.name ?? null, semester: c.student.semester,
+          instanceId: inst?.id ?? null, waitingOn: steps.find((x: any) => x.state === 'current')?.role ?? null, steps
+        };
+      })
+    });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+/** Look up an issued certificate by its number (employers, other universities). */
+router.get('/certificates/verify', authenticate, async (req: Request, res: Response) => {
+  try {
+    const q = String(req.query.number ?? '').trim();
+    if (!q) {
+      res.status(400).json({ success: false, message: 'Give a certificate number' });
+      return;
+    }
+    const cert: any = await prisma.certificateRequest.findFirst({
+      where: { certificateNumber: q },
+      include: { student: { include: { user: true } } }
+    });
+    res.json({
+      success: true,
+      data: cert && ['issued', 'collected'].includes(cert.status)
+        ? { valid: true, certificateNumber: cert.certificateNumber, type: cert.type, studentName: cert.student.user.name, rollNumber: cert.student.rollNumber, program: cert.student.program, issuedAt: cert.issuedAt }
+        : { valid: false }
     });
   } catch (error: any) {
     sendError(res, error);
@@ -242,25 +366,61 @@ router.get('/certificates', authenticate, async (req: Request, res: Response) =>
 });
 
 /**
- * Decide a certificates request. Previously a status flip with no
- * record of who decided it.
+ * Issue an approved certificate, or record that it was collected. The page sent
+ * statuses ("generated", "printed") the server refused, and nothing checked
+ * that the request had been approved first.
  */
 router.put(
   '/certificates/:id',
   authenticate,
-  validate({ params: z.object({ id: entityId }), body: decideRequestSchema }),
+  authorizeRoles('registrar', 'super_admin'),
+  validate({ params: z.object({ id: entityId }), body: z.object({ action: z.enum(['issue', 'collected']), note: z.string().trim().max(500).optional() }).strict() }),
   asyncHandler(async (req: Request, res: Response) => {
-    const body = req.body as { status: string; note?: string };
-    const updated = await registrarService.decideRequest(getTenantContext(req), {
-      model: 'certificateRequest',
-      entity: 'CertificateRequest',
-      id: String(req.params.id),
-      status: body.status,
-      note: body.note
-    });
-    res.json({ success: true, data: updated });
+    const ctx = getTenantContext(req);
+    const cert: any = await prisma.certificateRequest.findFirst({ where: { id: String(req.params.id) }, include: { student: true } });
+    if (!cert) throw new NotFoundError('Certificate request');
+    const status = certStatus(cert.status);
+    if (req.body.action === 'issue') {
+      if (status !== 'approved') {
+        res.status(409).json({ success: false, message: status === 'pending' ? 'It is still being approved (Finance → HOD → Registrar). Approve it from Approvals first.' : `It is already ${status}.` });
+        return;
+      }
+      const year = new Date().getFullYear();
+      const prefix = `CH/${CERT_PREFIX[cert.type] ?? 'CRT'}/${year}/`;
+      const count = await prisma.certificateRequest.count({ where: { certificateNumber: { startsWith: prefix } } });
+      const certificateNumber = `${prefix}${String(count + 1).padStart(4, '0')}`;
+      await prisma.certificateRequest.updateMany({ where: { id: cert.id }, data: { status: 'issued', certificateNumber, issuedAt: new Date(), issuedBy: ctx.userId } });
+      await notifyInApp(ctx.institutionId, { userIds: [cert.student.userId] }, {
+        eventType: 'certificate.issued', subject: `Your ${cert.type} certificate is ready`,
+        body: `Certificate ${certificateNumber}. Collect it from the Registrar's office.`, relatedEntityType: 'CertificateRequest', relatedEntityId: cert.id
+      });
+    } else {
+      if (status !== 'issued') {
+        res.status(409).json({ success: false, message: 'Only an issued certificate can be marked collected.' });
+        return;
+      }
+      await prisma.certificateRequest.updateMany({ where: { id: cert.id }, data: { status: 'collected', collectionDate: new Date() } });
+    }
+    res.json({ success: true, data: await prisma.certificateRequest.findFirst({ where: { id: cert.id } }) });
   })
 );
+
+/** Final-year students — the graduands for the next convocation. */
+router.get('/graduands', authenticate, async (_req: Request, res: Response) => {
+  try {
+    const students = await prisma.studentProfile.findMany({
+      where: { semester: { gte: 7 } },
+      include: { user: { include: { department: true } } },
+      orderBy: { rollNumber: 'asc' }
+    });
+    res.json({
+      success: true,
+      data: students.map((s: any) => ({ id: s.id, name: s.user?.name, rollNumber: s.rollNumber, program: s.program, department: s.user?.department?.name ?? null, semester: s.semester, cgpa: s.cgpa, batch: s.batch }))
+    });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
 
 // ─── Verification Requests ───
 router.get('/verifications', authenticate, async (req: Request, res: Response) => {
@@ -623,36 +783,6 @@ router.put(
   })
 );
 
-router.post('/hr/promotions/forward', authenticate, validate({ body: promotionForwardSchema }), async (req: Request, res: Response) => {
-  try {
-    const userId = String((req as any).user.id);
-    const { name, fromDesignation, toDesignation, department, years } = req.body;
-
-    const created = await prisma.approvalItem.create({
-      data: {
-        institutionId: getTenantContext(req).institutionId,
-        type: 'faculty_hire',
-        title: `Promotion Recommendation: ${name}`,
-        details: `${name} (${department}) recommended for promotion from ${fromDesignation} to ${toDesignation}. Years of service: ${years ?? 'N/A'}. Forwarded by Registrar for VC review.`,
-        requestedBy: userId,
-        priority: 'high',
-        // Was 'forwarded', which put this item outside every queue AND every
-        // decision path. In this system 'forwarded' is a decision the VC
-        // MAKES (forwarding onward to the Board of Management); 'pending' is
-        // what awaits one. Every dashboard counts `status: 'pending'` and
-        // every decision handler updates `where: { id, status: 'pending' }`,
-        // so a recommendation stored as 'forwarded' appeared in the VC's list
-        // and then refused to be approved or rejected — "No pending approval
-        // with that id" — with no way to clear it.
-        status: 'pending',
-      }
-    });
-
-    res.json({ success: true, data: created });
-  } catch (error: any) {
-    sendError(res, error);
-  }
-});
 
 // ─── Accreditation ───
 router.get('/accreditation', authenticate, async (req: Request, res: Response) => {
@@ -681,6 +811,59 @@ router.put(
   })
 );
 
+/**
+ * "Remind" only showed a "Reminder Sent" toast. It now puts an in-app
+ * notification in front of whoever holds the responsible office.
+ */
+const OFFICE_ROLES: Array<[RegExp, string[]]> = [
+  [/iqac/i, ['iqac_coordinator']],
+  [/research|dean/i, ['dean']],
+  [/placement|training/i, ['placement_officer']],
+  [/principal/i, ['principal']],
+  [/registrar|admin/i, ['registrar']],
+  [/exam|coe|controller/i, ['coe']],
+  [/financ|account/i, ['finance_officer']],
+  [/librar/i, ['librarian']],
+  [/sport/i, ['sports_director']],
+  [/alumni/i, ['alumni_officer']],
+  [/hod|head/i, ['hod']]
+];
+
+router.post(
+  '/accreditation/:id/remind',
+  authenticate,
+  validate({ params: z.object({ id: entityId }) }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const context = getTenantContext(req);
+    const item = await prisma.accreditationChecklist.findFirst({ where: { id: String(req.params.id) } });
+    if (!item) throw new NotFoundError('Accreditation item');
+
+    const office = String(item.responsibleOffice || '');
+    const roles = OFFICE_ROLES.filter(([pattern]) => pattern.test(office)).flatMap(([, r]) => r);
+    // "HOD CSE" → only the CSE head.
+    const deptCode = /hod\s+(\w+)/i.exec(office)?.[1];
+    const department = deptCode
+      ? await prisma.department.findFirst({ where: { code: deptCode.toUpperCase() }, select: { id: true } })
+      : null;
+
+    const sent = roles.length
+      ? await notifyInApp(
+          context.institutionId,
+          { roles: [roles[0]!], departmentId: department?.id ?? null, excludeUserId: context.userId },
+          {
+            eventType: 'accreditation.reminder',
+            subject: `${item.framework} data pending: ${item.criterion}`,
+            body: `The Registrar's office is waiting for your submission${item.deadline ? ` (due ${item.deadline.toLocaleDateString('en-IN')})` : ''}.`,
+            relatedEntityType: 'AccreditationChecklist',
+            relatedEntityId: item.id
+          }
+        )
+      : 0;
+
+    res.json({ success: true, data: { office, recipients: sent } });
+  })
+);
+
 // ─── Queries ───
 router.get('/queries', authenticate, async (req: Request, res: Response) => {
   try {
@@ -703,7 +886,26 @@ router.get('/queries', authenticate, async (req: Request, res: Response) => {
 router.get('/promotions', authenticate, async (req: Request, res: Response) => {
   try {
     const promotions = await prisma.promotionRequest.findMany({ orderBy: { appliedAt: 'desc' } });
-    res.json({ success: true, data: promotions });
+    const people = await prisma.facultyProfile.findMany({
+      where: { id: { in: promotions.map((p: any) => p.facultyProfileId) } },
+      include: { user: { include: { department: true } } }
+    });
+    const instances = await prisma.workflowInstance.findMany({
+      where: { entityType: 'PromotionRequest', entityId: { in: promotions.map((p: any) => p.id) } },
+      include: { definition: { include: { steps: true } } }
+    });
+    res.json({
+      success: true,
+      data: promotions.map((p: any) => {
+        const who: any = people.find((x: any) => x.id === p.facultyProfileId);
+        const inst: any = instances.find((i: any) => i.entityId === p.id);
+        return {
+          ...p, name: who?.user?.name ?? 'Faculty', department: who?.user?.department?.name ?? null,
+          instanceId: inst?.id ?? null,
+          waitingOn: inst?.status === 'pending' ? inst.definition.steps.find((x: any) => x.id === inst.currentStepId)?.assigneeRole ?? null : null
+        };
+      })
+    });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -713,28 +915,18 @@ router.get('/promotions', authenticate, async (req: Request, res: Response) => {
  * Decide a promotions request. Previously a status flip with no
  * record of who decided it.
  */
-router.put(
-  '/promotions/:id',
-  authenticate,
-  validate({ params: z.object({ id: entityId }), body: decideRequestSchema }),
-  asyncHandler(async (req: Request, res: Response) => {
-    const body = req.body as { status: string; note?: string };
-    const updated = await registrarService.decideRequest(getTenantContext(req), {
-      model: 'promotionRequest',
-      entity: 'PromotionRequest',
-      id: String(req.params.id),
-      status: body.status,
-      note: body.note
-    });
-    res.json({ success: true, data: updated });
-  })
-);
-
 // ─── Retirements ───
 router.get('/retirements', authenticate, async (req: Request, res: Response) => {
   try {
-    const retirements = await prisma.retirementRequest.findMany({ orderBy: { appliedAt: 'desc' } });
-    res.json({ success: true, data: retirements });
+    const retirements = await prisma.retirementRequest.findMany({ orderBy: { lastDate: 'asc' } });
+    const people = await prisma.facultyProfile.findMany({ where: { id: { in: retirements.map((r: any) => r.facultyProfileId) } }, include: { user: { include: { department: true } } } });
+    res.json({
+      success: true,
+      data: retirements.map((r: any) => {
+        const who: any = people.find((x: any) => x.id === r.facultyProfileId);
+        return { ...r, name: who?.user?.name ?? 'Staff member', department: who?.user?.department?.name ?? null };
+      })
+    });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -760,5 +952,56 @@ router.put(
     res.json({ success: true, data: updated });
   })
 );
+
+
+// ─── Hostel & transport (student services) ───
+const REGISTRAR_OFFICE = authorizeRoles('registrar', 'super_admin');
+const stopSchema = z.object({ name: z.string().trim().min(1).max(80), time: z.string().trim().max(10), fee: z.number().min(0).max(1000000) }).strict();
+const hostelSchema = z.object({
+  name: z.string().trim().min(2).max(120), block: z.string().trim().min(1).max(40), wardenName: z.string().trim().min(2).max(120), wardenPhone: z.string().trim().min(6).max(20),
+  capacity: z.number().int().min(1).max(5000).optional(), hostelType: z.enum(['boys', 'girls', 'staff']).optional(), feePerSemester: z.number().min(0).max(1000000).optional()
+}).strict();
+const routeSchema = z.object({
+  code: z.string().trim().min(1).max(20), name: z.string().trim().min(2).max(120), vehicleNumber: z.string().trim().max(20).optional(),
+  driverName: z.string().trim().max(120).optional(), driverPhone: z.string().trim().max(20).optional(), capacity: z.number().int().min(1).max(200),
+  stops: z.array(stopSchema).min(1).max(40), active: z.boolean().optional()
+}).strict();
+
+router.get('/hostels', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await campus.hostels(getTenantContext(req)) });
+}));
+router.post('/hostels', authenticate, REGISTRAR_OFFICE, validate({ body: hostelSchema }), asyncHandler(async (req: Request, res: Response) => {
+  res.status(201).json({ success: true, data: await campus.saveHostel(getTenantContext(req), null, req.body) });
+}));
+router.put('/hostels/:id', authenticate, REGISTRAR_OFFICE, validate({ params: z.object({ id: entityId }), body: hostelSchema }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await campus.saveHostel(getTenantContext(req), String(req.params.id), req.body) });
+}));
+router.post('/hostel-allocations', authenticate, REGISTRAR_OFFICE, validate({ body: z.object({ hostelId: entityId, studentProfileId: entityId, roomNumber: z.string().trim().min(1).max(20), roomType: z.enum(['single', 'double', 'triple', 'dormitory']), requestId: entityId.optional() }).strict() }), asyncHandler(async (req: Request, res: Response) => {
+  res.status(201).json({ success: true, data: await campus.allocateHostel(getTenantContext(req), req.body) });
+}));
+router.post('/hostel-allocations/:id/vacate', authenticate, REGISTRAR_OFFICE, validate({ params: z.object({ id: entityId }) }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await campus.vacateHostel(getTenantContext(req), String(req.params.id)) });
+}));
+router.get('/transport-routes', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await campus.routes(getTenantContext(req)) });
+}));
+router.post('/transport-routes', authenticate, REGISTRAR_OFFICE, validate({ body: routeSchema }), asyncHandler(async (req: Request, res: Response) => {
+  res.status(201).json({ success: true, data: await campus.saveRoute(getTenantContext(req), null, req.body) });
+}));
+router.put('/transport-routes/:id', authenticate, REGISTRAR_OFFICE, validate({ params: z.object({ id: entityId }), body: routeSchema }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await campus.saveRoute(getTenantContext(req), String(req.params.id), req.body) });
+}));
+router.post('/transport-allocations', authenticate, REGISTRAR_OFFICE, validate({ body: z.object({ routeId: entityId, studentProfileId: entityId, stop: z.string().trim().min(1).max(80), requestId: entityId.optional() }).strict() }), asyncHandler(async (req: Request, res: Response) => {
+  res.status(201).json({ success: true, data: await campus.allocateTransport(getTenantContext(req), req.body) });
+}));
+router.post('/transport-allocations/:id/cancel', authenticate, REGISTRAR_OFFICE, validate({ params: z.object({ id: entityId }) }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await campus.cancelTransport(getTenantContext(req), String(req.params.id)) });
+}));
+router.get('/service-requests', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await campus.listRequests(getTenantContext(req)) });
+}));
+router.post('/service-requests/:id/decline', authenticate, REGISTRAR_OFFICE, validate({ params: z.object({ id: entityId }), body: z.object({ note: z.string().trim().min(10).max(500) }).strict() }), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ success: true, data: await campus.decideRequest(getTenantContext(req), String(req.params.id), 'declined', req.body.note) });
+}));
 
 export default router;
