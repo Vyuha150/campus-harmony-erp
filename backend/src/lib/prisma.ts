@@ -1,93 +1,51 @@
 /**
- * Prisma client with an explicitly configured PostgreSQL pool.
+ * Prisma client for MongoDB (Atlas).
  *
- * Changes from the previous implementation:
+ * The connection string comes from validated config rather than being read
+ * ad-hoc from `process.env`. Pool sizing and timeouts are applied as MongoDB
+ * connection-string options so they stay tunable from the environment without
+ * each deployment hand-editing the URI.
  *
- *  - Connection settings come from validated config rather than being parsed
- *    ad-hoc from the URL with no bounds.
- *  - The pool is now SIZED. Previously no `max`, `idleTimeoutMillis` or
- *    `connectionTimeoutMillis` was set, so `pg` defaults applied (max 10) with
- *    no way to tune them — and long synchronous report queries holding
- *    connections made pool exhaustion likely.
- *  - `ssl.rejectUnauthorized` defaulted to `false`, silently disabling
- *    certificate verification and permitting a man-in-the-middle on the
- *    database connection. It now defaults to ON and cannot be disabled in
- *    production.
+ * TLS: `mongodb+srv://` connections are always encrypted and verified by the
+ * driver, so there is no certificate-verification switch to get wrong here.
+ *
+ * Time zones: MongoDB stores every `Date` as a UTC instant, so no session
+ * pinning is needed.
  */
 
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
 import { config } from '../config/env.js';
-import { logger } from './logger.js';
 import { tenantExtension } from './tenantExtension.js';
+import { explicitNullExtension } from './explicitNulls.js';
 
-const parsedDatabaseUrl = new URL(config.database.url);
-
-const isLocalConnection = ['localhost', '127.0.0.1', '::1'].includes(
-  parsedDatabaseUrl.hostname
-);
-
-/**
- * TLS is skipped for local connections (a local socket has no meaningful MITM
- * exposure and local Postgres installs typically have no certificate), and
- * required everywhere else.
- */
-const ssl = isLocalConnection
-  ? false
-  : { rejectUnauthorized: config.database.rejectUnauthorized };
-
-if (!isLocalConnection && !config.database.rejectUnauthorized) {
-  logger.warn(
-    'Database TLS certificate verification is DISABLED — the connection is vulnerable ' +
-      'to interception. Set DATABASE_SSL_REJECT_UNAUTHORIZED=true.'
-  );
+/** Apply pool settings without overriding anything set explicitly in the URI. */
+function withPoolOptions(uri: string): string {
+  const url = new URL(uri);
+  const defaults: Record<string, string> = {
+    maxPoolSize: String(config.database.poolMax),
+    maxIdleTimeMS: String(config.database.poolIdleTimeoutMs),
+    connectTimeoutMS: String(config.database.connectionTimeoutMs),
+    serverSelectionTimeoutMS: String(config.database.connectionTimeoutMs)
+  };
+  for (const [key, value] of Object.entries(defaults)) {
+    if (!url.searchParams.has(key)) url.searchParams.set(key, value);
+  }
+  return url.toString();
 }
-
-const pool = new Pool({
-  host: parsedDatabaseUrl.hostname,
-  port: Number(parsedDatabaseUrl.port || 5432),
-  user: decodeURIComponent(parsedDatabaseUrl.username),
-  password: String(decodeURIComponent(parsedDatabaseUrl.password || '')),
-  database: decodeURIComponent(parsedDatabaseUrl.pathname.replace(/^\//, '')),
-  ssl,
-  max: config.database.poolMax,
-  idleTimeoutMillis: config.database.poolIdleTimeoutMs,
-  connectionTimeoutMillis: config.database.connectionTimeoutMs,
-  // ── Pin the session to UTC ────────────────────────────────────────────────
-  //
-  // Without this the session inherits the server's zone, and the driver's
-  // date handling then applies that offset on write and unwinds it on read.
-  // The application never notices — the round trip is self-consistent — but
-  // every value in the database sits one local offset away from the instant
-  // the application meant, so psql, BI tools, dumps and hand-written fixes all
-  // read the wrong time. It also means identical code stores different values
-  // depending on the server's zone.
-  //
-  // Measured before this line existed: Prisma wrote 10:00Z, the row held
-  // 04:30Z, and Prisma read back 10:00Z.
-  //
-  // Migration 0017 shifts the rows written under the old behaviour so their
-  // instants match what the application always reported. The two changes
-  // belong together — applying either alone moves every historical timestamp.
-  options: '-c timezone=UTC'
-});
-
-pool.on('error', (error) => {
-  // Emitted for idle clients; without a handler this would crash the process.
-  logger.error('Unexpected PostgreSQL pool error', { error: error.message });
-});
 
 /**
  * Base client — NOT tenant-scoped.
  *
  * Exported only for authentication (finding a user by globally-unique email
- * before their tenant is known), migrations and maintenance scripts. Route
+ * before their tenant is known), seeding and maintenance scripts. Route
  * handlers must use `prisma` below.
+ *
+ * It still carries `explicitNullExtension`: that is a storage-format guarantee
+ * (see lib/explicitNulls.ts), not a scoping rule, so nothing may bypass it.
  */
 export const basePrisma = new PrismaClient({
-  adapter: new PrismaPg(pool)
-});
+  datasourceUrl: withPoolOptions(config.database.url)
+}).$extends(explicitNullExtension) as unknown as PrismaClient;
 
 /**
  * Application client — TENANT-SCOPED BY DEFAULT (ADR-0001).
@@ -99,4 +57,34 @@ export const basePrisma = new PrismaClient({
  */
 export const prisma = basePrisma.$extends(tenantExtension) as unknown as typeof basePrisma;
 
-export { pool };
+/**
+ * Liveness probe for the database. MongoDB has no `SELECT 1`; `ping` is the
+ * equivalent round trip.
+ */
+export async function pingDatabase(): Promise<void> {
+  await basePrisma.$runCommandRaw({ ping: 1 });
+}
+
+/**
+ * Take a write lock on documents inside a transaction — the MongoDB
+ * counterpart of `SELECT … FOR UPDATE`.
+ *
+ * MongoDB has no read locks. Instead, the first transaction to WRITE a
+ * document owns it until commit; a second transaction writing the same
+ * document fails immediately with a write conflict (Prisma `P2034`, surfaced
+ * as a retryable conflict by lib/errors.ts) rather than queueing. Bumping
+ * `lockVersion` before reading is what guarantees the balances or seat counts
+ * read afterwards cannot change under this transaction.
+ *
+ * Call it BEFORE the read it protects, with the same `where`.
+ */
+export async function lockForUpdate(
+  delegate: { updateMany: (args: never) => Promise<{ count: number }> },
+  where: Record<string, unknown>
+): Promise<number> {
+  const result = await delegate.updateMany({
+    where,
+    data: { lockVersion: { increment: 1 } }
+  } as never);
+  return result.count;
+}

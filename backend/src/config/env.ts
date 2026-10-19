@@ -85,7 +85,19 @@ if (jwtSecret === 'supersecretkey123') {
   );
 }
 
-const databaseUrl = required('DATABASE_URL');
+const databaseUrl = required('MONGODB_URI');
+
+// Prisma needs the database name in the URI path; Atlas hands out URIs without
+// one, and connecting to the implicit `test` database is never what was meant.
+if (databaseUrl) {
+  if (!/^mongodb(\+srv)?:\/\//.test(databaseUrl)) {
+    errors.push('MONGODB_URI must start with mongodb:// or mongodb+srv://.');
+  } else if (!/^mongodb(\+srv)?:\/\/[^/]+\/[^/?]+/.test(databaseUrl)) {
+    errors.push(
+      'MONGODB_URI must include a database name, e.g. mongodb+srv://USER:PASSWORD@HOST/campus_harmony'
+    );
+  }
+}
 
 /** Allowed CORS origins, comma-separated. Previously hardcoded to localhost:8080. */
 const corsOriginsRaw = optional('CORS_ORIGINS', 'http://localhost:8080');
@@ -130,14 +142,7 @@ export const config = {
     url: databaseUrl,
     poolMax: optionalInt('DATABASE_POOL_MAX', 10),
     poolIdleTimeoutMs: optionalInt('DATABASE_POOL_IDLE_TIMEOUT_MS', 30_000),
-    connectionTimeoutMs: optionalInt('DATABASE_CONNECTION_TIMEOUT_MS', 10_000),
-    /**
-     * TLS certificate verification for the database connection.
-     * Defaults to enabled. Disabling permits a man-in-the-middle on the DB
-     * connection, so it is opt-in and never allowed in production.
-     */
-    rejectUnauthorized:
-      optional('DATABASE_SSL_REJECT_UNAUTHORIZED', 'true') !== 'false' || isProduction
+    connectionTimeoutMs: optionalInt('DATABASE_CONNECTION_TIMEOUT_MS', 10_000)
   },
 
   auth: {
@@ -188,10 +193,10 @@ export const config = {
     /** Where dumps are written. Must be on durable, off-host storage in production. */
     directory: optional('BACKUP_DIR', 'backups'),
     /**
-     * Directory containing pg_dump / pg_restore / psql.
+     * Directory containing mongodump / mongorestore (MongoDB Database Tools).
      * Empty means "on PATH", which is the normal case in a container.
      */
-    pgBinDir: optional('PG_BIN_DIR', ''),
+    mongoBinDir: optional('MONGO_BIN_DIR', ''),
     /**
      * Days to retain backups. Institutional records often carry long statutory
      * retention obligations — confirm this against policy before reducing it.

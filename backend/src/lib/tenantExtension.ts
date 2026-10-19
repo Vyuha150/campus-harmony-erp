@@ -41,6 +41,12 @@ import { logger } from './logger.js';
  * institutionId column but is absent here.
  */
 export const TENANT_OWNED_MODELS = new Set<string>([
+  'StudentLeaveRequest',
+  'HostelAllocation',
+  'TransportRoute',
+  'TransportAllocation',
+  'CampusServiceRequest',
+  'SalaryStructure',
   'User',
   'Department',
   'Course',
@@ -56,6 +62,12 @@ export const TENANT_OWNED_MODELS = new Set<string>([
   'NotificationTemplate',
   'NotificationPolicy',
   'NotificationDelivery',
+  // HOD cover for a class on a date
+  'ClassSubstitution',
+  // Student fee-waiver / scholarship applications
+  'FeeWaiverRequest',
+  // HOD timetable / allocation changes awaiting the Dean
+  'TimetableChange',
   // Examination lifecycle
   'ExamSession',
   'ExamSchedule',

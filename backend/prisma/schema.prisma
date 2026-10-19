@@ -6,7 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
+  url      = env("MONGODB_URI")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -27,7 +28,7 @@ datasource db {
 
 /// A university. The tenant root — every tenant-owned row carries institutionId.
 model Institution {
-  id        String  @id @default(uuid())
+  id        String  @id @default(uuid()) @map("_id")
   /// Short code used in generated identifiers (roll numbers, receipts).
   code      String  @unique
   name      String
@@ -54,9 +55,9 @@ model Institution {
   settings Json?
 
   isActive      Boolean   @default(true)
-  establishedAt DateTime? @db.Timestamptz(3)
-  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+  establishedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   campuses      Campus[]
   schools       School[]
@@ -178,7 +179,7 @@ model Institution {
 /// an independent entity in the system, yet all data rolls up to the central
 /// level for unified reporting".
 model Campus {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   code          String
   name          String
@@ -195,8 +196,8 @@ model Campus {
   settings Json?
 
   isActive  Boolean  @default(true)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   institution Institution  @relation(fields: [institutionId], references: [id], onDelete: Restrict)
   schools     School[]
@@ -215,7 +216,7 @@ model Campus {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   // Tenant-scoped uniqueness: two universities may both have a "MAIN" campus.
@@ -226,7 +227,7 @@ model Campus {
 /// A school or faculty grouping departments (e.g. School of Engineering).
 /// Deans are scoped here.
 model School {
-  id            String  @id @default(uuid())
+  id            String  @id @default(uuid()) @map("_id")
   institutionId String
   campusId      String
   code          String
@@ -234,20 +235,20 @@ model School {
   deanUserId    String?
 
   isActive  Boolean  @default(true)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   institution Institution  @relation(fields: [institutionId], references: [id], onDelete: Restrict)
   campus      Campus       @relation(fields: [campusId], references: [id], onDelete: Restrict)
   departments Department[]
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
-  deanUser User? @relation(fields: [deanUserId], references: [id], onDelete: SetNull)
+  deanUser User? @relation(fields: [deanUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@unique([institutionId, code])
@@ -262,7 +263,7 @@ model School {
 /// multiple entry/exit were all unrepresentable. Every academic capability in
 /// the roadmap depends on this model existing.
 model Programme {
-  id             String @id @default(uuid())
+  id             String @id @default(uuid()) @map("_id")
   institutionId  String
   departmentId   String
   code           String
@@ -290,8 +291,8 @@ model Programme {
   sanctionedIntake Int?
 
   isActive  Boolean  @default(true)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   institution       Institution        @relation(fields: [institutionId], references: [id], onDelete: Restrict)
   department        Department         @relation(fields: [departmentId], references: [id], onDelete: Restrict)
@@ -305,7 +306,7 @@ model Programme {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@unique([institutionId, code])
@@ -315,7 +316,7 @@ model Programme {
 
 /// An admission cohort within a programme (e.g. B.Tech CSE 2024-28).
 model Batch {
-  id                     String @id @default(uuid())
+  id                     String @id @default(uuid()) @map("_id")
   institutionId          String
   programmeId            String
   code                   String
@@ -326,8 +327,8 @@ model Batch {
   /// active | graduated | discontinued
   status                 String @default("active")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   programme Programme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
   sections  Section[]
@@ -342,7 +343,7 @@ model Batch {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@unique([institutionId, code])
@@ -353,7 +354,7 @@ model Batch {
 /// A section within a batch (e.g. Section A). Class-level operations —
 /// attendance, timetable, class messages — hang off this.
 model Section {
-  id                 String  @id @default(uuid())
+  id                 String  @id @default(uuid()) @map("_id")
   institutionId      String
   batchId            String
   code               String
@@ -361,8 +362,8 @@ model Section {
   capacity           Int?
   classAdvisorUserId String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   batch Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
@@ -380,7 +381,7 @@ model Section {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@unique([batchId, code])
@@ -390,7 +391,7 @@ model Section {
 
 // User model to handle authentication and base information
 model User {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
 
   /// TENANT KEY. Nullable only during the tenancy backfill migration; it is
   /// populated for every row and treated as required by application code.
@@ -413,12 +414,12 @@ model User {
   /// DEPRECATED — superseded by `campusId`. Retained so the backfill migration
   /// can read the old free-text value; drop once migration is confirmed.
   campus       String?
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Restrict)
   campusRef      Campus?         @relation(fields: [campusId], references: [id], onDelete: SetNull)
-  department     Department?     @relation(name: "UserDepartment", fields: [departmentId], references: [id])
+  department     Department?     @relation(name: "UserDepartment", fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   studentProfile StudentProfile?
   facultyProfile FacultyProfile?
   notifications  Notification[]
@@ -443,7 +444,7 @@ model User {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@index([institutionId])
@@ -453,7 +454,7 @@ model User {
 
 // Profile for Students
 model StudentProfile {
-  id     String @id @default(uuid())
+  id     String @id @default(uuid()) @map("_id")
   userId String @unique
 
   /// TENANT KEY — blueprint: "Every student and staff profile is tagged with
@@ -501,12 +502,24 @@ model StudentProfile {
   // not be collected until DPDP purpose-limitation, consent and retention are
   // settled with counsel. Nullable by design.
   gender             String?
-  dateOfBirth        DateTime? @db.Timestamptz(3)
+  dateOfBirth        DateTime?
   category           String?
   domicileState      String?
   nationality        String?   @default("Indian")
   isDifferentlyAbled Boolean   @default(false)
   isHosteller        Boolean   @default(false)
+  /// Contact and family details the student maintains (Profile → Edit).
+  /// Name, date of birth, category and similar official fields are changed
+  /// only through a Registrar record correction.
+  phone              String?
+  alternatePhone     String?
+  personalEmail      String?
+  bloodGroup         String?
+  /// { line1, line2, city, state, pincode, country }
+  permanentAddress   Json?
+  currentAddress     Json?
+  /// { fatherName, fatherOccupation, fatherPhone, fatherEmail, motherName, motherOccupation, motherPhone }
+  guardian           Json?
 
   user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   enrollments      Enrollment[]
@@ -558,7 +571,7 @@ model StudentProfile {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt         DateTime?          @db.Timestamptz(3)
+  deletedAt         DateTime?         
   deletedBy         String?
   assessmentCoMarks AssessmentCoMark[]
 
@@ -572,7 +585,7 @@ model StudentProfile {
 
 // Profile for Faculty
 model FacultyProfile {
-  id     String @id @default(uuid())
+  id     String @id @default(uuid()) @map("_id")
   userId String @unique
 
   /// TENANT KEY.
@@ -599,7 +612,7 @@ model FacultyProfile {
   qualificationLevel      String?
   /// Verification of the qualification claim — accreditation evidence.
   qualificationVerified   Boolean   @default(false)
-  qualificationVerifiedAt DateTime? @db.Timestamptz(3)
+  qualificationVerifiedAt DateTime?
   qualificationVerifiedBy String?
 
   specialization String?
@@ -609,7 +622,7 @@ model FacultyProfile {
   /// Employment classification — NIRF and AISHE both require the split.
   /// permanent | contract | visiting | adjunct | emeritus
   employmentType String?
-  dateOfJoining  DateTime? @db.Timestamptz(3)
+  dateOfJoining  DateTime?
 
   gender   String?
   category String?
@@ -620,6 +633,7 @@ model FacultyProfile {
   attendanceSessions AttendanceSession[]
   publications       Publication[]
   researchProjects   ResearchProject[]
+  patents            Patent[]
   leaveRequests      LeaveRequest[]
   promotionRequests  PromotionRequest[]  @relation("PromotionRequests")
   retirementRequests RetirementRequest[] @relation("RetirementRequests")
@@ -634,7 +648,7 @@ model FacultyProfile {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@unique([institutionId, employeeId])
@@ -645,7 +659,7 @@ model FacultyProfile {
 
 // Academic Structure
 model Department {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
 
   /// TENANT KEY — nullable only during the backfill migration.
   /// Required since 0030. A NULLABLE tenant key is a hole in the filter: a
@@ -680,12 +694,12 @@ model Department {
   timetableSlots      TimetableSlot[]
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
-  hodUser User? @relation(name: "DepartmentHod", fields: [hodUserId], references: [id], onDelete: SetNull)
+  hodUser User? @relation(name: "DepartmentHod", fields: [hodUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   // Tenant-scoped uniqueness. These were GLOBALLY unique, which would have
@@ -699,7 +713,7 @@ model Department {
 }
 
 model Course {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
 
   /// TENANT KEY — blueprint: "every course is linked to the campus/college
   /// that offers it".
@@ -712,6 +726,10 @@ model Course {
   semester     Int
   departmentId String
   facultyId    String?
+  /// Lesson plan approval (LESSON_PLAN_APPROVAL: HOD → Dean).
+  /// null = not submitted · submitted · approved · returned
+  lessonPlanStatus String?
+  lessonPlanNote   String?
 
   department Department      @relation(fields: [departmentId], references: [id])
   faculty    FacultyProfile? @relation(fields: [facultyId], references: [id])
@@ -737,7 +755,7 @@ model Course {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@unique([institutionId, code])
@@ -747,15 +765,16 @@ model Course {
 }
 
 model CourseClass {
-  id        String  @id @default(uuid())
+  id        String  @id @default(uuid()) @map("_id")
   courseId  String
-  facultyId String
+  /// Null while the HOD has not allocated anyone to teach the class.
+  facultyId String?
   section   String
   batch     String?
   name      String?
 
   course      Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  faculty     FacultyProfile    @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+  faculty     FacultyProfile?   @relation(fields: [facultyId], references: [id], onDelete: SetNull)
   students    ClassEnrollment[]
   assignments Assignment[]
 
@@ -765,10 +784,10 @@ model CourseClass {
 }
 
 model ClassEnrollment {
-  id               String   @id @default(uuid())
+  id               String   @id @default(uuid()) @map("_id")
   classId          String
   studentProfileId String
-  enrolledAt       DateTime @default(now()) @db.Timestamptz(3)
+  enrolledAt       DateTime @default(now())
 
   class   CourseClass    @relation(fields: [classId], references: [id], onDelete: Cascade)
   student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
@@ -778,7 +797,7 @@ model ClassEnrollment {
 }
 
 model CourseSchedule {
-  id        String @id @default(uuid())
+  id        String @id @default(uuid()) @map("_id")
   courseId  String
   day       String
   startTime String
@@ -801,16 +820,16 @@ model CourseSchedule {
 /// It is now a first-class model with a real foreign key to Course, so deleting
 /// a course no longer orphans its lesson plans.
 model FacultyLessonPlan {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   courseId      String
   weekNumber    Int
   topic         String
   subtopics     Json     @default("[]")
   courseOutcome String
-  plannedDate   DateTime @db.Timestamptz(3)
+  plannedDate   DateTime
   status        String   @default("pending") // pending, in_progress, completed, deferred
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
@@ -820,7 +839,7 @@ model FacultyLessonPlan {
 
 // Student Enrollment
 model Enrollment {
-  id               String  @id @default(uuid())
+  id               String  @id @default(uuid()) @map("_id")
   studentProfileId String
   courseId         String
   semester         Int
@@ -852,23 +871,26 @@ model Enrollment {
 
 // Assignments
 model Assignment {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid()) @map("_id")
   classId     String
   title       String
   description String
-  dueDate     DateTime @db.Timestamptz(3)
+  dueDate     DateTime
   maxMarks    Int
   status      String   @default("published")
+  /// Question paper / brief the teacher attached (an /api/uploads/… URL).
+  attachmentUrl  String?
+  attachmentName String?
 
   class       CourseClass  @relation(fields: [classId], references: [id], onDelete: Cascade)
   submissions Submission[]
 }
 
 model Submission {
-  id               String   @id @default(uuid())
+  id               String   @id @default(uuid()) @map("_id")
   assignmentId     String
   studentProfileId String
-  submittedAt      DateTime @default(now()) @db.Timestamptz(3)
+  submittedAt      DateTime @default(now())
   status           String
   obtainedMarks    Int?
   feedback         String?
@@ -882,10 +904,10 @@ model Submission {
 
 // Examination & Attendance
 model Examination {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @map("_id")
   courseId  String
   type      String
-  date      DateTime @db.Timestamptz(3)
+  date      DateTime
   startTime String
   endTime   String
   venue     String
@@ -895,10 +917,10 @@ model Examination {
 }
 
 model AttendanceSession {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @map("_id")
   courseId  String
   facultyId String
-  date      DateTime @db.Timestamptz(3)
+  date      DateTime
   startTime String
   endTime   String
   type      String
@@ -909,7 +931,7 @@ model AttendanceSession {
 }
 
 model Attendance {
-  id                  String @id @default(uuid())
+  id                  String @id @default(uuid()) @map("_id")
   attendanceSessionId String
   studentProfileId    String
   status              String
@@ -922,7 +944,7 @@ model Attendance {
 
 // Finance & Infrastucture
 model FeeRecord {
-  id               String    @id @default(uuid())
+  id               String    @id @default(uuid()) @map("_id")
   /// Added in 0010. Fee records were previously UNSCOPED — a query without an
   /// explicit filter would return every institution's dues.
   institutionId    String
@@ -933,8 +955,8 @@ model FeeRecord {
   /// Running total of allocations against this record. Partial payments are
   /// normal (an instalment plan), so `status` alone cannot express the state.
   paidAmount       Float     @default(0)
-  dueDate          DateTime  @db.Timestamptz(3)
-  paidDate         DateTime? @db.Timestamptz(3)
+  dueDate          DateTime 
+  paidDate         DateTime?
   /// pending | partial | paid | waived | overdue
   status           String
   transactionId    String?
@@ -956,8 +978,12 @@ model FeeRecord {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
+  /// Bumped by lockForUpdate() to claim the document inside a transaction —
+  /// the MongoDB counterpart of SELECT … FOR UPDATE. Never read by business logic.
+  lockVersion Int @default(0)
+
 
   @@index([institutionId])
   @@index([studentProfileId])
@@ -965,15 +991,15 @@ model FeeRecord {
 }
 
 model GatePass {
-  id               String   @id @default(uuid())
+  id               String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
   /// VerificationRequest is how an employer or another university confirms a
   /// degree is real — decided, before this, by any registrar in the deployment.
   institutionId    String
   studentProfileId String
   type             String
-  fromDate         DateTime @db.Timestamptz(3)
-  toDate           DateTime @db.Timestamptz(3)
+  fromDate         DateTime
+  toDate           DateTime
   reason           String
   destination      String
   status           String   @default("pending")
@@ -987,7 +1013,7 @@ model GatePass {
 
 // Research
 model Publication {
-  id               String @id @default(uuid())
+  id               String @id @default(uuid()) @map("_id")
   facultyProfileId String
   title            String
   journal          String
@@ -998,20 +1024,47 @@ model Publication {
 }
 
 model ResearchProject {
-  id               String @id @default(uuid())
+  id               String @id @default(uuid()) @map("_id")
   facultyProfileId String
   title            String
   fundingAgency    String
   amount           Float
   status           String
   amountSpent      Float  @default(0)
+  /// Sanctioned project period. The list endpoint used to report "today" as
+  /// both start and end for every project, because nothing stored either.
+  startDate        DateTime?
+  endDate          DateTime?
+  coInvestigators  String[]
 
   faculty FacultyProfile @relation(fields: [facultyProfileId], references: [id], onDelete: Cascade)
 }
 
+/// A patent or other IPR filing by a faculty member (NAAC 3.3, NIRF RP — IPR).
+/// The Patents tab existed with no table behind it: the API always returned [].
+model Patent {
+  id                String    @id @default(uuid()) @map("_id")
+  facultyProfileId  String
+  title             String
+  applicationNumber String?
+  /// filed | published | granted | abandoned
+  status            String    @default("filed")
+  filingDate        DateTime?
+  grantDate         DateTime?
+  patentNumber      String?
+  inventors         String[]
+  /// India, PCT, US …
+  jurisdiction      String?
+  createdAt         DateTime  @default(now())
+
+  faculty FacultyProfile @relation(fields: [facultyProfileId], references: [id], onDelete: Cascade)
+
+  @@index([facultyProfileId])
+}
+
 // Placements
 model Company {
-  id              String           @id @default(uuid())
+  id              String           @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId   String
   name            String           @unique
@@ -1027,12 +1080,12 @@ model Company {
 }
 
 model PlacementDrive {
-  id                   String   @id @default(uuid())
+  id                   String   @id @default(uuid()) @map("_id")
   companyId            String
   role                 String
   package              String
-  driveDate            DateTime @db.Timestamptz(3)
-  registrationDeadline DateTime @db.Timestamptz(3)
+  driveDate            DateTime
+  registrationDeadline DateTime
   status               String
   location             String
   jobDescription       String
@@ -1042,11 +1095,11 @@ model PlacementDrive {
 }
 
 model StudentApplication {
-  id               String   @id @default(uuid())
+  id               String   @id @default(uuid()) @map("_id")
   placementDriveId String
   studentProfileId String
   status           String   @default("applied") // 'applied', 'shortlisted', 'selected', 'rejected'
-  appliedAt        DateTime @default(now()) @db.Timestamptz(3)
+  appliedAt        DateTime @default(now())
 
   drive   PlacementDrive @relation(fields: [placementDriveId], references: [id], onDelete: Cascade)
   student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
@@ -1056,7 +1109,7 @@ model StudentApplication {
 
 // HOD & Dean Specifics
 model FacultyRecruitment {
-  id             String @id @default(uuid())
+  id             String @id @default(uuid()) @map("_id")
   departmentId   String
   position       String
   specialization String
@@ -1068,7 +1121,7 @@ model FacultyRecruitment {
 }
 
 model DepartmentBudget {
-  id           String @id @default(uuid())
+  id           String @id @default(uuid()) @map("_id")
   departmentId String
   allocated    Float
   spent        Float  @default(0)
@@ -1081,12 +1134,12 @@ model DepartmentBudget {
 
 // Generic Approvals Workflow (used by HOD, Dean, VC)
 model ApprovalItem {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid()) @map("_id")
   type        String
   title       String
   details     String
   requestedBy String // reference to user ID 
-  requestedAt DateTime @default(now()) @db.Timestamptz(3)
+  requestedAt DateTime @default(now())
   amount      Float?
   priority    String
   /// pending | approved | rejected | forwarded | published
@@ -1103,7 +1156,7 @@ model ApprovalItem {
   /// Who DECIDED, as opposed to who requested. An approval with no approver is
   /// not an approval; it is an assertion.
   decidedBy    String?
-  decidedAt    DateTime? @db.Timestamptz(3)
+  decidedAt    DateTime?
   decisionNote String?
 
   /// Link to the workflow engine (Phase 2.4). Where this is set, the engine's
@@ -1123,7 +1176,7 @@ model ApprovalItem {
 
 // General Administration (Registrar, VC, IQAC)
 model QualityMetric {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -1141,7 +1194,7 @@ model QualityMetric {
 }
 
 model InstitutionKPI {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0037. No relation to derive an owner from at all —
   /// this table was fully global, and `GET /dashboard` fabricated three KPI
   /// rows the first time it was empty with nothing to scope that check by.
@@ -1160,7 +1213,7 @@ model InstitutionKPI {
 
 // Alumni
 model AlumniProfile {
-  id             String  @id @default(uuid())
+  id             String  @id @default(uuid()) @map("_id")
   userId         String  @unique
   graduationYear Int
   currentCompany String?
@@ -1172,11 +1225,11 @@ model AlumniProfile {
 }
 
 model Donation {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   alumniProfileId String
   amount          Float
   purpose         String
-  date            DateTime @default(now()) @db.Timestamptz(3)
+  date            DateTime @default(now())
   status          String   @default("completed")
 
   alumni AlumniProfile @relation(fields: [alumniProfileId], references: [id], onDelete: Cascade)
@@ -1184,7 +1237,7 @@ model Donation {
 
 // Sports
 model Facility {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
   name          String
@@ -1198,7 +1251,7 @@ model Facility {
 }
 
 model Team {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
   sport         String
@@ -1213,7 +1266,7 @@ model Team {
 
 // Security
 model VisitorPass {
-  id            String    @id @default(uuid())
+  id            String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
   /// VigilanceCase is the sensitive one: confidential investigations with
   /// evidence files, readable and deletable by any security officer anywhere.
@@ -1221,8 +1274,8 @@ model VisitorPass {
   visitorName   String
   purpose       String
   hostName      String
-  checkInTime   DateTime  @default(now()) @db.Timestamptz(3)
-  checkOutTime  DateTime? @db.Timestamptz(3)
+  checkInTime   DateTime  @default(now())
+  checkOutTime  DateTime?
   status        String    @default("active")
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -1231,7 +1284,7 @@ model VisitorPass {
 }
 
 model IncidentReport {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -1241,14 +1294,14 @@ model IncidentReport {
   location      String
   severity      String
   status        String   @default("pending")
-  reportedAt    DateTime @default(now()) @db.Timestamptz(3)
+  reportedAt    DateTime @default(now())
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
   /// SOFT DELETE (0035). An investigation that the office conducting it can
   /// erase is not evidence of anything, and the erasure is precisely what an
   /// auditor would want to see. The extension filters these structurally.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@index([institutionId])
@@ -1267,7 +1320,7 @@ model IncidentReport {
 /// `accessionNumber` — the number Indian libraries actually stamp inside the
 /// cover — unique per institution.
 model LibraryBook {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   /// Added in 0012. Library data was entirely unscoped before it.
   institutionId String
 
@@ -1292,13 +1345,13 @@ model LibraryBook {
   /// The authoritative record is LibraryLoan.
   currentLoanId String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now())
   /// `@default(now())` declared to match migration 0012, which added a
   /// DEFAULT CURRENT_TIMESTAMP. `@updatedAt` alone sets the value from
   /// Prisma but emits no database default, so rows inserted by raw SQL or
   /// a seed would violate NOT NULL. Keeping it is safer than generating a
   /// migration that drops it.
-  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt
 
   loans LibraryLoan[]
 
@@ -1309,8 +1362,12 @@ model LibraryBook {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
+  /// Bumped by lockForUpdate() to claim the document inside a transaction —
+  /// the MongoDB counterpart of SELECT … FOR UPDATE. Never read by business logic.
+  lockVersion Int @default(0)
+
 
   @@unique([institutionId, accessionNumber])
   @@index([institutionId])
@@ -1325,15 +1382,15 @@ model LibraryBook {
 /// destroying any record of who had borrowed it. A fine was then left attached
 /// to the copy with no link to the person who owed it.
 model LibraryLoan {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   bookId           String
   studentProfileId String
 
-  issuedAt   DateTime  @default(now()) @db.Timestamptz(3)
-  dueAt      DateTime  @db.Timestamptz(3)
-  returnedAt DateTime? @db.Timestamptz(3)
+  issuedAt   DateTime  @default(now())
+  dueAt      DateTime 
+  returnedAt DateTime?
 
   renewalCount Int @default(0)
 
@@ -1351,8 +1408,8 @@ model LibraryLoan {
   issuedBy   String
   returnedTo String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   book    LibraryBook    @relation(fields: [bookId], references: [id], onDelete: Restrict)
   student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
@@ -1375,7 +1432,7 @@ model LibraryLoan {
 /// are usually fixed by the library committee — they are configuration, not
 /// constants in a route handler.
 model LibraryPolicy {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String @unique
 
   loanPeriodDays      Int   @default(14)
@@ -1392,8 +1449,8 @@ model LibraryPolicy {
   /// Block further issues while the borrower owes more than this.
   blockIssueAboveFine Float @default(100)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
@@ -1402,13 +1459,19 @@ model LibraryPolicy {
 
 // Hostel
 model Hostel {
-  id            String             @id @default(uuid())
+  id            String             @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
   name          String
   block         String
   wardenName    String
   wardenPhone   String
+  /// Rooms × beds; null = not recorded.
+  capacity       Int?
+  /// boys | girls | staff
+  hostelType     String?
+  /// Charged per semester on allocation (a FeeRecord of type "hostel").
+  feePerSemester Float?
   allocations   HostelAllocation[]
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -1417,20 +1480,27 @@ model Hostel {
 }
 
 model HostelAllocation {
-  id               String   @id @default(uuid())
+  id               String   @id @default(uuid()) @map("_id")
   studentProfileId String   @unique
   hostelId         String
   roomNumber       String
   roomType         String
-  checkInDate      DateTime @default(now()) @db.Timestamptz(3)
+  checkInDate      DateTime @default(now())
 
+  /// Added with the allocation screen; older rows have none.
+  institutionId String?
+  /// active | vacated
+  status        String    @default("active")
+  checkOutDate  DateTime?
+  academicYear  String?
+  feeRecordId   String?
   student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
   hostel  Hostel         @relation(fields: [hostelId], references: [id])
 }
 
 // Certificates
 model CertificateRequest {
-  id               String    @id @default(uuid())
+  id               String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
   /// VerificationRequest is how an employer or another university confirms a
   /// degree is real — decided, before this, by any registrar in the deployment.
@@ -1440,9 +1510,15 @@ model CertificateRequest {
   purpose          String
   copies           Int       @default(1)
   fee              Float     @default(0)
-  status           String    @default("processing") // processing, ready, dispatched
-  requestedAt      DateTime  @default(now()) @db.Timestamptz(3)
-  collectionDate   DateTime? @db.Timestamptz(3)
+  /// pending (being approved: Finance → HOD → Registrar) | approved (ready to
+  /// issue) | issued | collected | rejected | cancelled. Legacy "processing" = pending.
+  status           String    @default("pending")
+  requestedAt      DateTime  @default(now())
+  collectionDate   DateTime?
+  /// Set when the Registrar issues it, e.g. "CH/BON/2026/0001". Verifiable.
+  certificateNumber String?
+  issuedAt          DateTime?
+  issuedBy          String?
 
   student StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
 
@@ -1453,22 +1529,22 @@ model CertificateRequest {
 
 // Feedback
 model FeedbackForm {
-  id       String   @id @default(uuid())
+  id       String   @id @default(uuid()) @map("_id")
   courseId String
   title    String
   status   String   @default("open")
-  deadline DateTime @db.Timestamptz(3)
+  deadline DateTime
 
   course    Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
   responses FeedbackResponse[]
 }
 
 model FeedbackResponse {
-  id             String   @id @default(uuid())
+  id             String   @id @default(uuid()) @map("_id")
   feedbackFormId String
   studentId      String // anonymized, typically mapped differently but keeping basic for now
   responses      Json // Store dynamic JSON structure of answers
-  submittedAt    DateTime @default(now()) @db.Timestamptz(3)
+  submittedAt    DateTime @default(now())
 
   form FeedbackForm @relation(fields: [feedbackFormId], references: [id], onDelete: Cascade)
 
@@ -1478,28 +1554,28 @@ model FeedbackResponse {
 
 // Central Notifications
 model Notification {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @map("_id")
   userId    String
   title     String
   message   String
   type      String // info, warning, success, error
   category  String // academic, fee, placement, general
   read      Boolean  @default(false)
-  timestamp DateTime @default(now()) @db.Timestamptz(3)
+  timestamp DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // Faculty Leave
 model LeaveRequest {
-  id               String   @id @default(uuid())
+  id               String   @id @default(uuid()) @map("_id")
   facultyProfileId String
   type             String // casual, medical, duty
-  fromDate         DateTime @db.Timestamptz(3)
-  toDate           DateTime @db.Timestamptz(3)
+  fromDate         DateTime
+  toDate           DateTime
   reason           String
   status           String   @default("pending") // pending, approved, rejected
-  appliedAt        DateTime @default(now()) @db.Timestamptz(3)
+  appliedAt        DateTime @default(now())
   approvedBy       String?
 
   faculty FacultyProfile @relation(fields: [facultyProfileId], references: [id], onDelete: Cascade)
@@ -1507,7 +1583,7 @@ model LeaveRequest {
 
 // Faculty — Promotions
 model PromotionRequest {
-  id                 String    @id @default(uuid())
+  id                 String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
   /// VerificationRequest is how an employer or another university confirms a
   /// degree is real — decided, before this, by any registrar in the deployment.
@@ -1517,8 +1593,8 @@ model PromotionRequest {
   newDesignation     String
   reason             String?
   status             String    @default("pending") // pending, approved, rejected, completed
-  appliedAt          DateTime  @default(now()) @db.Timestamptz(3)
-  approvedAt         DateTime? @db.Timestamptz(3)
+  appliedAt          DateTime  @default(now())
+  approvedAt         DateTime?
   approvedBy         String?
   documents          Json?
 
@@ -1531,7 +1607,7 @@ model PromotionRequest {
 
 // Faculty — Retirements
 model RetirementRequest {
-  id                 String    @id @default(uuid())
+  id                 String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
   /// VerificationRequest is how an employer or another university confirms a
   /// degree is real — decided, before this, by any registrar in the deployment.
@@ -1539,10 +1615,10 @@ model RetirementRequest {
   facultyProfileId   String
   currentDesignation String
   yearsOfService     Int
-  lastDate           DateTime  @db.Timestamptz(3)
+  lastDate           DateTime 
   status             String    @default("pending") // pending, approved, completed
-  appliedAt          DateTime  @default(now()) @db.Timestamptz(3)
-  approvedAt         DateTime? @db.Timestamptz(3)
+  appliedAt          DateTime  @default(now())
+  approvedAt         DateTime?
   approvedBy         String?
   remarks            String?
 
@@ -1557,13 +1633,13 @@ model RetirementRequest {
 
 // Faculty — Committees
 model Committee {
-  id               String    @id @default(uuid())
+  id               String    @id @default(uuid()) @map("_id")
   name             String
   role             String
   tenure           String
   meetingsAttended Int       @default(0)
   totalMeetings    Int       @default(0)
-  nextMeeting      DateTime? @db.Timestamptz(3)
+  nextMeeting      DateTime?
   facultyId        String
 
   @@index([facultyId])
@@ -1571,12 +1647,12 @@ model Committee {
 
 // Faculty — Class Messages
 model ClassMessage {
-  id         String   @id @default(uuid())
+  id         String   @id @default(uuid()) @map("_id")
   courseId   String
   courseCode String
   subject    String
   message    String
-  sentAt     DateTime @default(now()) @db.Timestamptz(3)
+  sentAt     DateTime @default(now())
   recipients Int      @default(0)
   readCount  Int      @default(0)
   facultyId  String
@@ -1590,10 +1666,10 @@ model ClassMessage {
 
 // Faculty — Mentee Assignments
 model MenteeAssignment {
-  id          String    @id @default(uuid())
+  id          String    @id @default(uuid()) @map("_id")
   facultyId   String
   studentId   String
-  lastMeeting DateTime? @db.Timestamptz(3)
+  lastMeeting DateTime?
   notes       Json?
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
@@ -1604,12 +1680,12 @@ model MenteeAssignment {
 
 // Faculty — Counseling Notes
 model CounselingNote {
-  id             String    @id @default(uuid())
+  id             String    @id @default(uuid()) @map("_id")
   menteeAssignId String
-  date           DateTime  @default(now()) @db.Timestamptz(3)
+  date           DateTime  @default(now())
   topic          String
   notes          String
-  followUpDate   DateTime? @db.Timestamptz(3)
+  followUpDate   DateTime?
   status         String    @default("open")
 
   @@index([menteeAssignId])
@@ -1617,15 +1693,15 @@ model CounselingNote {
 
 // HOD — Lab Inventory
 model LabInventoryItem {
-  id               String    @id @default(uuid())
+  id               String    @id @default(uuid()) @map("_id")
   name             String
   lab              String
   category         String
   quantity         Int
   workingCondition Int       @default(100)
-  lastMaintenance  DateTime? @db.Timestamptz(3)
-  purchaseDate     DateTime? @db.Timestamptz(3)
-  warrantyExpiry   DateTime? @db.Timestamptz(3)
+  lastMaintenance  DateTime?
+  purchaseDate     DateTime?
+  warrantyExpiry   DateTime?
   status           String    @default("working")
   departmentId     String
 
@@ -1637,7 +1713,7 @@ model LabInventoryItem {
 
 // HOD — Purchase Requests (lab equipment)
 model PurchaseRequest {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   itemName      String
   lab           String
   requestedBy   String
@@ -1645,7 +1721,7 @@ model PurchaseRequest {
   estimatedCost Float
   justification String
   status        String   @default("pending")
-  requestDate   DateTime @default(now()) @db.Timestamptz(3)
+  requestDate   DateTime @default(now())
   departmentId  String
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
@@ -1656,7 +1732,7 @@ model PurchaseRequest {
 
 // HOD — Timetable Slots
 model TimetableSlot {
-  id           String @id @default(uuid())
+  id           String @id @default(uuid()) @map("_id")
   day          String
   startTime    String
   endTime      String
@@ -1676,15 +1752,27 @@ model TimetableSlot {
 
 // HOD — Accreditation Data
 model AccreditationData {
-  id           String   @id @default(uuid())
+  id           String   @id @default(uuid()) @map("_id")
   criterion    String
   metric       String
   value        String
   year         String
   status       String   @default("pending")
-  lastUpdated  DateTime @default(now()) @db.Timestamptz(3)
+  lastUpdated  DateTime @default(now())
   updatedBy    String
   departmentId String
+  /// computed — gathered from the ERP's own records, refreshed on read;
+  /// manual — entered by the HOD (qualitative or not held in the ERP).
+  source       String   @default("manual")
+  /// Stable key of a computed metric, e.g. "c3_publications".
+  metricKey    String?
+  /// How the computed value was derived, shown beside it.
+  basis        String?
+  /// Evidence for the metric (an /api/uploads URL).
+  documentUrl  String?
+  documentName String?
+  verifiedBy   String?
+  verifiedAt   DateTime?
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
@@ -1694,13 +1782,13 @@ model AccreditationData {
 
 // Dean — Curriculum Proposals
 model CurriculumProposal {
-  id           String   @id @default(uuid())
+  id           String   @id @default(uuid()) @map("_id")
   departmentId String
   proposedBy   String
   type         String
   title        String
   description  String
-  submittedAt  DateTime @default(now()) @db.Timestamptz(3)
+  submittedAt  DateTime @default(now())
   bosApproved  Boolean  @default(false)
   status       String   @default("pending_dean")
 
@@ -1712,16 +1800,22 @@ model CurriculumProposal {
 
 // Dean — Disciplinary Cases
 model DisciplinaryCase {
-  id           String   @id @default(uuid())
+  id           String   @id @default(uuid()) @map("_id")
   studentName  String
   rollNumber   String
   departmentId String
   type         String
   description  String
   reportedBy   String
-  reportedAt   DateTime @default(now()) @db.Timestamptz(3)
+  reportedAt   DateTime @default(now())
   status       String   @default("escalated")
   severity     String   @default("minor")
+  /// What the Dean decided (e.g. "Warning issued", "Suspension issued") and why.
+  /// The screen asked for both and kept neither — only `status` was saved.
+  actionTaken     String?
+  decisionRemarks String?
+  decidedBy       String?
+  decidedAt       DateTime?
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
@@ -1731,12 +1825,12 @@ model DisciplinaryCase {
 
 // Dean — Inter-Departmental Events
 model InterDeptEvent {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
   title         String
   type          String
-  date          DateTime @db.Timestamptz(3)
+  date          DateTime
   departments   Json
   coordinator   String
   budget        Float    @default(0)
@@ -1750,14 +1844,14 @@ model InterDeptEvent {
 
 // VC — Meetings & Agenda
 model Meeting {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
   institutionId String
   meetingType   String
   title         String
-  date          DateTime @db.Timestamptz(3)
+  date          DateTime
   time          String
   venue         String
   status        String   @default("upcoming")
@@ -1775,7 +1869,7 @@ model Meeting {
 
 // VC — Broadcast Messages
 model BroadcastMessage {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -1783,7 +1877,7 @@ model BroadcastMessage {
   subject       String
   content       String
   sender        String
-  sentAt        DateTime @default(now()) @db.Timestamptz(3)
+  sentAt        DateTime @default(now())
   recipients    String
   type          String   @default("announcement")
   pinned        Boolean  @default(false)
@@ -1795,7 +1889,7 @@ model BroadcastMessage {
 
 // VC — Compliance Reports
 model ComplianceReport {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0037. No relation to derive an owner from either.
   institutionId String
   framework     String
@@ -1803,7 +1897,7 @@ model ComplianceReport {
   status        String   @default("draft")
   score         Float?
   maxScore      Float    @default(100)
-  lastUpdated   DateTime @default(now()) @db.Timestamptz(3)
+  lastUpdated   DateTime @default(now())
   criteria      Json?
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -1813,7 +1907,7 @@ model ComplianceReport {
 
 // VC — Policy Scenarios
 model PolicyScenario {
-  id               String   @id @default(uuid())
+  id               String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0037. Backfilled from createdBy -> User.institutionId.
   institutionId    String
   title            String
@@ -1823,7 +1917,7 @@ model PolicyScenario {
   projectedOutcome String?
   impact           String   @default("neutral")
   createdBy        String
-  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  createdAt        DateTime @default(now())
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -1832,7 +1926,7 @@ model PolicyScenario {
 
 // Registrar — Transfer Requests
 model TransferRequest {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -1844,9 +1938,12 @@ model TransferRequest {
   toInstitution   String
   program         String
   reason          String
+  /// pending → noc_issued → migration_issued → completed, or rejected.
   status          String   @default("pending")
-  requestedAt     DateTime @default(now()) @db.Timestamptz(3)
+  requestedAt     DateTime @default(now())
   documents       Json?
+  /// The Registrar's note at the last step (NOC number, reason for refusal …).
+  remarks         String?
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Restrict)
@@ -1858,7 +1955,7 @@ model TransferRequest {
 
 // Registrar — Degree Records
 model DegreeRecord {
-  id                String    @id @default(uuid())
+  id                String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId     String
   studentName       String
@@ -1868,8 +1965,8 @@ model DegreeRecord {
   graduationYear    Int
   certificateNo     String    @unique
   status            String    @default("eligible")
-  convocationDate   DateTime? @db.Timestamptz(3)
-  collectedAt       DateTime? @db.Timestamptz(3)
+  convocationDate   DateTime?
+  collectedAt       DateTime?
   verificationCount Int       @default(0)
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -1879,7 +1976,7 @@ model DegreeRecord {
 
 // Registrar — Admin Documents
 model AdminDocument {
-  id             String   @id @default(uuid())
+  id             String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
   /// VerificationRequest is how an employer or another university confirms a
   /// degree is real — decided, before this, by any registrar in the deployment.
@@ -1887,7 +1984,7 @@ model AdminDocument {
   title          String
   category       String
   uploadedBy     String
-  uploadedAt     DateTime @default(now()) @db.Timestamptz(3)
+  uploadedAt     DateTime @default(now())
   filePath       String?
   fileUrl        String?
   fileName       String?
@@ -1904,7 +2001,7 @@ model AdminDocument {
 
 // Registrar — Vacancies
 model Vacancy {
-  id            String    @id @default(uuid())
+  id            String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -1915,8 +2012,8 @@ model Vacancy {
   sanctioned    Int
   filled        Int       @default(0)
   status        String    @default("advertised")
-  postedAt      DateTime  @default(now()) @db.Timestamptz(3)
-  lastDate      DateTime? @db.Timestamptz(3)
+  postedAt      DateTime  @default(now())
+  lastDate      DateTime?
   applicants    Int       @default(0)
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -1926,7 +2023,7 @@ model Vacancy {
 
 // Registrar — Accreditation Checklist
 model AccreditationChecklist {
-  id                String   @id @default(uuid())
+  id                String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -1937,7 +2034,7 @@ model AccreditationChecklist {
   responsibleOffice String
   status            String   @default("not_started")
   documents         Json?
-  deadline          DateTime @db.Timestamptz(3)
+  deadline          DateTime
   remarks           String?
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -1947,7 +2044,7 @@ model AccreditationChecklist {
 
 // Registrar — Verification Requests
 model VerificationRequest {
-  id            String    @id @default(uuid())
+  id            String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
   /// VerificationRequest is how an employer or another university confirms a
   /// degree is real — decided, before this, by any registrar in the deployment.
@@ -1959,8 +2056,8 @@ model VerificationRequest {
   studentId     String
   details       String
   status        String    @default("pending")
-  receivedAt    DateTime  @default(now()) @db.Timestamptz(3)
-  respondedAt   DateTime? @db.Timestamptz(3)
+  receivedAt    DateTime  @default(now())
+  respondedAt   DateTime?
   response      String?
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
@@ -1973,7 +2070,7 @@ model VerificationRequest {
 
 // Registrar — Record Change Requests
 model RecordChangeRequest {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0034. All seven registrar tables were GLOBAL.
   /// VerificationRequest is how an employer or another university confirms a
   /// degree is real — decided, before this, by any registrar in the deployment.
@@ -1985,7 +2082,7 @@ model RecordChangeRequest {
   newValue      String
   reason        String
   requestedBy   String
-  requestedAt   DateTime @default(now()) @db.Timestamptz(3)
+  requestedAt   DateTime @default(now())
   status        String   @default("pending")
   approvedBy    String?
   documents     Json?
@@ -2000,7 +2097,7 @@ model RecordChangeRequest {
 
 // Registrar — Exam Progress
 model ExamProgress {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
 
   /// TENANT KEY, added in 0027. Without it the examination schedule was shared
   /// across every institution, and two handlers wrote it with
@@ -2026,8 +2123,8 @@ model ExamProgress {
   examSessionId String?
 
   status           String   @default("scheduling")
-  startDate        DateTime @db.Timestamptz(3)
-  endDate          DateTime @db.Timestamptz(3)
+  startDate        DateTime
+  endDate          DateTime
   coordinator      String
 
   institution Institution  @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -2040,7 +2137,7 @@ model ExamProgress {
 
 // Finance — Fee Structures
 model FeeStructure {
-  id             String   @id @default(uuid())
+  id             String   @id @default(uuid()) @map("_id")
   /// Added in 0010 — see FeeRecord.
   institutionId  String
   academicYear   String
@@ -2048,7 +2145,7 @@ model FeeStructure {
   program        String
   feeComponents  Json
   totalAmount    Float
-  dueDate        DateTime @db.Timestamptz(3)
+  dueDate        DateTime
   lateFeePenalty Float    @default(0)
   active         Boolean  @default(true)
 
@@ -2061,13 +2158,13 @@ model FeeStructure {
 
 // Finance — Journal Entries
 model JournalEntry {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
   institutionId String
   entryNumber   String   @unique
-  date          DateTime @default(now()) @db.Timestamptz(3)
+  date          DateTime @default(now())
   description   String
   reference     String?
   totalDebit    Float
@@ -2084,7 +2181,7 @@ model JournalEntry {
 
 // Finance — Purchase Orders
 model PurchaseOrder {
-  id               String    @id @default(uuid())
+  id               String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0033. All four tables were GLOBAL. PayrollRecord is
   /// the worst of them: salary, allowances, deductions and net pay, readable by
   /// every finance officer in the deployment.
@@ -2093,15 +2190,15 @@ model PurchaseOrder {
   poNumber         String
   department       String
   vendorId         String
-  orderDate        DateTime  @default(now()) @db.Timestamptz(3)
-  expectedDelivery DateTime  @db.Timestamptz(3)
+  orderDate        DateTime  @default(now())
+  expectedDelivery DateTime 
   totalAmount      Float
   status           String    @default("pending")
   items            Json
   approvedBy       String?
-  deliveredDate    DateTime? @db.Timestamptz(3)
+  deliveredDate    DateTime?
   invoiceNumber    String?
-  paymentDate      DateTime? @db.Timestamptz(3)
+  paymentDate      DateTime?
 
   vendor Vendor @relation(fields: [vendorId], references: [id])
 
@@ -2113,7 +2210,7 @@ model PurchaseOrder {
 
 // Finance — Vendors
 model Vendor {
-  id            String  @id @default(uuid())
+  id            String  @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0033. All four tables were GLOBAL. PayrollRecord is
   /// the worst of them: salary, allowances, deductions and net pay, readable by
   /// every finance officer in the deployment.
@@ -2137,12 +2234,14 @@ model Vendor {
 
 // Finance — Payroll Records
 model PayrollRecord {
-  id            String    @id @default(uuid())
+  id            String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0033. All four tables were GLOBAL. PayrollRecord is
   /// the worst of them: salary, allowances, deductions and net pay, readable by
   /// every finance officer in the deployment.
   institutionId String
   employeeId    String
+  /// The staff account this payslip belongs to (shown on their Payslips tab).
+  userId           String?
   employeeName  String
   department    String
   designation   String
@@ -2154,7 +2253,7 @@ model PayrollRecord {
   grossSalary   Float
   netSalary     Float
   status        String    @default("draft")
-  paymentDate   DateTime? @db.Timestamptz(3)
+  paymentDate   DateTime?
   paymentMethod String    @default("bank_transfer")
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -2165,7 +2264,7 @@ model PayrollRecord {
 
 // Finance — Budget Allocations
 model BudgetAllocation {
-  id                    String   @id @default(uuid())
+  id                    String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0033. All four tables were GLOBAL. PayrollRecord is
   /// the worst of them: salary, allowances, deductions and net pay, readable by
   /// every finance officer in the deployment.
@@ -2177,7 +2276,7 @@ model BudgetAllocation {
   spentAmount           Float    @default(0)
   availableAmount       Float
   utilizationPercentage Float    @default(0)
-  lastUpdated           DateTime @default(now()) @db.Timestamptz(3)
+  lastUpdated           DateTime @default(now())
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -2187,13 +2286,13 @@ model BudgetAllocation {
 
 // Placement — Training Sessions
 model TrainingSession {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId   String
   title           String
   type            String
   instructor      String
-  date            DateTime @db.Timestamptz(3)
+  date            DateTime
   duration        Int
   venue           String
   maxCapacity     Int
@@ -2209,14 +2308,14 @@ model TrainingSession {
 
 // Placement — Job Offers
 model JobOffer {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid()) @map("_id")
   studentId   String
   studentName String
   companyName String
   jobRole     String
   package     Float
-  offerDate   DateTime @default(now()) @db.Timestamptz(3)
-  joiningDate DateTime @db.Timestamptz(3)
+  offerDate   DateTime @default(now())
+  joiningDate DateTime
   status      String   @default("pending")
   documents   Json?
 
@@ -2226,14 +2325,14 @@ model JobOffer {
 
 // Placement — Communication
 model PlacementMessage {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
   title         String
   content       String
   type          String   @default("announcement")
   sentBy        String
-  sentAt        DateTime @default(now()) @db.Timestamptz(3)
+  sentAt        DateTime @default(now())
   targetGroup   String?
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -2243,7 +2342,7 @@ model PlacementMessage {
 
 // Sports — Athletes
 model SportsAthlete {
-  id               String  @id @default(uuid())
+  id               String  @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -2271,7 +2370,7 @@ model SportsAthlete {
 
 // Sports — Teams (enhanced from existing Team model)
 model SportsTeam {
-  id               String  @id @default(uuid())
+  id               String  @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -2297,7 +2396,7 @@ model SportsTeam {
 
 // Sports — Facilities (enhanced from existing Facility model)
 model SportsFacility {
-  id                  String @id @default(uuid())
+  id                  String @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -2317,7 +2416,7 @@ model SportsFacility {
 
 // Sports — Inventory
 model SportsInventoryItem {
-  id                String    @id @default(uuid())
+  id                String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -2331,8 +2430,8 @@ model SportsInventoryItem {
   unitPrice         Float
   totalValue        Float
   condition         String    @default("good")
-  purchaseDate      DateTime? @db.Timestamptz(3)
-  lastMaintenance   DateTime? @db.Timestamptz(3)
+  purchaseDate      DateTime?
+  lastMaintenance   DateTime?
   location          String
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -2342,14 +2441,14 @@ model SportsInventoryItem {
 
 // Sports — Events
 model SportsEvent {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0038. No relation to derive an owner from.
   institutionId String
   name          String
   type          String
   sports        Json?
-  startDate     DateTime @db.Timestamptz(3)
-  endDate       DateTime @db.Timestamptz(3)
+  startDate     DateTime
+  endDate       DateTime
   venue         String
   organizer     String
   participants  Json?
@@ -2363,15 +2462,15 @@ model SportsEvent {
 
 // Sports — Fitness Records
 model FitnessRecord {
-  id              String    @id @default(uuid())
+  id              String    @id @default(uuid()) @map("_id")
   studentId       String
-  testDate        DateTime  @default(now()) @db.Timestamptz(3)
+  testDate        DateTime  @default(now())
   testType        String
   results         Json?
   overallGrade    String?
   recommendations String?
   restrictions    String?
-  nextTestDate    DateTime? @db.Timestamptz(3)
+  nextTestDate    DateTime?
   conductedBy     String
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
@@ -2382,13 +2481,13 @@ model FitnessRecord {
 
 // Sports — Attendance
 model SportsAttendance {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
   institutionId String
   teamId        String
-  date          DateTime @default(now()) @db.Timestamptz(3)
+  date          DateTime @default(now())
   attendees     Json?
   notes         String?
   sessionType   String   @default("training")
@@ -2404,7 +2503,7 @@ model SportsAttendance {
 
 // Alumni — Events
 model AlumniEvent {
-  id                   String    @id @default(uuid())
+  id                   String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -2412,13 +2511,13 @@ model AlumniEvent {
   title                String
   description          String
   type                 String
-  date                 DateTime  @db.Timestamptz(3)
-  endDate              DateTime? @db.Timestamptz(3)
+  date                 DateTime 
+  endDate              DateTime?
   venue                String
   isVirtual            Boolean   @default(false)
   virtualLink          String?
   maxCapacity          Int?
-  registrationDeadline DateTime  @db.Timestamptz(3)
+  registrationDeadline DateTime 
   organizer            String
   targetAudience       Json?
   registrations        Json?
@@ -2433,7 +2532,7 @@ model AlumniEvent {
 
 // Alumni — Mentorship Programs
 model MentorshipProgram {
-  id            String    @id @default(uuid())
+  id            String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0036. Missed by 0028 because nothing in alumni.ts
   /// writes this model through a raw `update({ where: { id }, data: req.body
   /// })` handler — but every GET here had no institutionId filter either, so
@@ -2445,8 +2544,8 @@ model MentorshipProgram {
   type          String
   duration      String
   maxMentees    Int
-  startDate     DateTime  @db.Timestamptz(3)
-  endDate       DateTime? @db.Timestamptz(3)
+  startDate     DateTime 
+  endDate       DateTime?
   status        String    @default("active")
   mentors       Json?
   mentees       Json?
@@ -2459,7 +2558,7 @@ model MentorshipProgram {
 
 // Alumni — Communications
 model AlumniCommunicationRecord {
-  id             String    @id @default(uuid())
+  id             String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0036. Same gap as MentorshipProgram: read-only leak,
   /// not a mass-assignment one, so 0028's sweep never touched it.
   institutionId  String
@@ -2467,8 +2566,8 @@ model AlumniCommunicationRecord {
   content        String
   type           String    @default("newsletter")
   targetAudience Json?
-  sentDate       DateTime? @db.Timestamptz(3)
-  scheduledDate  DateTime? @db.Timestamptz(3)
+  sentDate       DateTime?
+  scheduledDate  DateTime?
   status         String    @default("draft")
   recipientCount Int?
   openRate       Float?
@@ -2481,7 +2580,7 @@ model AlumniCommunicationRecord {
 
 // Alumni — Job Postings
 model AlumniJobPosting {
-  id                  String   @id @default(uuid())
+  id                  String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -2494,10 +2593,10 @@ model AlumniJobPosting {
   location            String
   salaryRange         String?
   jobType             String   @default("full_time")
-  applicationDeadline DateTime @db.Timestamptz(3)
+  applicationDeadline DateTime
   contactEmail        String
   status              String   @default("active")
-  postedDate          DateTime @default(now()) @db.Timestamptz(3)
+  postedDate          DateTime @default(now())
   views               Int      @default(0)
   applications        Int      @default(0)
 
@@ -2508,7 +2607,7 @@ model AlumniJobPosting {
 
 // Alumni — Progression Surveys
 model ProgressionSurvey {
-  id             String   @id @default(uuid())
+  id             String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0036. Same gap as MentorshipProgram: read-only leak,
   /// not a mass-assignment one, so 0028's sweep never touched it.
   institutionId  String
@@ -2519,8 +2618,8 @@ model ProgressionSurvey {
   questions      Json?
   responses      Json?
   status         String   @default("draft")
-  startDate      DateTime @db.Timestamptz(3)
-  endDate        DateTime @db.Timestamptz(3)
+  startDate      DateTime
+  endDate        DateTime
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -2529,7 +2628,7 @@ model ProgressionSurvey {
 
 // IQAC — Action Items
 model IQACActionItem {
-  id                   String    @id @default(uuid())
+  id                   String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0039. No relation to derive an owner from.
   institutionId        String
   title                String
@@ -2538,12 +2637,12 @@ model IQACActionItem {
   priority             String    @default("medium")
   assignedTo           String
   department           String?
-  dueDate              DateTime  @db.Timestamptz(3)
+  dueDate              DateTime 
   status               String    @default("pending")
   implementationStatus String?
   evidence             Json?
-  createdDate          DateTime  @default(now()) @db.Timestamptz(3)
-  completedDate        DateTime? @db.Timestamptz(3)
+  createdDate          DateTime  @default(now())
+  completedDate        DateTime?
   impact               String?
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -2553,20 +2652,20 @@ model IQACActionItem {
 
 // IQAC — Quality Documents
 model QualityDocument {
-  id             String    @id @default(uuid())
+  id             String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0039. No relation to derive an owner from.
   institutionId  String
   title          String
   criteriaNumber Int
   documentType   String
   uploadedBy     String
-  uploadDate     DateTime  @default(now()) @db.Timestamptz(3)
+  uploadDate     DateTime  @default(now())
   filePath       String?
   version        String    @default("1.0")
   status         String    @default("pending_review")
   reviewComments String?
   reviewedBy     String?
-  reviewDate     DateTime? @db.Timestamptz(3)
+  reviewDate     DateTime?
   tags           Json?
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -2576,11 +2675,11 @@ model QualityDocument {
 
 // IQAC — Meetings
 model IQACMeeting {
-  id              String    @id @default(uuid())
+  id              String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0039. No relation to derive an owner from.
   institutionId   String
   title           String
-  date            DateTime  @db.Timestamptz(3)
+  date            DateTime 
   venue           String
   agenda          Json?
   attendees       Json?
@@ -2588,7 +2687,7 @@ model IQACMeeting {
   minutes         String?
   decisions       Json?
   actionItems     Json?
-  nextMeetingDate DateTime? @db.Timestamptz(3)
+  nextMeetingDate DateTime?
   status          String    @default("scheduled")
   documentsShared Json?
 
@@ -2599,7 +2698,7 @@ model IQACMeeting {
 
 // IQAC — AQAR Data
 model AQARRecord {
-  id                  String    @id @default(uuid())
+  id                  String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0039. No relation to derive an owner from.
   institutionId       String
   academicYear        String
@@ -2609,7 +2708,7 @@ model AQARRecord {
   bestPractices       Json?
   distinctiveFeatures Json?
   status              String    @default("draft")
-  submissionDate      DateTime? @db.Timestamptz(3)
+  submissionDate      DateTime?
   generatedBy         String
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -2620,7 +2719,7 @@ model AQARRecord {
 
 // Grievance — Enhanced Cases
 model GrievanceCase {
-  id                     String    @id @default(uuid())
+  id                     String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0031. Both tables were GLOBAL. GrievanceCase holds
   /// harassment and ragging complaints, complainant identity (or its
   /// deliberate absence), evidence references and investigation timelines —
@@ -2640,12 +2739,12 @@ model GrievanceCase {
   description            String
   severity               String    @default("medium")
   status                 String    @default("received")
-  submissionDate         DateTime  @default(now()) @db.Timestamptz(3)
-  lastUpdated            DateTime  @default(now()) @db.Timestamptz(3)
+  submissionDate         DateTime  @default(now())
+  lastUpdated            DateTime  @default(now())
   assignedTo             String?
   department             String?
-  expectedResolutionDate DateTime? @db.Timestamptz(3)
-  actualResolutionDate   DateTime? @db.Timestamptz(3)
+  expectedResolutionDate DateTime?
+  actualResolutionDate   DateTime?
   isAnonymous            Boolean   @default(false)
   evidenceFiles          Json?
   timeline               Json?
@@ -2663,7 +2762,7 @@ model GrievanceCase {
 
 // Grievance — Compliance Items
 model ComplianceItem {
-  id                 String    @id @default(uuid())
+  id                 String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0031. Both tables were GLOBAL. GrievanceCase holds
   /// harassment and ragging complaints, complainant identity (or its
   /// deliberate absence), evidence references and investigation timelines —
@@ -2674,7 +2773,7 @@ model ComplianceItem {
   type               String
   description        String
   applicableTo       String
-  dueDate            DateTime? @db.Timestamptz(3)
+  dueDate            DateTime?
   renewalPeriod      String?
   completionTracking Json?
   documents          Json?
@@ -2687,7 +2786,7 @@ model ComplianceItem {
 
 // Grievance — Anti-Ragging Affidavits
 model AntiRaggingAffidavit {
-  id               String   @id @default(uuid())
+  id               String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0028. Without it this table was shared across every
   /// institution, and `update({ where: { id }, data: req.body })` made it
   /// writable by any authenticated holder of the relevant role, from anywhere.
@@ -2695,7 +2794,7 @@ model AntiRaggingAffidavit {
   studentId        String
   studentName      String
   program          String
-  submissionDate   DateTime @default(now()) @db.Timestamptz(3)
+  submissionDate   DateTime @default(now())
   parentAffidavit  Boolean  @default(false)
   studentAffidavit Boolean  @default(false)
   status           String   @default("pending")
@@ -2711,7 +2810,7 @@ model AntiRaggingAffidavit {
 
 // Security — ID Card Requests
 model IDCardRequest {
-  id             String    @id @default(uuid())
+  id             String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
   /// VigilanceCase is the sensitive one: confidential investigations with
   /// evidence files, readable and deletable by any security officer anywhere.
@@ -2722,10 +2821,10 @@ model IDCardRequest {
   applicantType  String
   requestType    String    @default("new")
   reason         String?
-  requestDate    DateTime  @default(now()) @db.Timestamptz(3)
+  requestDate    DateTime  @default(now())
   approvedBy     String?
-  approvalDate   DateTime? @db.Timestamptz(3)
-  cardIssuedDate DateTime? @db.Timestamptz(3)
+  approvalDate   DateTime?
+  cardIssuedDate DateTime?
   status         String    @default("pending")
   feesPaid       Boolean   @default(false)
   documents      Json?
@@ -2740,7 +2839,7 @@ model IDCardRequest {
 
 // Security — Vehicle Passes
 model VehiclePass {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
   /// VigilanceCase is the sensitive one: confidential investigations with
   /// evidence files, readable and deletable by any security officer anywhere.
@@ -2752,8 +2851,8 @@ model VehiclePass {
   vehicleType   String
   vehicleNumber String
   vehicleModel  String?
-  validFrom     DateTime @db.Timestamptz(3)
-  validUntil    DateTime @db.Timestamptz(3)
+  validFrom     DateTime
+  validUntil    DateTime
   parkingZone   String
   status        String   @default("active")
   feesPaid      Boolean  @default(false)
@@ -2766,7 +2865,7 @@ model VehiclePass {
 
 // Security — Patrol Logs
 model PatrolLog {
-  id            String    @id @default(uuid())
+  id            String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
   /// VigilanceCase is the sensitive one: confidential investigations with
   /// evidence files, readable and deletable by any security officer anywhere.
@@ -2775,12 +2874,12 @@ model PatrolLog {
   officerName   String
   shift         String
   patrolRoute   String
-  startTime     DateTime  @db.Timestamptz(3)
-  endTime       DateTime? @db.Timestamptz(3)
+  startTime     DateTime 
+  endTime       DateTime?
   checkpoints   Json?
   status        String    @default("on_duty")
   location      String?
-  lastUpdate    DateTime  @default(now()) @db.Timestamptz(3)
+  lastUpdate    DateTime  @default(now())
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
   officer User @relation(fields: [officerId], references: [id], onDelete: Restrict)
@@ -2792,7 +2891,7 @@ model PatrolLog {
 
 // Security — Hostel Access Logs
 model HostelAccessLog {
-  id               String    @id @default(uuid())
+  id               String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
   /// VigilanceCase is the sensitive one: confidential investigations with
   /// evidence files, readable and deletable by any security officer anywhere.
@@ -2801,10 +2900,10 @@ model HostelAccessLog {
   studentName      String
   hostelBlock      String
   roomNumber       String
-  outTime          DateTime? @db.Timestamptz(3)
-  inTime           DateTime? @db.Timestamptz(3)
+  outTime          DateTime?
+  inTime           DateTime?
   purpose          String?
-  expectedReturn   DateTime? @db.Timestamptz(3)
+  expectedReturn   DateTime?
   latePassApproved Boolean   @default(false)
   approvedBy       String?
   status           String    @default("inside")
@@ -2819,7 +2918,7 @@ model HostelAccessLog {
 
 // Security — Vigilance Cases
 model VigilanceCase {
-  id                   String    @id @default(uuid())
+  id                   String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
   /// VigilanceCase is the sensitive one: confidential investigations with
   /// evidence files, readable and deletable by any security officer anywhere.
@@ -2829,14 +2928,14 @@ model VigilanceCase {
   subject              String
   description          String
   complainantType      String
-  dateReported         DateTime  @default(now()) @db.Timestamptz(3)
+  dateReported         DateTime  @default(now())
   status               String    @default("under_investigation")
   investigatingOfficer String
   documentsCollected   Json?
   peopleInterviewed    Json?
   findings             String?
   actionTaken          String?
-  closeDate            DateTime? @db.Timestamptz(3)
+  closeDate            DateTime?
   confidentialityLevel String    @default("medium")
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
@@ -2844,7 +2943,7 @@ model VigilanceCase {
   /// SOFT DELETE (0035). An investigation that the office conducting it can
   /// erase is not evidence of anything, and the erasure is precisely what an
   /// auditor would want to see. The extension filters these structurally.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@index([institutionId])
@@ -2856,7 +2955,7 @@ model VigilanceCase {
 
 // Security — Support Tickets
 model SupportTicket {
-  id                 String    @id @default(uuid())
+  id                 String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0035. All seven security tables were GLOBAL.
   /// VigilanceCase is the sensitive one: confidential investigations with
   /// evidence files, readable and deletable by any security officer anywhere.
@@ -2872,9 +2971,9 @@ model SupportTicket {
   attachments        Json?
   assignedTo         String?
   status             String    @default("open")
-  createdDate        DateTime  @default(now()) @db.Timestamptz(3)
-  lastUpdate         DateTime  @default(now()) @db.Timestamptz(3)
-  resolutionDate     DateTime? @db.Timestamptz(3)
+  createdDate        DateTime  @default(now())
+  lastUpdate         DateTime  @default(now())
+  resolutionDate     DateTime?
   resolutionNotes    String?
   satisfactionRating Int?
 
@@ -2885,7 +2984,7 @@ model SupportTicket {
 
 // Admin — Audit Logs (system-wide)
 model SystemAuditLog {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @map("_id")
   userId    String
   userName  String
   role      String
@@ -2895,7 +2994,7 @@ model SystemAuditLog {
   details   String
   ipAddress String   @default("0.0.0.0")
   userAgent String?
-  timestamp DateTime @default(now()) @db.Timestamptz(3)
+  timestamp DateTime @default(now())
   severity  String   @default("info")
 
   /// Added in 0019 — the column existed with nothing enforcing the target.
@@ -2904,7 +3003,7 @@ model SystemAuditLog {
 
 // Admin — System Notifications
 model SystemNotificationRecord {
-  id                String    @id @default(uuid())
+  id                String    @id @default(uuid()) @map("_id")
   /// TENANT KEY, added in 0040. `sentBy` is free text, not a foreign key, so
   /// there is no relation to derive an owner from.
   institutionId     String
@@ -2914,11 +3013,11 @@ model SystemNotificationRecord {
   targetRoles       Json?
   targetDepartments Json?
   sentBy            String
-  sentDate          DateTime  @default(now()) @db.Timestamptz(3)
+  sentDate          DateTime  @default(now())
   readCount         Int       @default(0)
   totalRecipients   Int       @default(0)
   status            String    @default("draft")
-  scheduledDate     DateTime? @db.Timestamptz(3)
+  scheduledDate     DateTime?
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
 
@@ -2927,19 +3026,19 @@ model SystemNotificationRecord {
 
 // Admin — Module Configuration
 model ModuleConfig {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid()) @map("_id")
   name        String   @unique
   description String
   icon        String   @default("Box")
   enabled     Boolean  @default(true)
   roles       Json?
   subModules  Json?
-  lastUpdated DateTime @default(now()) @db.Timestamptz(3)
+  lastUpdated DateTime @default(now())
 }
 
 // Admin — Academic Year
 model AcademicYear {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @map("_id")
 
   /// TENANT KEY — blueprint: "The ERP can maintain multiple calendars…"
   /// per campus, so academic years are per-institution, not global.
@@ -2949,8 +3048,8 @@ model AcademicYear {
   institutionId String
 
   year      String
-  startDate DateTime @db.Timestamptz(3)
-  endDate   DateTime @db.Timestamptz(3)
+  startDate DateTime
+  endDate   DateTime
   isCurrent Boolean  @default(false)
   semesters Json?
   status    String   @default("upcoming")
@@ -2979,7 +3078,7 @@ model AcademicYear {
 
 /// A payment against one or more fee records.
 model Payment {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   studentProfileId String
@@ -2999,16 +3098,16 @@ model Payment {
   /// pending | success | failed | refunded | cancelled
   status String @default("pending")
 
-  paidAt       DateTime  @default(now()) @db.Timestamptz(3)
-  reconciledAt DateTime? @db.Timestamptz(3)
+  paidAt       DateTime  @default(now())
+  reconciledAt DateTime?
 
   /// Who recorded it — an offline payment is entered by a cashier.
   recordedBy String
 
   remarks String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   allocations PaymentAllocation[]
   receipt     Receipt?
@@ -3032,13 +3131,13 @@ model Payment {
 /// A single payment commonly clears several dues (tuition + library + exam), so
 /// the allocation is explicit rather than implied by amount matching.
 model PaymentAllocation {
-  id        String @id @default(uuid())
+  id        String @id @default(uuid()) @map("_id")
   paymentId String
 
   feeRecordId String
   amount      Float
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now())
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
@@ -3051,7 +3150,7 @@ model PaymentAllocation {
 
 /// A receipt. Created in the SAME TRANSACTION as its payment.
 model Receipt {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   paymentId String @unique
@@ -3066,7 +3165,7 @@ model Receipt {
   studentName String
   rollNumber  String
 
-  issuedAt DateTime @default(now()) @db.Timestamptz(3)
+  issuedAt DateTime @default(now())
   issuedBy String
 
   /// Printed on the receipt so a holder can verify it independently.
@@ -3074,11 +3173,11 @@ model Receipt {
 
   /// issued | cancelled | reprinted
   status             String    @default("issued")
-  cancelledAt        DateTime? @db.Timestamptz(3)
+  cancelledAt        DateTime?
   cancelledBy        String?
   cancellationReason String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now())
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
 
@@ -3098,7 +3197,7 @@ model Receipt {
 /// response is replayed so the caller sees the original outcome rather than a
 /// confusing conflict.
 model IdempotencyKey {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   /// Client-supplied key, unique per institution.
@@ -3119,10 +3218,10 @@ model IdempotencyKey {
   responseBody   Json?
   responseStatus Int?
 
-  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
-  completedAt DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
   /// Keys expire so the table does not grow without bound.
-  expiresAt   DateTime  @db.Timestamptz(3)
+  expiresAt   DateTime 
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
@@ -3152,7 +3251,7 @@ model IdempotencyKey {
 
 /// A reusable, versioned message template.
 model NotificationTemplate {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   code String
@@ -3180,8 +3279,8 @@ model NotificationTemplate {
   isActive Boolean @default(true)
 
   createdBy String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   deliveries NotificationDelivery[]
 
@@ -3200,7 +3299,7 @@ model NotificationTemplate {
 /// on which channels, is an institutional policy decision — not something that
 /// should require a code change.
 model NotificationPolicy {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   code      String
@@ -3222,8 +3321,8 @@ model NotificationPolicy {
   isActive Boolean @default(true)
 
   createdBy String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
@@ -3240,7 +3339,7 @@ model NotificationPolicy {
 /// message reached anyone — which is why the previous "readCount" figures were
 /// meaningless.
 model NotificationDelivery {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   eventType  String
@@ -3265,21 +3364,21 @@ model NotificationDelivery {
   providerMessageId String?
 
   attempts      Int       @default(0)
-  lastAttemptAt DateTime? @db.Timestamptz(3)
-  sentAt        DateTime? @db.Timestamptz(3)
-  deliveredAt   DateTime? @db.Timestamptz(3)
-  failedAt      DateTime? @db.Timestamptz(3)
+  lastAttemptAt DateTime?
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  failedAt      DateTime?
   failureReason String?
 
   /// In-app read tracking — meaningful now that delivery is real.
-  readAt DateTime? @db.Timestamptz(3)
+  readAt DateTime?
 
   /// The entity that triggered this, e.g. ('FeeRecord', '<uuid>').
   relatedEntityType String?
   relatedEntityId   String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
@@ -3314,7 +3413,7 @@ model NotificationDelivery {
 
 /// An examination event — e.g. "End Semester Examinations, Nov 2026".
 model ExamSession {
-  id            String  @id @default(uuid())
+  id            String  @id @default(uuid()) @map("_id")
   institutionId String
   campusId      String?
 
@@ -3326,10 +3425,10 @@ model ExamSession {
   academicYear String
   semester     Int
 
-  registrationStartsAt DateTime @db.Timestamptz(3)
-  registrationEndsAt   DateTime @db.Timestamptz(3)
-  examStartsAt         DateTime @db.Timestamptz(3)
-  examEndsAt           DateTime @db.Timestamptz(3)
+  registrationStartsAt DateTime
+  registrationEndsAt   DateTime
+  examStartsAt         DateTime
+  examEndsAt           DateTime
 
   /// ── Eligibility rules, per session ────────────────────────────────────────
   /// Institutions differ and rules change year to year, so these are DATA.
@@ -3345,8 +3444,8 @@ model ExamSession {
   status String @default("draft")
 
   createdBy String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   schedules     ExamSchedule[]
   registrations ExamRegistration[]
@@ -3371,12 +3470,12 @@ model ExamSession {
 
 /// A scheduled paper: one course, one date, one venue.
 model ExamSchedule {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   sessionId     String
   courseId      String
 
-  examDate     DateTime @db.Timestamptz(3)
+  examDate     DateTime
   startTime    String
   endTime      String
   venue        String?
@@ -3388,8 +3487,8 @@ model ExamSchedule {
   paperSetterId String?
   evaluatorId   String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   course  Course      @relation(fields: [courseId], references: [id], onDelete: Restrict)
@@ -3419,7 +3518,7 @@ model ExamSchedule {
 /// explainable months later — "you were at 68% against a 75% requirement" —
 /// rather than an unexplained rejection.
 model ExamRegistration {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   sessionId        String
@@ -3441,17 +3540,22 @@ model ExamRegistration {
   /// auditable.
   isCondoned        Boolean   @default(false)
   condonedBy        String?
-  condonedAt        DateTime? @db.Timestamptz(3)
+  condonedAt        DateTime?
   condonationReason String?
+  /// The student's own request for condonation (Examinations → Condonation),
+  /// decided through ATTENDANCE_CONDONATION: course teacher → HOD → Dean → CoE.
+  condonationRequest     String?
+  condonationRequestedAt DateTime?
+  condonationDocumentUrl String?
 
   /// registered | ineligible | condoned | cancelled | absent | appeared
   status String @default("registered")
 
-  registeredAt DateTime @default(now()) @db.Timestamptz(3)
+  registeredAt DateTime @default(now())
   registeredBy String
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   session  ExamSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   schedule ExamSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
@@ -3472,7 +3576,7 @@ model ExamRegistration {
 
 /// A hall ticket — issued only once every registration is eligible.
 model HallTicket {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   sessionId        String
@@ -3482,11 +3586,11 @@ model HallTicket {
   /// Verification code printed on the ticket, checkable at the hall.
   verificationCode String
 
-  issuedAt      DateTime  @default(now()) @db.Timestamptz(3)
+  issuedAt      DateTime  @default(now())
   issuedBy      String
   /// valid | revoked
   status        String    @default("valid")
-  revokedAt     DateTime? @db.Timestamptz(3)
+  revokedAt     DateTime?
   revokedReason String?
 
   entries HallTicketEntry[]
@@ -3509,7 +3613,7 @@ model HallTicket {
 
 /// One paper line on a hall ticket.
 model HallTicketEntry {
-  id           String @id @default(uuid())
+  id           String @id @default(uuid()) @map("_id")
   hallTicketId String
   scheduleId   String
 
@@ -3525,7 +3629,7 @@ model HallTicketEntry {
 
 /// A revaluation or re-check request.
 model RevaluationRequest {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   courseResultId   String
@@ -3547,13 +3651,13 @@ model RevaluationRequest {
   /// requested | fee_pending | under_evaluation | completed | rejected
   status String @default("requested")
 
-  requestedAt DateTime  @default(now()) @db.Timestamptz(3)
+  requestedAt DateTime  @default(now())
   evaluatedBy String?
-  evaluatedAt DateTime? @db.Timestamptz(3)
+  evaluatedAt DateTime?
   remarks     String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
@@ -3584,7 +3688,7 @@ model RevaluationRequest {
 
 /// A versioned curriculum ("regulation") for one programme.
 model CurriculumScheme {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   programmeId   String
 
@@ -3610,12 +3714,12 @@ model CurriculumScheme {
 
   /// Board of Studies / Academic Council approval — NAAC Criterion 1 evidence.
   approvedBy    String?
-  approvedAt    DateTime? @db.Timestamptz(3)
+  approvedAt    DateTime?
   approvingBody String?
 
   createdBy String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   programme Programme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
 
@@ -3638,7 +3742,7 @@ model CurriculumScheme {
 /// This is what makes electives expressible: "choose 12 credits from the
 /// Professional Elective basket" is a rule, not a hard-coded course list.
 model CourseBasket {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   schemeId      String
 
@@ -3657,8 +3761,8 @@ model CourseBasket {
   /// Core baskets are compulsory in full; elective baskets are a choice.
   isElective Boolean @default(false)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   scheme        CurriculumScheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
   schemeCourses SchemeCourse[]
@@ -3678,7 +3782,7 @@ model CourseBasket {
 /// schemes at different semesters with different credit weightings — the
 /// placement is scheme-specific, the course is not.
 model SchemeCourse {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   schemeId      String
   basketId      String
@@ -3697,8 +3801,8 @@ model SchemeCourse {
 
   isMandatory Boolean @default(true)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   scheme CurriculumScheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
   basket CourseBasket     @relation(fields: [basketId], references: [id], onDelete: Cascade)
@@ -3723,7 +3827,7 @@ model SchemeCourse {
 
 /// A prerequisite relationship between two courses in a scheme.
 model CoursePrerequisite {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   /// The course that HAS the prerequisite.
@@ -3739,7 +3843,7 @@ model CoursePrerequisite {
   /// Minimum grade point required in the prerequisite, if any.
   minGradePoint Float?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now())
 
   schemeCourse       SchemeCourse @relation("DependentCourse", fields: [schemeCourseId], references: [id], onDelete: Cascade)
   prerequisiteCourse SchemeCourse @relation("PrerequisiteCourse", fields: [prerequisiteSchemeCourseId], references: [id], onDelete: Cascade)
@@ -3759,7 +3863,7 @@ model CoursePrerequisite {
 /// reference to outcomes was FABRICATED — `faculty.ts` wrote `CO${week}` into
 /// auto-generated lesson plans.
 model ProgrammeOutcome {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   schemeId      String
 
@@ -3774,8 +3878,8 @@ model ProgrammeOutcome {
   /// Threshold (%) at which this outcome counts as attained.
   attainmentThreshold Float @default(60)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   scheme   CurriculumScheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
   mappings CoPoMapping[]
@@ -3791,7 +3895,7 @@ model ProgrammeOutcome {
 
 /// Course Outcome (CO) — what a student should be able to do after a course.
 model CourseOutcome {
-  id             String @id @default(uuid())
+  id             String @id @default(uuid()) @map("_id")
   institutionId  String
   schemeCourseId String
 
@@ -3802,8 +3906,8 @@ model CourseOutcome {
   /// Bloom's taxonomy level, where the institution records it.
   bloomLevel String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   schemeCourse        SchemeCourse         @relation(fields: [schemeCourseId], references: [id], onDelete: Cascade)
   mappings            CoPoMapping[]
@@ -3825,7 +3929,7 @@ model CourseOutcome {
 /// The matrix NBA asks for. Strength is conventionally 1 (slight), 2 (moderate)
 /// or 3 (substantial); attainment rolls up from CO attainment weighted by these.
 model CoPoMapping {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   courseOutcomeId    String
@@ -3834,7 +3938,7 @@ model CoPoMapping {
   /// 1 = slight, 2 = moderate, 3 = substantial.
   strength Int @default(1)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now())
 
   courseOutcome    CourseOutcome    @relation(fields: [courseOutcomeId], references: [id], onDelete: Cascade)
   programmeOutcome ProgrammeOutcome @relation(fields: [programmeOutcomeId], references: [id], onDelete: Cascade)
@@ -3873,7 +3977,7 @@ model CoPoMapping {
 
 /// A versioned grading scheme belonging to an institution.
 model GradeScale {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   code     String
@@ -3887,13 +3991,13 @@ model GradeScale {
   /// Version, so historical results stay interpretable after a scheme change.
   version String @default("1.0")
 
-  effectiveFrom DateTime  @db.Timestamptz(3)
-  effectiveTo   DateTime? @db.Timestamptz(3)
+  effectiveFrom DateTime 
+  effectiveTo   DateTime?
   isActive      Boolean   @default(true)
 
   createdBy String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   bands           GradeBand[]
   semesterResults SemesterResult[]
@@ -3909,7 +4013,7 @@ model GradeScale {
 
 /// One band within a scale, e.g. "A+ = 9 points, 85-89 marks".
 model GradeBand {
-  id      String @id @default(uuid())
+  id      String @id @default(uuid()) @map("_id")
   scaleId String
 
   /// Letter grade as it appears on a transcript.
@@ -3940,7 +4044,7 @@ model GradeBand {
 /// current working grade, this holds the PUBLISHED result with the grade point
 /// and the scale that produced it, frozen at publication.
 model CourseResult {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   studentProfileId String
@@ -3968,11 +4072,11 @@ model CourseResult {
   /// draft | submitted | verified | moderated | published | revalued | withheld
   status String @default("draft")
 
-  publishedAt DateTime? @db.Timestamptz(3)
+  publishedAt DateTime?
   publishedBy String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   history GradeHistory[]
 
@@ -3989,7 +4093,7 @@ model CourseResult {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@unique([studentProfileId, courseId, attempt])
@@ -4006,7 +4110,7 @@ model CourseResult {
 /// multi-year reporting (NIRF requires three preceding years) does not depend
 /// on recomputing history under today's rules.
 model SemesterResult {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   studentProfileId String
@@ -4036,12 +4140,12 @@ model SemesterResult {
 
   /// draft | published | revised
   status      String    @default("draft")
-  publishedAt DateTime? @db.Timestamptz(3)
+  publishedAt DateTime?
   publishedBy String?
 
-  computedAt DateTime @default(now()) @db.Timestamptz(3)
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  computedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   gradeScale GradeScale @relation(fields: [gradeScaleId], references: [id], onDelete: Restrict)
 
@@ -4055,7 +4159,7 @@ model SemesterResult {
   /// Soft delete (0021). NULL means live. The Prisma extension injects
   /// `deletedAt: null` for this model, so filtering is structural rather
   /// than left to each call site.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   @@unique([studentProfileId, semester, academicYear])
@@ -4075,7 +4179,7 @@ model SemesterResult {
 /// Rows are written INSIDE the same transaction as the change. A grade change
 /// that cannot be recorded does not commit.
 model GradeHistory {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   courseResultId String
@@ -4096,11 +4200,11 @@ model GradeHistory {
   changeType String @default("correction")
 
   changedBy String
-  changedAt DateTime @default(now()) @db.Timestamptz(3)
+  changedAt DateTime @default(now())
 
   /// Second signature. Post-publication changes should not be unilateral.
   approvedBy String?
-  approvedAt DateTime? @db.Timestamptz(3)
+  approvedAt DateTime?
 
   ipAddress String?
 
@@ -4129,12 +4233,12 @@ model GradeHistory {
 //
 // It also decouples storage from the filesystem. Uploads currently live on
 // ephemeral local disk: lost on redeploy, unreachable from a second instance,
-// and absent from `pg_dump` backups. `storageKey` + `storageProvider` let the
+// and absent from `mongodump` backups. `storageKey` + `storageProvider` let the
 // same record point at local disk today and object storage tomorrow.
 // ═══════════════════════════════════════════════════════════════════════════
 
 model FileMetadata {
-  id            String  @id @default(uuid())
+  id            String  @id @default(uuid()) @map("_id")
   institutionId String
   campusId      String?
 
@@ -4185,17 +4289,17 @@ model FileMetadata {
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   /// Soft delete. Institutional records must not vanish on a mistaken click.
-  deletedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime?
   deletedBy String?
 
   /// Retention support — nullable means "no expiry set".
-  retainUntil DateTime? @db.Timestamptz(3)
+  retainUntil DateTime?
 
   downloadCount    Int       @default(0)
-  lastDownloadedAt DateTime? @db.Timestamptz(3)
+  lastDownloadedAt DateTime?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
@@ -4237,7 +4341,7 @@ model FileMetadata {
 /// Blueprint: "each campus could run its own admission process (with unique
 /// programs or quotas)" — hence campus scoping.
 model AdmissionCycle {
-  id            String  @id @default(uuid())
+  id            String  @id @default(uuid()) @map("_id")
   institutionId String
   campusId      String?
   programmeId   String
@@ -4246,8 +4350,8 @@ model AdmissionCycle {
   name         String
   code         String
 
-  applicationStartsAt DateTime @db.Timestamptz(3)
-  applicationEndsAt   DateTime @db.Timestamptz(3)
+  applicationStartsAt DateTime
+  applicationEndsAt   DateTime
 
   /// Total sanctioned intake. Seat-matrix rows must sum to this.
   totalSeats Int
@@ -4264,8 +4368,8 @@ model AdmissionCycle {
   status String @default("draft")
 
   createdBy String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   programme    Programme              @relation(fields: [programmeId], references: [id], onDelete: Restrict)
   seatMatrix   AdmissionSeatMatrix[]
@@ -4291,7 +4395,7 @@ model AdmissionCycle {
 /// statutory quota, so `filledSeats` is incremented inside the same transaction
 /// that creates the offer.
 model AdmissionSeatMatrix {
-  id      String @id @default(uuid())
+  id      String @id @default(uuid()) @map("_id")
   cycleId String
 
   /// GENERAL | EWS | OBC_NCL | SC | ST | PWD | MINORITY
@@ -4300,10 +4404,14 @@ model AdmissionSeatMatrix {
   totalSeats  Int
   filledSeats Int @default(0)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   cycle AdmissionCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  /// Bumped by lockForUpdate() to claim the document inside a transaction —
+  /// the MongoDB counterpart of SELECT … FOR UPDATE. Never read by business logic.
+  lockVersion Int @default(0)
+
 
   @@unique([cycleId, category])
   @@index([cycleId])
@@ -4312,7 +4420,7 @@ model AdmissionSeatMatrix {
 /// A candidate's application. The applicant has NO user account at this stage —
 /// an account is created only on admission confirmation.
 model AdmissionApplication {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   cycleId       String
 
@@ -4323,7 +4431,7 @@ model AdmissionApplication {
   fullName    String
   email       String
   phone       String
-  dateOfBirth DateTime @db.Timestamptz(3)
+  dateOfBirth DateTime
 
   /// Demographics. Reservation category drives statutory seat allocation;
   /// gender/state feed NIRF "OI" and UGC equity reporting.
@@ -4365,11 +4473,11 @@ model AdmissionApplication {
   /// | shortlisted | offered | accepted | declined | admitted | withdrawn | expired
   status String @default("submitted")
 
-  submittedAt     DateTime  @default(now()) @db.Timestamptz(3)
+  submittedAt     DateTime  @default(now())
   verifiedBy      String?
-  verifiedAt      DateTime? @db.Timestamptz(3)
+  verifiedAt      DateTime?
   decidedBy       String?
-  decidedAt       DateTime? @db.Timestamptz(3)
+  decidedAt       DateTime?
   rejectionReason String?
 
   applicationFeePaid Boolean @default(false)
@@ -4378,8 +4486,8 @@ model AdmissionApplication {
   /// Set once the application converts into a real student record.
   studentProfileId String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   cycle     AdmissionCycle      @relation(fields: [cycleId], references: [id], onDelete: Restrict)
   documents AdmissionDocument[]
@@ -4403,7 +4511,7 @@ model AdmissionApplication {
 /// Uploaded supporting document with its verification trail.
 /// Blueprint: "Track submission and verification of required documents".
 model AdmissionDocument {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   applicationId String
 
   /// marksheet | transfer_certificate | migration | category_certificate
@@ -4417,10 +4525,10 @@ model AdmissionDocument {
   /// pending | verified | rejected
   verificationStatus String    @default("pending")
   verifiedBy         String?
-  verifiedAt         DateTime? @db.Timestamptz(3)
+  verifiedAt         DateTime?
   rejectionReason    String?
 
-  uploadedAt DateTime @default(now()) @db.Timestamptz(3)
+  uploadedAt DateTime @default(now())
 
   application AdmissionApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
@@ -4433,29 +4541,29 @@ model AdmissionDocument {
 /// A seat held by an unresponsive candidate blocks the next in merit order, so
 /// offers expire and the seat returns to its category pool.
 model AdmissionOffer {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   applicationId String
 
   /// The category pool this seat came from — needed to return it on decline.
   seatCategory String
 
-  offeredAt DateTime @default(now()) @db.Timestamptz(3)
-  expiresAt DateTime @db.Timestamptz(3)
+  offeredAt DateTime @default(now())
+  expiresAt DateTime
   offeredBy String
 
   /// pending | accepted | declined | expired | withdrawn
   status String @default("pending")
 
-  respondedAt DateTime? @db.Timestamptz(3)
+  respondedAt DateTime?
 
   /// Admission fee due on acceptance.
   admissionFeeAmount Float?
   admissionFeePaid   Boolean @default(false)
   admissionFeeRef    String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   application AdmissionApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
@@ -4484,7 +4592,7 @@ model AdmissionOffer {
 
 /// A statutory or institutional committee.
 model GovernanceCommittee {
-  id            String  @id @default(uuid())
+  id            String  @id @default(uuid()) @map("_id")
   institutionId String
   campusId      String?
 
@@ -4503,12 +4611,12 @@ model GovernanceCommittee {
   /// "did this committee actually meet as often as it must?"
   meetingFrequency String? // monthly | quarterly | half_yearly | annually | as_needed
 
-  constitutedOn DateTime? @db.Timestamptz(3)
-  dissolvedOn   DateTime? @db.Timestamptz(3)
+  constitutedOn DateTime?
+  dissolvedOn   DateTime?
   isActive      Boolean   @default(true)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   members  CommitteeMember[]
   meetings CommitteeMeeting[]
@@ -4527,7 +4635,7 @@ model GovernanceCommittee {
 
 /// Committee membership with tenure — NAAC asks who served, in what role, when.
 model CommitteeMember {
-  id          String @id @default(uuid())
+  id          String @id @default(uuid()) @map("_id")
   committeeId String
 
   /// Internal member. Null for external/nominated members, who are named below.
@@ -4539,11 +4647,11 @@ model CommitteeMember {
   /// chairperson | member_secretary | member | special_invitee | external_expert
   role String @default("member")
 
-  tenureFrom DateTime  @db.Timestamptz(3)
-  tenureTo   DateTime? @db.Timestamptz(3)
+  tenureFrom DateTime 
+  tenureTo   DateTime?
   isActive   Boolean   @default(true)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now())
 
   committee GovernanceCommittee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
 
@@ -4559,15 +4667,15 @@ model CommitteeMember {
 /// Blueprint: "schedules meetings, circulates agenda, and archives
 /// minutes/resolutions… demonstrating what decisions were made and by whom."
 model CommitteeMeeting {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   committeeId   String
 
   /// Sequential within the committee, e.g. "IQAC/2026/03".
   meetingNumber String
   title         String
-  scheduledAt   DateTime  @db.Timestamptz(3)
-  heldAt        DateTime? @db.Timestamptz(3)
+  scheduledAt   DateTime 
+  heldAt        DateTime?
   venue         String?
   isOnline      Boolean   @default(false)
 
@@ -4579,7 +4687,7 @@ model CommitteeMeeting {
   minutes         String?
   minutesApproved Boolean   @default(false)
   approvedBy      String?
-  approvedAt      DateTime? @db.Timestamptz(3)
+  approvedAt      DateTime?
 
   /// Resolutions passed, each with an owner and due date so that
   /// "action taken" can be demonstrated rather than asserted.
@@ -4589,8 +4697,8 @@ model CommitteeMeeting {
   status String @default("scheduled")
 
   createdBy String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   committee GovernanceCommittee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
 
@@ -4613,7 +4721,7 @@ model CommitteeMeeting {
 /// policy that was in force at the time (audit rule 64). Superseding a policy
 /// does not delete its predecessor.
 model InstitutionalPolicy {
-  id            String  @id @default(uuid())
+  id            String  @id @default(uuid()) @map("_id")
   institutionId String
   campusId      String?
 
@@ -4634,12 +4742,12 @@ model InstitutionalPolicy {
 
   /// Governance trail — who approved it and under what authority.
   approvedBy    String?
-  approvedAt    DateTime? @db.Timestamptz(3)
+  approvedAt    DateTime?
   approvingBody String? // e.g. "Academic Council", "Board of Management"
 
-  effectiveFrom DateTime  @db.Timestamptz(3)
-  effectiveTo   DateTime? @db.Timestamptz(3)
-  reviewDueOn   DateTime? @db.Timestamptz(3)
+  effectiveFrom DateTime 
+  effectiveTo   DateTime?
+  reviewDueOn   DateTime?
 
   /// Whether the policy must be publicly disclosed (UGC mandatory disclosure).
   isPublic Boolean @default(false)
@@ -4648,8 +4756,8 @@ model InstitutionalPolicy {
   status String @default("draft")
 
   createdBy String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
@@ -4666,10 +4774,10 @@ model InstitutionalPolicy {
 
 // Admin — Backup Records
 model BackupRecord {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid()) @map("_id")
   type        String
   size        String
-  createdDate DateTime @default(now()) @db.Timestamptz(3)
+  createdDate DateTime @default(now())
   status      String   @default("in_progress")
   duration    String?
   initiatedBy String
@@ -4696,7 +4804,7 @@ model BackupRecord {
 
 /// One import run.
 model ImportJob {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   /// students | faculty | courses | departments
@@ -4726,8 +4834,8 @@ model ImportJob {
   failureReason String?
 
   startedBy   String
-  startedAt   DateTime  @default(now()) @db.Timestamptz(3)
-  completedAt DateTime? @db.Timestamptz(3)
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
 
   errors ImportError[]
 
@@ -4746,7 +4854,7 @@ model ImportJob {
 /// with a systematic error (a mis-mapped column) produces 50,000 messages, and
 /// a JSON blob that size is neither queryable nor safely loadable into memory.
 model ImportError {
-  id    String @id @default(uuid())
+  id    String @id @default(uuid()) @map("_id")
   jobId String
 
   /// 1-based line number AS IT APPEARS IN THE FILE, including the header, so it
@@ -4788,7 +4896,7 @@ model ImportError {
 
 /// One assessment event for a course under a curriculum scheme.
 model Assessment {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   schemeCourseId String
@@ -4805,14 +4913,14 @@ model Assessment {
   /// attainment: attainment weights come from the CO-wise mark distribution.
   weightPercent Float @default(0)
 
-  conductedOn DateTime? @db.Timestamptz(3)
+  conductedOn DateTime?
 
   /// draft | published
   /// Marks are only counted toward attainment once published.
   status String @default("draft")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   outcomes AssessmentOutcome[]
   marks    AssessmentCoMark[]
@@ -4839,13 +4947,13 @@ model Assessment {
 /// validated against `Assessment.maxMarks` — a distribution that does not add up
 /// silently distorts every attainment figure derived from it.
 model AssessmentOutcome {
-  id           String @id @default(uuid())
+  id           String @id @default(uuid()) @map("_id")
   assessmentId String
 
   courseOutcomeId String
   maxMarks        Float
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now())
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 
@@ -4864,7 +4972,7 @@ model AssessmentOutcome {
 /// attainment actually requires. Recording only an assessment total and
 /// splitting it later is the approximation this model exists to avoid.
 model AssessmentCoMark {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
   assessmentId  String
 
@@ -4879,8 +4987,8 @@ model AssessmentCoMark {
   isAbsent Boolean @default(false)
 
   recordedBy String
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 
@@ -4911,7 +5019,7 @@ model AssessmentCoMark {
 /// reported as DIRECT ONLY and labelled as such, rather than quietly treating
 /// the direct figure as the whole picture.
 model IndirectAttainment {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   courseOutcomeId String
@@ -4926,7 +5034,7 @@ model IndirectAttainment {
   respondents Int    @default(0)
 
   recordedBy String
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  createdAt  DateTime @default(now())
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
@@ -4948,7 +5056,7 @@ model IndirectAttainment {
 /// silently impose one institution's convention on every other, and produce
 /// figures the institution could not defend to an assessor.
 model ObeAttainmentPolicy {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String @unique
 
   /// A student is deemed to have attained a CO at or above this percentage.
@@ -4966,8 +5074,8 @@ model ObeAttainmentPolicy {
   /// Highest level on the scale, for normalising PO attainment.
   maxLevel Float @default(3)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// Added in 0018 — the column existed with nothing enforcing that the
   /// referenced institution exists.
@@ -4997,7 +5105,7 @@ model ObeAttainmentPolicy {
 
 /// A named, versioned approval process an institution defines for itself.
 model WorkflowDefinition {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   /// Stable identifier used by code, e.g. `FEE_WAIVER`.
@@ -5016,8 +5124,8 @@ model WorkflowDefinition {
   version Int     @default(1)
   active  Boolean @default(true)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   createdBy String
 
   steps     WorkflowStep[]
@@ -5032,7 +5140,7 @@ model WorkflowDefinition {
 
 /// One stage in a definition.
 model WorkflowStep {
-  id           String @id @default(uuid())
+  id           String @id @default(uuid()) @map("_id")
   definitionId String
 
   /// Order within the definition. Not a foreign key to the next step, because a
@@ -5060,7 +5168,7 @@ model WorkflowStep {
   /// upon. Stating that here so it is not mistaken for a working SLA.
   slaHours Int?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now())
 
   definition WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
 
@@ -5070,7 +5178,7 @@ model WorkflowStep {
 
 /// A running (or finished) execution of a definition against one entity.
 model WorkflowInstance {
-  id            String @id @default(uuid())
+  id            String @id @default(uuid()) @map("_id")
   institutionId String
 
   definitionId String
@@ -5087,12 +5195,12 @@ model WorkflowInstance {
   status String @default("pending")
 
   startedBy String
-  startedAt DateTime  @default(now()) @db.Timestamptz(3)
-  endedAt   DateTime? @db.Timestamptz(3)
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
 
   /// Recorded on the INSTANCE, not the step: escalation is a fact about this
   /// particular approval, not about the process definition.
-  escalatedAt       DateTime? @db.Timestamptz(3)
+  escalatedAt       DateTime?
   escalatedFromRole String?
 
   /// Free-form context for the approver — amount, reason, links.
@@ -5118,7 +5226,7 @@ model WorkflowInstance {
 /// This is the audit trail for approvals. A transition that could be edited
 /// afterwards would not be evidence of anything.
 model WorkflowTransition {
-  id         String @id @default(uuid())
+  id         String @id @default(uuid()) @map("_id")
   instanceId String
 
   fromStepId String?
@@ -5131,7 +5239,7 @@ model WorkflowTransition {
   actorRole String
   note      String?
 
-  occurredAt DateTime @default(now()) @db.Timestamptz(3)
+  occurredAt DateTime @default(now())
 
   instance WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
@@ -5148,11 +5256,11 @@ model WorkflowTransition {
 /// the key itself, which is why it is safe to prune wholesale.
 model RateLimitWindow {
   /// "<limiter>:<ip>:<email>" — opaque to the database.
-  key     String   @id
+  key     String   @id @map("_id")
   count   Int
   /// When this window expires. Set by whichever instance opens the window so
   /// that every instance agrees on the end, rather than each extending it.
-  resetAt DateTime @db.Timestamptz(3)
+  resetAt DateTime
 
   @@index([resetAt])
 }
@@ -5169,19 +5277,203 @@ model RateLimitWindow {
 /// account. `onDelete: Cascade` — an outstanding reset token for a deleted
 /// user is meaningless, not an orphan worth investigating.
 model PasswordResetToken {
-  id        String    @id @default(uuid())
+  id        String    @id @default(uuid()) @map("_id")
   userId    String
   tokenHash String    @unique
-  expiresAt DateTime  @db.Timestamptz(3)
+  expiresAt DateTime 
   /// Set when the token is consumed. A used token is never valid again, even
   /// if `expiresAt` has not passed — reuse is exactly what a leaked link (in
   /// a mail log, a browser history, a forwarded message) would attempt.
-  usedAt    DateTime? @db.Timestamptz(3)
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
   requestIp String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+/// One class taken by another teacher on one date — the HOD's cover for a
+/// faculty member on leave. The substitute sees the class that day and can
+/// post its attendance; the regular timetable is unchanged.
+model ClassSubstitution {
+  id                  String   @id @default(uuid()) @map("_id")
+  institutionId       String
+  courseId            String
+  /// The CourseSchedule slot being covered.
+  scheduleId          String
+  /// Midnight UTC of the class date, like AttendanceSession.date.
+  date                DateTime
+  startTime           String
+  endTime             String
+  originalFacultyId   String?
+  substituteFacultyId String
+  reason              String?
+  createdBy           String
+  createdAt           DateTime @default(now())
+
+  @@unique([scheduleId, date])
+  @@index([institutionId, date])
+  @@index([substituteFacultyId, date])
+}
+
+/// A student's application for a fee waiver / scholarship / freeship against
+/// one fee. Approved through SCHOLARSHIP_FEE_WAIVER (HOD → Dean → Finance);
+/// on sanction the amount is written to FeeRecord.waivedAmount.
+model FeeWaiverRequest {
+  id               String    @id @default(uuid()) @map("_id")
+  institutionId    String
+  studentProfileId String
+  feeRecordId      String
+  /// merit | need_based | sc_st_freeship | sports | single_girl_child | other
+  category         String
+  requestedAmount  Float
+  reason           String
+  /// Supporting document (income / category certificate, mark sheet …), an /api/uploads URL.
+  documentUrl      String?
+  documentName     String?
+  /// pending | approved | rejected | cancelled
+  status           String    @default("pending")
+  appliedAt        DateTime  @default(now())
+  decidedAt        DateTime?
+  /// What Finance actually waived — capped at what was still owed.
+  sanctionedAmount Float?
+
+  @@index([institutionId, studentProfileId])
+  @@index([feeRecordId])
+}
+
+/// A timetable or subject-allocation change the HOD has asked for. It waits
+/// for the Dean (TIMETABLE_WORKLOAD_APPROVAL) and is applied on approval.
+model TimetableChange {
+  id            String    @id @default(uuid()) @map("_id")
+  institutionId String
+  departmentId  String
+  courseId      String
+  /// slot_create | slot_update | slot_delete | allocation
+  kind          String
+  /// "slot:<scheduleId>" or "allocation:<courseId>" — one open request each.
+  target        String?
+  /// The change itself: { slot?, scheduleId?, courseId?, facultyId? }
+  payload       Json
+  /// One line for the Dean, e.g. "Move CSE502 from Monday 09:00 (CSE-301) to …"
+  summary       String
+  /// pending | approved | applied | failed | rejected | cancelled
+  status        String    @default("pending")
+  failureReason String?
+  requestedBy   String
+  requestedAt   DateTime  @default(now())
+  appliedAt     DateTime?
+
+  @@index([institutionId, departmentId, status])
+}
+
+
+/// A student's leave, medical leave or on-duty request. Decided by the HOD
+/// (STUDENT_LEAVE_OD). An approved on-duty request marks the student "on duty"
+/// for classes in that period, which counts as present.
+model StudentLeaveRequest {
+  id               String    @id @default(uuid()) @map("_id")
+  institutionId    String
+  studentProfileId String
+  /// leave | medical | on_duty
+  type             String
+  fromDate         DateTime
+  toDate           DateTime
+  reason           String
+  documentUrl      String?
+  /// pending | approved | rejected | cancelled
+  status           String    @default("pending")
+  decidedBy        String?
+  decidedAt        DateTime?
+  decisionNote     String?
+  createdAt        DateTime  @default(now())
+
+  @@index([institutionId])
+  @@index([studentProfileId])
+}
+
+/// A bus route with its stops. Each stop carries the yearly fee for boarding there.
+model TransportRoute {
+  id            String   @id @default(uuid()) @map("_id")
+  institutionId String
+  code          String
+  name          String
+  vehicleNumber String?
+  driverName    String?
+  driverPhone   String?
+  capacity      Int      @default(50)
+  /// [{ name, time, fee }]
+  stops         Json
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  @@index([institutionId])
+}
+
+model TransportAllocation {
+  id               String    @id @default(uuid()) @map("_id")
+  institutionId    String
+  routeId          String
+  studentProfileId String
+  stop             String
+  fee              Float
+  academicYear     String
+  /// active | cancelled
+  status           String    @default("active")
+  feeRecordId      String?
+  allocatedAt      DateTime  @default(now())
+  allocatedBy      String?
+
+  @@index([institutionId])
+  @@index([routeId])
+  @@index([studentProfileId])
+}
+
+/// A student asking for a hostel seat or a bus pass; the Registrar's office
+/// allocates (which raises the fee) or declines.
+model CampusServiceRequest {
+  id               String    @id @default(uuid()) @map("_id")
+  institutionId    String
+  studentProfileId String
+  /// hostel | transport
+  service          String
+  /// hostel: { roomType }, transport: { routeId, stop }
+  preference       Json?
+  note             String?
+  /// requested | allocated | declined | cancelled
+  status           String    @default("requested")
+  decidedBy        String?
+  decidedAt        DateTime?
+  decisionNote     String?
+  createdAt        DateTime  @default(now())
+
+  @@index([institutionId])
+  @@index([studentProfileId])
+}
+
+/// A staff member's pay structure; monthly payroll is generated from it.
+model SalaryStructure {
+  id              String   @id @default(uuid()) @map("_id")
+  institutionId   String
+  userId          String
+  employeeId      String
+  basic           Float
+  /// Dearness allowance, % of basic
+  daPercent       Float    @default(0)
+  /// House rent allowance, % of basic
+  hraPercent      Float    @default(0)
+  /// Other fixed monthly allowances (conveyance, special …)
+  otherAllowances Float    @default(0)
+  pfApplicable    Boolean  @default(true)
+  ptApplicable    Boolean  @default(true)
+  bankAccount     String?
+  ifsc            String?
+  pan             String?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  @@unique([institutionId, userId])
+  @@index([institutionId])
 }
