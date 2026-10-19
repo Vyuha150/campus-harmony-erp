@@ -9,11 +9,17 @@ import { CheckCircle, Clock, Send } from 'lucide-react';
 import { fetchApi, postApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 import { ResultSummary } from '@/types/dean';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ExamResultSheets } from '@/components/shared/ExamResultSheets';
+import { COERevaluations } from '@/components/coe/COERevaluations';
+import { useTabParam } from '@/hooks/useTabParam';
 
 export default function COEResultSubmission() {
   const { toast } = useToast();
   const [results, setResults] = useState<ResultSummary[]>([]);
+  const tabParam = useTabParam('moderation');
 
+  const loadResults = () => fetchApi<ResultSummary[]>('/coe/results').then((data) => setResults(Array.isArray(data) ? data : [])).catch(() => undefined);
   useEffect(() => {
     fetchApi<ResultSummary[]>('/coe/results')
       .then((data) => setResults(Array.isArray(data) ? data : []))
@@ -42,9 +48,19 @@ export default function COEResultSubmission() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">COE Result Submission</h1>
-          <p className="text-muted-foreground">Submit department results to Dean for publication approval.</p>
+          <h1 className="text-2xl font-bold text-foreground">Results: moderation, publication & revaluation</h1>
+          <p className="text-muted-foreground">Moderate papers the HODs have verified, submit each department to the Dean for publication, and settle revaluations.</p>
         </div>
+
+        <Tabs key={tabParam.key} defaultValue={tabParam.defaultValue} onValueChange={(v) => { if (v === 'submit') loadResults(); }}>
+          <TabsList>
+            <TabsTrigger value="moderation">Moderation</TabsTrigger>
+            <TabsTrigger value="submit">Submit to Dean</TabsTrigger>
+            <TabsTrigger value="revaluations">Revaluations</TabsTrigger>
+          </TabsList>
+          <TabsContent value="moderation" className="mt-4"><ExamResultSheets mode="coe" /></TabsContent>
+          <TabsContent value="revaluations" className="mt-4"><COERevaluations /></TabsContent>
+          <TabsContent value="submit" className="mt-4 space-y-6">
 
         <div className="grid gap-4 sm:grid-cols-3">
           <Card><CardContent className="p-4"><div className="flex items-center gap-3"><Clock className="h-7 w-7 text-amber-600" /><div><p className="text-xs text-muted-foreground">Pending Dean Approval</p><p className="text-2xl font-bold text-amber-600">{pending}</p></div></div></CardContent></Card>
@@ -102,6 +118,8 @@ export default function COEResultSubmission() {
             </Table>
           </CardContent>
         </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

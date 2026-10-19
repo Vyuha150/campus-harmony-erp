@@ -80,17 +80,17 @@ export default function COEExamOversight() {
   }, [toast]);
 
   const handleAdvanceStatus = async (exam: ExamProgress) => {
-    const steps: ExamProgress['status'][] = ['scheduling', 'ongoing', 'mark_entry', 'moderation', 'published'];
+    // Advance stops at moderation. "Published" is not a label to click: it is set
+    // when the Dean approves the results (Results → Submit to Dean), which is what
+    // actually publishes them. The last step here used to fail ("invalid data")
+    // and, had it worked, would have shown Published with nothing published.
+    const steps: ExamProgress['status'][] = ['scheduling', 'ongoing', 'mark_entry', 'moderation'];
     const currentStatus = normalizeStatus(String((exam as any).status || 'scheduling'));
     const idx = steps.indexOf(currentStatus);
     if (idx < 0 || idx >= steps.length - 1) return;
 
     const nextStatus = steps[idx + 1];
     const updatePayload: any = { status: nextStatus };
-    if (nextStatus === 'published') {
-      updatePayload.resultsPublished = true;
-      updatePayload.marksEntered = exam.totalStudents;
-    }
 
     try {
       const updated = await putApi<ExamProgress>(`/coe/exams/${exam.id}`, updatePayload);
@@ -263,10 +263,13 @@ export default function COEExamOversight() {
                     )}
                   </div>
                   <div className="flex flex-col gap-1">
-                    {status !== 'published' && (
+                    {!['moderation', 'completed', 'published'].includes(status) && (
                       <Button size="sm" className="h-7 text-xs gap-1" onClick={() => handleAdvanceStatus(exam)}>
                         <CheckCircle className="h-3 w-3" /> Advance
                       </Button>
+                    )}
+                    {status === 'moderation' && (
+                      <p className="max-w-[9rem] text-[10px] text-muted-foreground">Publishes when the Dean approves the results</p>
                     )}
                     <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openEdit(exam)}>
                       <Pencil className="h-3 w-3" /> Edit
