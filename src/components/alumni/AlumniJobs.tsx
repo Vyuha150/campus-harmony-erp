@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from '@/components/ui/textarea';
 import { Briefcase, Plus, Search, Eye, MapPin, Calendar, ExternalLink } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { fetchApi, postApi } from '@/lib/apiService';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
+import { RecordDialog, showDate } from './RecordDialog';
 
 const formatDate = (value: unknown) => {
   if (!value) return '–';
@@ -20,6 +21,34 @@ const formatDate = (value: unknown) => {
 
 export default function AlumniJobs() {
   const { toast } = useToast();
+  const [viewing, setViewing] = useState<any | null>(null);
+
+  // Copies a ready-to-forward summary of the posting.
+  const shareJob = async (job: any) => {
+    const text = [
+      `${job.jobTitle} — ${job.companyName}`,
+      `${job.location}${job.salaryRange ? ` • ${job.salaryRange}` : ''}`,
+      `Apply by ${showDate(job.applicationDeadline)}: ${job.contactEmail}`,
+      job.description
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: 'Copied', description: 'Job details copied — paste them into an email or message.' });
+    } catch {
+      toast({ title: 'Could not copy', description: 'Your browser blocked clipboard access.', variant: 'destructive' });
+    }
+  };
+
+  const setJobStatus = async (job: any, status: string) => {
+    try {
+      await putApi(`/alumni/jobs/${job.id}`, { status });
+      await loadData();
+      setViewing((v: any) => (v ? { ...v, status } : v));
+      toast({ title: `Listing marked ${status}` });
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Please retry', variant: 'destructive' });
+    }
+  };
   const [alumniJobPostings, setAlumniJobPostings] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
@@ -179,8 +208,8 @@ export default function AlumniJobs() {
                   <div className="flex flex-col items-end gap-2">
                     <Badge variant={job.status === 'active' ? 'default' : 'secondary'} className="capitalize">{job.status}</Badge>
                     <div className="mt-2 flex gap-2">
-                      <Button variant="outline" size="sm" onClick={loadData}><Eye className="mr-1 h-3 w-3" />View</Button>
-                      <Button variant="outline" size="sm" onClick={loadData}><ExternalLink className="mr-1 h-3 w-3" />Share</Button>
+                      <Button variant="outline" size="sm" onClick={() => setViewing(job)}><Eye className="mr-1 h-3 w-3" />View</Button>
+                      <Button variant="outline" size="sm" onClick={() => shareJob(job)}><ExternalLink className="mr-1 h-3 w-3" />Share</Button>
                     </div>
                   </div>
                 </div>
@@ -189,6 +218,19 @@ export default function AlumniJobs() {
           ))}
         </div>
       </div>
+      <RecordDialog open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)} title={viewing?.jobTitle ?? 'Job'} description={viewing?.companyName}
+        rows={[
+          ['Location', viewing?.location], ['Salary', viewing?.salaryRange], ['Type', String(viewing?.jobType || '').replace('_', ' ')],
+          ['Deadline', showDate(viewing?.applicationDeadline)], ['Contact', viewing?.contactEmail], ['Posted', showDate(viewing?.postedDate)],
+          ['Status', viewing?.status], ['Requirements', (Array.isArray(viewing?.requirements) ? viewing.requirements : []).join(', ')],
+          ['Description', viewing?.description]
+        ]}>
+        <div className="flex flex-wrap gap-2 pt-2">
+          {viewing?.status !== 'active' && <Button size="sm" onClick={() => setJobStatus(viewing, 'active')}>Reopen listing</Button>}
+          {viewing?.status === 'active' && <Button size="sm" variant="outline" onClick={() => setJobStatus(viewing, 'filled')}>Mark filled</Button>}
+          {viewing?.status === 'active' && <Button size="sm" variant="outline" onClick={() => setJobStatus(viewing, 'closed')}>Close listing</Button>}
+        </div>
+      </RecordDialog>
     </DashboardLayout>
   );
 }

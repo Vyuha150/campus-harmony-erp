@@ -1,3 +1,4 @@
+import { downloadCsv } from '@/lib/download';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -137,7 +138,15 @@ export default function GrievanceDashboard({ initialTab = 'cases' }: { initialTa
             <p className="text-muted-foreground">Case management, resolution tracking, and compliance oversight</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => downloadCsv(
+              `grievance-register-${new Date().getFullYear()}.csv`,
+              ['Number', 'Submitted', 'Complainant', 'Type', 'Category', 'Subject', 'Severity', 'Status', 'Department', 'Resolved on', 'Resolution'],
+              grievanceCases.map((g) => [
+                g.grievanceNumber, g.submissionDate ? new Date(g.submissionDate).toLocaleDateString('en-IN') : '',
+                g.isAnonymous ? 'Anonymous' : g.complainantName, g.complainantType, g.category, g.subject, g.severity, g.status,
+                g.department ?? '', g.actualResolutionDate ? new Date(g.actualResolutionDate).toLocaleDateString('en-IN') : '', g.resolution ?? ''
+              ])
+            )}>
               <Download className="mr-2 h-4 w-4" />
               Annual Report
             </Button>

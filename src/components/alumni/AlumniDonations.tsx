@@ -11,6 +11,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useEffect, useMemo, useState } from 'react';
 import { fetchApi, postApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
+import { RecordDialog, showDate } from './RecordDialog';
 
 const formatDate = (value: unknown) => {
   if (!value) return '–';
@@ -20,6 +21,8 @@ const formatDate = (value: unknown) => {
 
 export default function AlumniDonations() {
   const { toast } = useToast();
+  const [viewing, setViewing] = useState<any | null>(null);
+  const [alumni, setAlumni] = useState<any[]>([]);
   const [alumniDonations, setAlumniDonations] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -31,8 +34,9 @@ export default function AlumniDonations() {
   const [status, setStatus] = useState('completed');
 
   const loadData = async () => {
-    const rows = await fetchApi<any[]>('/alumni/donations');
+    const [rows, directory] = await Promise.all([fetchApi<any[]>('/alumni/donations'), fetchApi<any[]>('/alumni/directory')]);
     setAlumniDonations(Array.isArray(rows) ? rows : []);
+    setAlumni(Array.isArray(directory) ? directory : []);
   };
 
   useEffect(() => {
@@ -115,7 +119,14 @@ export default function AlumniDonations() {
               <DialogContent>
                 <DialogHeader><DialogTitle>Record Donation</DialogTitle></DialogHeader>
                 <div className="grid gap-4 py-4">
-                  <div><Label>Donor Alumni Profile ID</Label><Input value={alumniProfileId} onChange={(e) => setAlumniProfileId(e.target.value)} placeholder="Enter AlumniProfile.id" /></div>
+                  {/* Was a free-text box asking for "AlumniProfile.id" — an internal id the
+                      alumni office has no way to know. Donors are picked by name. */}
+                  <div><Label>Donor</Label>
+                    <Select value={alumniProfileId} onValueChange={setAlumniProfileId}>
+                      <SelectTrigger><SelectValue placeholder={alumni.length ? 'Choose an alumnus' : 'No alumni in the directory yet — run Sync Alumni first'} /></SelectTrigger>
+                      <SelectContent>{alumni.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.name} — batch {a.graduationYear}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><Label>Amount (₹)</Label><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
                     <div><Label>Status</Label><Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="completed">Completed</SelectItem><SelectItem value="pending">Pending</SelectItem></SelectContent></Select></div>
@@ -172,7 +183,7 @@ export default function AlumniDonations() {
                       <td className="px-4 py-3 text-right text-sm font-semibold text-foreground">₹{Number(d.amount || 0).toLocaleString('en-IN')}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDate(d.donatedAt || d.date)}</td>
                       <td className="px-4 py-3"><Badge variant={String(d.status || '').toLowerCase() === 'completed' ? 'default' : 'secondary'} className="capitalize">{d.status || 'completed'}</Badge></td>
-                      <td className="px-4 py-3"><Button variant="outline" size="sm" onClick={loadData}><Eye className="mr-1 h-3 w-3" />View</Button></td>
+                      <td className="px-4 py-3"><Button variant="outline" size="sm" onClick={() => setViewing(d)}><Eye className="mr-1 h-3 w-3" />View</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -181,6 +192,11 @@ export default function AlumniDonations() {
           </CardContent>
         </Card>
       </div>
+      <RecordDialog open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)} title={viewing?.donorName ?? 'Donation'}
+        rows={[
+          ['Amount', `₹${Number(viewing?.amount || 0).toLocaleString('en-IN')}`], ['Purpose', viewing?.purpose],
+          ['Date', showDate(viewing?.donatedAt || viewing?.date)], ['Status', viewing?.status], ['Receipt', viewing?.receiptNumber ?? null]
+        ]} />
     </DashboardLayout>
   );
 }

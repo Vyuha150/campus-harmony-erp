@@ -223,7 +223,9 @@ export default function PlacementCompanies() {
   };
 
   const active = companies.filter((c) => c.status === 'active').length;
-  const invitationsSent = companies.length;
+  // "Invitations Sent" was `companies.length` — no invitation is recorded
+  // anywhere, so the card restated the company count as an activity figure.
+  const invitationsSent = companies.reduce((sum: number, c: any) => sum + Number(c.totalHires || 0), 0);
   const confirmedVisits = companies.filter((c: any) => Number(c.totalDrives || 0) > 0).length;
 
   const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
@@ -268,8 +270,8 @@ export default function PlacementCompanies() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Total Companies</p><p className="text-2xl font-bold text-foreground">{companies.length}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Active Partners</p><p className="text-2xl font-bold text-green-600">{active}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Invitations Sent</p><p className="text-2xl font-bold text-foreground">{invitationsSent}</p><p className="text-xs text-muted-foreground">Based on listed companies</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Confirmed Visits</p><p className="text-2xl font-bold text-foreground">{confirmedVisits}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Students Hired</p>\1</CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Companies with Drives</p><p className="text-2xl font-bold text-foreground">{confirmedVisits}</p></CardContent></Card>
         </div>
 
         <Tabs defaultValue="directory">
@@ -299,7 +301,7 @@ export default function PlacementCompanies() {
                             <h3 className="font-semibold text-foreground">{c.name}</h3>
                             <Badge variant={c.status === 'active' ? 'default' : 'destructive'} className="capitalize">{c.status}</Badge>
                           </div>
-                          <p className="text-sm text-muted-foreground">{c.industry} • {c.companySize || 0} employees</p>
+                          <p className="text-sm text-muted-foreground">{c.industry}{c.companySize ? ` • ${c.companySize} employees` : ''}</p>
                           <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                             <p><Users className="mr-1 inline h-3 w-3" />{c.contactPerson || c.name}</p>
                             <p><Mail className="mr-1 inline h-3 w-3" />{c.email}</p>

@@ -10,8 +10,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Calendar, MapPin, Users, Plus, Download, Eye, ClipboardList } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { fetchApi, postApi } from '@/lib/apiService';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
+import { RecordDialog, showDate } from './RecordDialog';
 
 const formatDate = (value: unknown) => {
   if (!value) return '–';
@@ -21,6 +22,19 @@ const formatDate = (value: unknown) => {
 
 export default function AlumniEvents() {
   const { toast } = useToast();
+  const [attendeesOf, setAttendeesOf] = useState<any | null>(null);
+  const [managing, setManaging] = useState<any | null>(null);
+
+  const setEventStatus = async (event: any, status: string) => {
+    try {
+      await putApi(`/alumni/events/${event.id}`, { status });
+      await loadData();
+      setManaging((m: any) => (m ? { ...m, status } : m));
+      toast({ title: `Event marked ${status}` });
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Please retry', variant: 'destructive' });
+    }
+  };
   const [alumniEvents, setAlumniEvents] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -182,8 +196,8 @@ export default function AlumniEvents() {
                     <Badge variant={event.status === 'published' ? 'default' : event.status === 'completed' ? 'secondary' : 'outline'} className="capitalize">{event.status}</Badge>
                     <p className="text-sm text-muted-foreground">{Array.isArray(event.registrations) ? event.registrations.length : 0} RSVPs</p>
                     <div className="mt-2 flex gap-2">
-                      <Button variant="outline" size="sm" onClick={loadData}><ClipboardList className="mr-1 h-3 w-3" />Attendees</Button>
-                      <Button variant="outline" size="sm" onClick={loadData}><Eye className="mr-1 h-3 w-3" />Manage</Button>
+                      <Button variant="outline" size="sm" onClick={() => setAttendeesOf(event)}><ClipboardList className="mr-1 h-3 w-3" />Attendees</Button>
+                      <Button variant="outline" size="sm" onClick={() => setManaging(event)}><Eye className="mr-1 h-3 w-3" />Manage</Button>
                     </div>
                   </div>
                 </div>
@@ -192,6 +206,25 @@ export default function AlumniEvents() {
           ))}
         </div>
       </div>
+      <RecordDialog open={attendeesOf !== null} onOpenChange={(o) => !o && setAttendeesOf(null)} title={`Attendees — ${attendeesOf?.title ?? ''}`}
+        description={`${Array.isArray(attendeesOf?.registrations) ? attendeesOf.registrations.length : 0} registration(s)${attendeesOf?.maxCapacity ? ` of ${attendeesOf.maxCapacity} places` : ''}`}
+        rows={(Array.isArray(attendeesOf?.registrations) ? attendeesOf.registrations : []).map((r: any, i: number) => [
+          `${i + 1}.`, typeof r === 'object' && r ? [r.name, r.email, r.batch ? `batch ${r.batch}` : null].filter(Boolean).join(' • ') || 'Registered' : String(r)
+        ] as [string, string])}>
+        {!(Array.isArray(attendeesOf?.registrations) && attendeesOf.registrations.length) && <p className="text-sm text-muted-foreground">Nobody has registered yet.</p>}
+      </RecordDialog>
+      <RecordDialog open={managing !== null} onOpenChange={(o) => !o && setManaging(null)} title={managing?.title ?? 'Event'}
+        rows={[
+          ['Date', showDate(managing?.date)], ['Registration closes', showDate(managing?.registrationDeadline)], ['Venue', managing?.venue],
+          ['Mode', managing?.isVirtual ? 'Virtual' : 'In person'], ['Capacity', managing?.maxCapacity ?? null], ['Status', managing?.status],
+          ['Description', managing?.description]
+        ]}>
+        <div className="flex flex-wrap gap-2 pt-2">
+          {managing?.status !== 'published' && managing?.status !== 'completed' && <Button size="sm" onClick={() => setEventStatus(managing, 'published')}>Publish</Button>}
+          {managing?.status === 'published' && <Button size="sm" variant="outline" onClick={() => setEventStatus(managing, 'completed')}>Mark completed</Button>}
+          {managing?.status !== 'cancelled' && managing?.status !== 'completed' && <Button size="sm" variant="destructive" onClick={() => setEventStatus(managing, 'cancelled')}>Cancel event</Button>}
+        </div>
+      </RecordDialog>
     </DashboardLayout>
   );
 }

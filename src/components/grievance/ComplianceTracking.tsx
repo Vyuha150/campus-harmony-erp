@@ -1,3 +1,5 @@
+import { downloadCsv } from '@/lib/download';
+import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,6 +33,7 @@ export default function ComplianceTracking({ activeTab }: ComplianceTrackingProp
   const [complianceItems, setComplianceItems] = useState<ComplianceItem[]>([]);
   const [affidavits, setAffidavits] = useState<AntiRaggingAffidavit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [details, setDetails] = useState<Details | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -327,7 +330,11 @@ export default function ComplianceTracking({ activeTab }: ComplianceTrackingProp
                                 </div>
                               </div>
                             )}
-                            <Button className="w-full" size="sm">
+                            <Button className="w-full" size="sm" onClick={() => downloadCsv(
+                              `compliance-${item.title.replace(/\W+/g, '-').toLowerCase()}.csv`,
+                              ['Name', 'Type', 'Status', 'Completed on', 'Valid until', 'Certificate issued', 'Score'],
+                              (item.completionTracking || []).map((t) => [t.userName, t.userType, t.status, formatDate(t.completionDate), formatDate(t.validUntil), t.certificateIssued ? 'Yes' : 'No', t.score ?? ''])
+                            )}>
                               <Download className="h-4 w-4 mr-2" />
                               Download Report
                             </Button>
@@ -454,7 +461,18 @@ export default function ComplianceTracking({ activeTab }: ComplianceTrackingProp
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">Submitted: {formatDate(affidavit.submissionDate)}</p>
                   </div>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" onClick={() => setDetails({
+                    title: `Anti-ragging affidavit — ${affidavit.studentName}`,
+                    description: affidavit.academicYear,
+                    rows: [
+                      ['Student ID', affidavit.studentId],
+                      ['Programme', affidavit.program],
+                      ['Student affidavit', affidavit.studentAffidavit ? 'Submitted' : 'Pending'],
+                      ['Parent affidavit', affidavit.parentAffidavit ? 'Submitted' : 'Pending'],
+                      ['Submitted on', formatDate(affidavit.submissionDate)],
+                      ['Status', affidavit.status]
+                    ]
+                  })}>
                     View Details
                   </Button>
                 </div>
@@ -470,6 +488,7 @@ export default function ComplianceTracking({ activeTab }: ComplianceTrackingProp
           </Card>
         )}
       </div>
+      <DetailsDialog details={details} onClose={() => setDetails(null)} />
     </div>
   );
 }

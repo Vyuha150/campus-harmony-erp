@@ -47,6 +47,35 @@ export default function AdminSystemConfig() {
     aicteApproved: true
   });
   const [_apiLoading, _setApiLoading] = useState(true);
+  // Departments with their HOD and real counts (the config payload had neither).
+  const loadDepartments = () => fetchApi('/admin/departments').then((d: any) => setDepartments(safeArray(d).map(normalizeDepartment))).catch(() => undefined);
+  // Change / remove HOD.
+  const [hodDept, setHodDept] = useState<any | null>(null);
+  const [hodMode, setHodMode] = useState<'change' | 'remove'>('change');
+  const [hodStaff, setHodStaff] = useState<any[]>([]);
+  const [hodPick, setHodPick] = useState('');
+  const [hodReason, setHodReason] = useState('');
+  const [hodSaving, setHodSaving] = useState(false);
+  const openHodDialog = (dept: any, mode: 'change' | 'remove') => {
+    setHodDept(dept); setHodMode(mode); setHodPick(''); setHodReason(''); setHodStaff([]);
+    if (mode === 'change') fetchApi(`/admin/departments/${dept.id}/staff`).then((d: any) => setHodStaff(safeArray(d))).catch(() => setHodStaff([]));
+  };
+  const saveHod = async () => {
+    if (!hodDept) return;
+    if (hodMode === 'change' && !hodPick) { toast({ title: 'Choose the new HOD', variant: 'destructive' }); return; }
+    if (hodReason.trim().length < 10) { toast({ title: 'Give a reason', description: 'At least 10 characters, e.g. the order number. It is recorded in the audit log.', variant: 'destructive' }); return; }
+    setHodSaving(true);
+    try {
+      const r: any = await putApi(`/admin/departments/${hodDept.id}/hod`, { userId: hodMode === 'change' ? hodPick : null, reason: hodReason.trim() });
+      toast({ title: hodMode === 'change' ? 'HOD appointed' : 'HOD removed', description: hodMode === 'change' ? `${r?.incoming?.name} is now HOD of ${hodDept.name}${r?.outgoing ? `; ${r.outgoing.name} returns to faculty` : ''}.` : `${hodDept.name} has no HOD until one is appointed.` });
+      setHodDept(null);
+      loadDepartments();
+    } catch (error: any) {
+      toast({ title: 'Could not update the HOD', description: safeString(error?.message, 'Please try again.'), variant: 'destructive' });
+    } finally {
+      setHodSaving(false);
+    }
+  };
 
   const normalizeAcademicYear = (raw: any) => ({
     id: safeString(raw?.id),
@@ -71,12 +100,14 @@ export default function AdminSystemConfig() {
     id: safeString(raw?.id),
     name: safeString(raw?.name),
     code: safeString(raw?.code),
-    hod: safeString(raw?.hod, 'Not Assigned'),
+    hod: raw?.hod ? safeString(raw.hod) : null,
+    hodUserId: raw?.hodUserId ?? null,
+    hodEmail: raw?.hodEmail ?? null,
     faculty: Number(raw?.faculty ?? 0),
     students: Number(raw?.students ?? 0),
-    programs: Number(raw?.programs ?? raw?.courses ?? 0),
-    status: safeString(raw?.status, 'active'),
-    established: safeString(raw?.established, '—')
+    programs: Number(raw?.programs ?? 0),
+    courses: Number(raw?.courses ?? 0),
+    status: raw?.isActive === false ? 'inactive' : 'active'
   });
 
   useEffect(() => {
@@ -86,11 +117,18 @@ export default function AdminSystemConfig() {
         name: safeString(d?.university?.name, prev.name),
         code: safeString(d?.university?.code, prev.code),
         type: safeString(d?.university?.type, prev.type),
-        accreditation: safeString(d?.university?.accreditation, prev.accreditation)
+        accreditation: safeString(d?.university?.accreditation, prev.accreditation),
+        website: safeString(d?.university?.website, ''),
+        email: safeString(d?.university?.email, ''),
+        phone: safeString(d?.university?.phone, ''),
+        established: safeString(d?.university?.established, ''),
+        address: safeString(d?.university?.address, ''),
+        aisheCode: safeString(d?.university?.aisheCode, ''),
+        nirfRank: safeString(d?.university?.nirfId, '')
       }));
       setAcademicYears(safeArray(d?.academicYears).map(normalizeAcademicYear));
-      setDepartments(safeArray(d?.departments).map(normalizeDepartment));
     }).catch((error) => { console.error('API request failed', error); });
+    loadDepartments();
     _setApiLoading(false);
   }, []);
 
@@ -248,20 +286,23 @@ export default function AdminSystemConfig() {
         name: name.trim(),
         code: code.trim().toUpperCase()
       });
-      setDepartments((prev: any[]) => [normalizeDepartment(created), ...prev]);
+      loadDepartments();
+      void created;
       toast({ title: 'Department added', description: `${name.trim()} created successfully.` });
     } catch (error: any) {
       toast({ title: 'Add failed', description: safeString(error?.message, 'Unable to add department.'), variant: 'destructive' });
     }
   };
 
-  const toggleDepartmentStatus = (departmentId: string) => {
-    setDepartments((prev: any[]) => prev.map((department) => (
-      department.id === departmentId
-        ? { ...department, status: department.status === 'active' ? 'inactive' : 'active' }
-        : department
-    )));
-    toast({ title: 'Department updated', description: 'Department status updated in the view.' });
+  // Saved now; it only changed the screen before.
+  const toggleDepartmentStatus = async (dept: any) => {
+    try {
+      await putApi(`/admin/departments/${dept.id}`, { isActive: dept.status !== 'active' });
+      toast({ title: dept.status === 'active' ? 'Department deactivated' : 'Department activated', description: dept.name });
+      loadDepartments();
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: safeString(error?.message, 'Please try again.'), variant: 'destructive' });
+    }
   };
 
   return (
@@ -573,15 +614,23 @@ export default function AdminSystemConfig() {
                       <TableRow key={d.id}>
                         <TableCell>
                           <p className="font-medium text-foreground">{d.name}</p>
-                          <p className="text-xs text-muted-foreground">Est. {d.established}</p>
+                          <p className="text-xs text-muted-foreground">{d.programs} programme(s) · {d.courses ?? 0} course(s)</p>
                         </TableCell>
                         <TableCell><Badge variant="outline">{d.code}</Badge></TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{d.hod}</TableCell>
+                        <TableCell className="text-sm">
+                          {d.hod ? <><p className="font-medium">{d.hod}</p><p className="text-xs text-muted-foreground">{d.hodEmail}</p></> : <Badge variant="destructive">Vacant</Badge>}
+                        </TableCell>
                         <TableCell className="text-center text-sm text-foreground">{d.faculty}</TableCell>
                         <TableCell className="text-center text-sm text-foreground">{d.students}</TableCell>
                         <TableCell className="text-center text-sm text-foreground">{d.programs}</TableCell>
                         <TableCell><Badge variant={d.status === 'active' ? 'default' : 'secondary'} className="capitalize">{d.status}</Badge></TableCell>
-                        <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => toggleDepartmentStatus(d.id)}><Edit className="h-4 w-4" /></Button></TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="outline" size="sm" onClick={() => openHodDialog(d, 'change')}>{d.hod ? 'Change HOD' : 'Appoint HOD'}</Button>
+                            {d.hod && <Button variant="ghost" size="sm" className="text-destructive" onClick={() => openHodDialog(d, 'remove')}>Remove HOD</Button>}
+                            <Button variant="ghost" size="sm" onClick={() => toggleDepartmentStatus(d)}>{d.status === 'active' ? 'Deactivate' : 'Activate'}</Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -590,6 +639,37 @@ export default function AdminSystemConfig() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <Dialog open={!!hodDept} onOpenChange={(o) => { if (!o) setHodDept(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{hodMode === 'change' ? `${hodDept?.hod ? 'Change' : 'Appoint'} HOD: ${hodDept?.name ?? ''}` : `Remove HOD: ${hodDept?.name ?? ''}`}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {hodDept?.hod && <p className="text-sm text-muted-foreground">Current HOD: <span className="font-medium text-foreground">{hodDept.hod}</span>. {hodMode === 'change' ? 'They return to faculty when the new HOD is appointed.' : 'They return to faculty and the post stays vacant; requests at the HOD step wait until a new HOD is appointed.'}</p>}
+              {hodMode === 'change' && (
+                <div className="space-y-2">
+                  <Label>New HOD (faculty of this department)</Label>
+                  <Select value={hodPick} onValueChange={setHodPick}>
+                    <SelectTrigger><SelectValue placeholder="Choose a faculty member" /></SelectTrigger>
+                    <SelectContent>
+                      {hodStaff.filter((u) => u.role === 'faculty').map((u) => <SelectItem key={u.id} value={u.id}>{u.name}{u.designation ? ` · ${u.designation}` : ''}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {hodStaff.length > 0 && hodStaff.filter((u) => u.role === 'faculty').length === 0 && <p className="text-xs text-muted-foreground">This department has no faculty to appoint.</p>}
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label>Reason / order reference</Label>
+                <Textarea value={hodReason} onChange={(e) => setHodReason(e.target.value)} placeholder="e.g. VC order No. 12/2026 dated 18-10-2026" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setHodDept(null)}>Cancel</Button>
+              <Button variant={hodMode === 'remove' ? 'destructive' : 'default'} onClick={saveHod} disabled={hodSaving}>{hodSaving ? 'Saving...' : hodMode === 'change' ? 'Appoint' : 'Remove HOD'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

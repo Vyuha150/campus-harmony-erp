@@ -283,7 +283,7 @@ export default function LibrarianLibrary({ initialTab = 'catalog' }: { initialTa
       });
       // `postApi` unwraps to the `data` object, so the envelope's message is not
       // available here — the description is built from the returned fields.
-      const due = result?.dueAt ? safeDate(result.dueAt).toLocaleDateString() : null;
+      const due = result?.dueAt ? safeDate(result.dueAt).toLocaleDateString('en-IN') : null;
       toast({
         title: 'Issued',
         description: due
@@ -305,7 +305,7 @@ export default function LibrarianLibrary({ initialTab = 'catalog' }: { initialTa
     try {
       setActionCopyId(copy.id);
       const result: any = await postApi(`/library/books/${copy.id}/renew`, {});
-      const due = result?.dueAt ? safeDate(result.dueAt).toLocaleDateString() : null;
+      const due = result?.dueAt ? safeDate(result.dueAt).toLocaleDateString('en-IN') : null;
       toast({
         title: 'Renewed',
         description: due
@@ -553,7 +553,7 @@ export default function LibrarianLibrary({ initialTab = 'catalog' }: { initialTa
                           <TableCell>
                             {copy.loan ? `${copy.loan.studentName} (${copy.loan.rollNumber})` : '—'}
                           </TableCell>
-                          <TableCell>{copy.loan?.dueAt ? copy.loan.dueAt.toLocaleDateString() : '—'}</TableCell>
+                          <TableCell>{copy.loan?.dueAt ? copy.loan.dueAt.toLocaleDateString('en-IN') : '—'}</TableCell>
                           <TableCell className="text-right">
                             {copy.status === 'available' ? (
                               <Button
@@ -618,7 +618,7 @@ export default function LibrarianLibrary({ initialTab = 'catalog' }: { initialTa
                             <span className="block text-xs text-muted-foreground">{copy.loan?.rollNumber}</span>
                           </TableCell>
                           <TableCell>
-                            {copy.loan?.dueAt ? copy.loan.dueAt.toLocaleDateString() : '—'}
+                            {copy.loan?.dueAt ? copy.loan.dueAt.toLocaleDateString('en-IN') : '—'}
                             {copy.loan?.overdue ? (
                               <Badge variant="destructive" className="ml-2">Overdue</Badge>
                             ) : null}

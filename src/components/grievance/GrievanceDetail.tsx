@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Scale, FileText, Clock, User, CheckCircle2, AlertTriangle, MessageSquare, Download, ArrowLeft, Send } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { fetchApi, postApi, putApi } from '@/lib/apiService';
+import { downloadUpload, fetchApi, postApi, putApi } from '@/lib/apiService';
 import type { GrievanceCase } from '@/types/grievance';
 
 interface GrievanceDetailProps {
@@ -392,7 +392,8 @@ export default function GrievanceDetail({ caseId, onBack }: GrievanceDetailProps
                   {grievance.evidenceFiles.map((file, index) => (
                     <div key={index} className="flex items-center justify-between p-2 bg-muted rounded">
                       <span className="text-sm text-foreground truncate">{file}</span>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Download"
+                        onClick={() => downloadUpload(file, file.split('/').pop() || `evidence-${index + 1}`).catch(() => undefined)}>
                         <Download className="h-4 w-4" />
                       </Button>
                     </div>

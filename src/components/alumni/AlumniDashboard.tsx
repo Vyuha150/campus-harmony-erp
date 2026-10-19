@@ -7,8 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Users, Search, Calendar, Heart, Briefcase, Gift, BarChart3, MapPin, Plus, Send, Globe } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useEffect, useMemo, useState } from 'react';
-import { fetchApi } from '@/lib/apiService';
+import { fetchApi, postApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
+import { RecordDialog, showDate } from './RecordDialog';
 
 const COLORS = ['hsl(var(--primary))', '#10b981', '#f59e0b', '#ef4444'];
 
@@ -20,6 +21,36 @@ const formatDate = (value: unknown) => {
 
 export default function AlumniDashboard() {
   const { toast } = useToast();
+  const [syncing, setSyncing] = useState(false);
+  const [viewing, setViewing] = useState<any | null>(null);
+
+  // "Sync Alumni" only re-fetched the lists. It now does what it says: creates
+  // alumni profiles for students who have reached their final semester or
+  // completed the programme duration (POST /alumni/directory/sync-graduates).
+  const syncAlumni = async () => {
+    setSyncing(true);
+    try {
+      const result: any = await postApi('/alumni/directory/sync-graduates', {});
+      await loadData();
+      toast({
+        title: Number(result?.createdCount || 0) > 0 ? `${result.createdCount} new alumni added` : 'Directory already up to date',
+        description: `${Number(result?.eligibleCount || 0)} graduating student(s) found; ${Number(result?.skippedCount || 0)} already in the directory.`
+      });
+    } catch (error: any) {
+      toast({ title: 'Sync failed', description: error?.message || 'Please retry', variant: 'destructive' });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const refresh = async () => {
+    try {
+      await loadData();
+      toast({ title: 'Dashboard refreshed' });
+    } catch (error: any) {
+      toast({ title: 'Refresh failed', description: error?.message || 'Please retry', variant: 'destructive' });
+    }
+  };
   const [search, setSearch] = useState('');
   const [progressionMetrics, setProgressionMetrics] = useState<any>({ totalAlumni: 0, employedCount: 0, topEmployers: [] });
   const [alumniProfiles, setAlumniProfiles] = useState<any[]>([]);
@@ -84,8 +115,8 @@ export default function AlumniDashboard() {
             <p className="text-muted-foreground">Directory, events, mentorship, and progression tracking</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={loadData}><Send className="mr-2 h-4 w-4" />Refresh Data</Button>
-            <Button size="sm" onClick={loadData}><Plus className="mr-2 h-4 w-4" />Sync Alumni</Button>
+            <Button variant="outline" size="sm" onClick={refresh}><Send className="mr-2 h-4 w-4" />Refresh Data</Button>
+            <Button size="sm" onClick={syncAlumni} disabled={syncing}><Plus className="mr-2 h-4 w-4" />{syncing ? 'Syncing…' : 'Sync Alumni'}</Button>
           </div>
         </div>
 
@@ -121,7 +152,7 @@ export default function AlumniDashboard() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={a.currentCompany ? 'default' : 'secondary'}>{a.currentCompany ? 'active' : 'basic'}</Badge>
-                  <Button variant="outline" size="sm" onClick={loadData}>View</Button>
+                  <Button variant="outline" size="sm" onClick={() => setViewing(a)}>View</Button>
                 </div>
               </CardContent></Card>
             ))}
@@ -221,6 +252,12 @@ export default function AlumniDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+      <RecordDialog open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)} title={viewing?.name ?? 'Alumnus'}
+        rows={[
+          ['Email', viewing?.email], ['Programme', viewing?.program], ['Graduation year', viewing?.graduationYear],
+          ['Current company', viewing?.currentCompany], ['Current role', viewing?.currentRole],
+          ['LinkedIn', viewing?.linkedIn ? <a href={viewing.linkedIn} target="_blank" rel="noreferrer" className="text-primary underline">{viewing.linkedIn}</a> : null]
+        ]} />
     </DashboardLayout>
   );
 }

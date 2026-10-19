@@ -12,6 +12,7 @@ import { Heart, Plus, Users, UserCheck, Star, MessageSquare, Search, ArrowRightL
 import { useEffect, useMemo, useState } from 'react';
 import { fetchApi, postApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
+import { RecordDialog, showDate } from './RecordDialog';
 
 const formatDate = (value: unknown) => {
   if (!value) return '–';
@@ -21,6 +22,7 @@ const formatDate = (value: unknown) => {
 
 export default function AlumniMentorship() {
   const { toast } = useToast();
+  const [viewing, setViewing] = useState<any | null>(null);
   const [mentorshipPrograms, setMentorshipPrograms] = useState<any[]>([]);
   const [matches, setMatches] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
@@ -198,8 +200,9 @@ export default function AlumniMentorship() {
                     <p className="text-sm text-muted-foreground">Program: {me.programTitle || 'Mentorship Program'}</p>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm"><ArrowRightLeft className="mr-1 h-3 w-3" />Track</Button>
-                    <Button variant="outline" size="sm">View</Button>
+                    {/* Track and View had no handler at all. */}
+                    <Button size="sm" onClick={() => setViewing(me)}><ArrowRightLeft className="mr-1 h-3 w-3" />Track</Button>
+                    <Button variant="outline" size="sm" onClick={() => setViewing(me)}>View</Button>
                   </div>
                 </CardContent>
               </Card>
@@ -225,6 +228,14 @@ export default function AlumniMentorship() {
           </TabsContent>
         </Tabs>
       </div>
+      <RecordDialog open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)}
+        title={`${viewing?.menteeName || viewing?.mentee || 'Mentee'} ↔ ${viewing?.mentorName || viewing?.mentor || 'Mentor'}`}
+        description={viewing?.programTitle}
+        rows={[
+          ['Status', viewing?.status], ['Matched on', showDate(viewing?.matchedAt || viewing?.startDate)],
+          ['Sessions held', viewing?.sessionsCompleted ?? viewing?.sessions ?? null], ['Last session', showDate(viewing?.lastSession)],
+          ['Goals', Array.isArray(viewing?.goals) ? viewing.goals.join(', ') : viewing?.goals], ['Notes', viewing?.notes]
+        ]} />
     </DashboardLayout>
   );
 }

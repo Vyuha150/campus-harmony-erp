@@ -11,6 +11,7 @@ import { Send, Plus, Mail, Eye, BarChart3, Users, MessageSquare } from 'lucide-r
 import { useEffect, useMemo, useState } from 'react';
 import { fetchApi, postApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
+import { RecordDialog, showDate } from './RecordDialog';
 
 const formatDate = (value: unknown) => {
   if (!value) return '–';
@@ -20,6 +21,7 @@ const formatDate = (value: unknown) => {
 
 export default function AlumniCommunication() {
   const { toast } = useToast();
+  const [viewing, setViewing] = useState<any | null>(null);
   const [alumniCommunications, setAlumniCommunications] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -166,7 +168,7 @@ export default function AlumniCommunication() {
                       <td className="px-4 py-3 text-center text-sm text-foreground">{Number(c.openRate || 0)}%</td>
                       <td className="px-4 py-3 text-center text-sm text-foreground">{Number(c.clickRate || 0)}%</td>
                       <td className="px-4 py-3"><Badge variant={c.status === 'sent' ? 'default' : 'secondary'} className="capitalize">{c.status}</Badge></td>
-                      <td className="px-4 py-3"><Button variant="outline" size="sm" onClick={loadData}><Eye className="mr-1 h-3 w-3" />View</Button></td>
+                      <td className="px-4 py-3"><Button variant="outline" size="sm" onClick={() => setViewing(c)}><Eye className="mr-1 h-3 w-3" />View</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -175,6 +177,14 @@ export default function AlumniCommunication() {
           </CardContent>
         </Card>
       </div>
+      <RecordDialog open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)} title={viewing?.title ?? 'Campaign'}
+        rows={[
+          ['Type', viewing?.type], ['Status', viewing?.status], ['Audience', viewing?.targetAudience?.segment ?? null],
+          ['Scheduled', showDate(viewing?.scheduledDate)], ['Sent', showDate(viewing?.sentDate)],
+          ['Recipients', Number(viewing?.recipientCount || 0).toLocaleString('en-IN')],
+          ['Open / click rate', `${Number(viewing?.openRate || 0)}% / ${Number(viewing?.clickRate || 0)}%`],
+          ['Content', viewing?.content]
+        ]} />
     </DashboardLayout>
   );
 }

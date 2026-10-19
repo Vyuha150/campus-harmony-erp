@@ -6,6 +6,7 @@ import { Send, Download, FileText, MapPin } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useEffect, useState } from 'react';
 import { fetchApi, postApi } from '@/lib/apiService';
+import { downloadCsv } from '@/lib/download';
 import { useToast } from '@/hooks/use-toast';
 
 const COLORS = ['hsl(var(--primary))', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
@@ -18,6 +19,22 @@ const formatDate = (value: unknown) => {
 
 export default function AlumniProgression() {
   const { toast } = useToast();
+
+  // "Report" had no handler. It now downloads the survey's responses as CSV —
+  // one row per response, one column per answered question.
+  const downloadReport = (survey: any) => {
+    const responses: any[] = Array.isArray(survey.responses) ? survey.responses : [];
+    if (responses.length === 0) {
+      toast({ title: 'No responses yet', description: `"${survey.title}" has not received any responses to report.` });
+      return;
+    }
+    const keys = Array.from(new Set(responses.flatMap((r) => (r && typeof r === 'object' ? Object.keys(r) : []))));
+    downloadCsv(
+      `${String(survey.title || 'survey').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.csv`,
+      keys.length ? keys : ['response'],
+      responses.map((r) => (keys.length ? keys.map((k) => (typeof r?.[k] === 'object' ? JSON.stringify(r[k]) : r?.[k])) : [String(r)]))
+    );
+  };
   const [progressionMetrics, setProgressionMetrics] = useState<any>({
     totalAlumni: 0,
     employedCount: 0,
@@ -132,7 +149,7 @@ export default function AlumniProgression() {
                     </div>
                     <div className="flex items-center gap-3">
                       <Badge variant={s.status === 'active' ? 'default' : 'secondary'} className="capitalize">{s.status}</Badge>
-                      <Button variant="outline" size="sm"><FileText className="mr-1 h-3 w-3" />Report</Button>
+                      <Button variant="outline" size="sm" onClick={() => downloadReport(s)}><FileText className="mr-1 h-3 w-3" />Report</Button>
                     </div>
                   </CardContent>
                 </Card>

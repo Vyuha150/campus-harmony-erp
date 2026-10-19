@@ -1,3 +1,4 @@
+import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +22,7 @@ const formatDate = (value: unknown) => {
 };
 
 export default function PlacementCommunication() {
+  const [details, setDetails] = useState<Details | null>(null);
   const { toast } = useToast();
   const [recentMessages, setRecentMessages] = useState<any>([]);
   const [templates, setTemplates] = useState<any>([]);
@@ -239,7 +241,16 @@ export default function PlacementCommunication() {
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">{t.desc}</p>
                         <div className="mt-3 flex gap-2">
-                          <Button size="sm" variant="outline" onClick={() => toast({ title: t.name, description: t.desc })}>Preview</Button>
+                          <Button size="sm" variant="outline" onClick={() => setDetails({
+                            title: t.name,
+                            rows: [['Category', t.category || t.type], ['Subject', t.subject || t.name]],
+                            footer: (
+                              <div className="space-y-3">
+                                <p className="whitespace-pre-wrap rounded border bg-muted/40 p-3 text-sm">{t.body || t.content || t.desc}</p>
+                                <Button className="w-full" onClick={() => { setDetails(null); handleUseTemplate(t); }}>Use this template</Button>
+                              </div>
+                            )
+                          })}>Preview</Button>
                           <Button size="sm" onClick={() => handleUseTemplate(t)}>Use Template</Button>
                         </div>
                       </div>
@@ -251,6 +262,7 @@ export default function PlacementCommunication() {
           </TabsContent>
         </Tabs>
       </div>
+      <DetailsDialog details={details} onClose={() => setDetails(null)} />
     </DashboardLayout>
   );
 }

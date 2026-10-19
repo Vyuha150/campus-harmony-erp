@@ -13,6 +13,8 @@ import { deleteApi, fetchApi, postApi, promptForDeleteReason } from '@/lib/apiSe
 import { toast } from '@/hooks/use-toast';
 
 type FitnessRecord = {
+  studentName?: string | null;
+  rollNumber?: string | null;
   id: string;
   studentId: string;
   testDate: string;
@@ -56,7 +58,7 @@ export default function SportsHealth() {
 
   const addRecord = async () => {
     if (!form.studentId.trim()) {
-      toast({ title: 'Student ID is required', description: 'Please provide a valid student ID.', variant: 'destructive' });
+      toast({ title: 'Roll number is required', description: 'Enter the student’s roll number, e.g. CH2024CS001.', variant: 'destructive' });
       return;
     }
 
@@ -94,8 +96,8 @@ export default function SportsHealth() {
   const atRisk = records.filter((record) => String(record.overallGrade || '').toUpperCase() === 'F').length;
 
   const deleteRecord = async (record: FitnessRecord) => {
-    if (!window.confirm(`Delete fitness record for ${record.studentId}?`)) return;
-    const reason = promptForDeleteReason(`the fitness record for ${record.studentId}`);
+    if (!window.confirm(`Delete fitness record for ${record.studentName ?? record.rollNumber ?? 'this student'}?`)) return;
+    const reason = promptForDeleteReason(`the fitness record for ${record.studentName ?? record.rollNumber ?? 'this student'}`);
     if (!reason) return;
     try {
       await deleteApi(`/sports/health/${record.id}`, { reason });
@@ -123,7 +125,7 @@ export default function SportsHealth() {
               <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden">
                 <DialogHeader><DialogTitle>Log Fitness Record</DialogTitle></DialogHeader>
                 <div className="grid gap-4 py-2 max-h-[72vh] overflow-y-auto pr-1">
-                  <div><Label>Student ID</Label><Input value={form.studentId} onChange={(event) => setForm((prev) => ({ ...prev, studentId: event.target.value }))} /></div>
+                  <div><Label>Roll number</Label><Input placeholder="e.g. CH2024CS001" value={form.studentId} onChange={(event) => setForm((prev) => ({ ...prev, studentId: event.target.value }))} /></div>
                   <div>
                     <Label>Record Type</Label>
                     <Select value={form.testType} onValueChange={(value) => setForm((prev) => ({ ...prev, testType: value }))}>
@@ -173,7 +175,7 @@ export default function SportsHealth() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead><tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Student ID</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Student</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Type</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Date</th>
                   <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Grade</th>
@@ -183,7 +185,7 @@ export default function SportsHealth() {
                 <tbody>
                   {records.map((record) => (
                     <tr key={record.id} className="border-b last:border-0 hover:bg-muted/30">
-                      <td className="px-4 py-3 text-sm font-medium text-foreground">{record.studentId}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">{record.studentName ?? '—'}<span className="block text-xs font-normal text-muted-foreground">{record.rollNumber ?? ''}</span></td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{record.testType}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{new Date(record.testDate).toLocaleDateString('en-IN')}</td>
                       <td className="px-4 py-3"><Badge variant={String(record.overallGrade || '').toUpperCase() === 'F' ? 'destructive' : 'default'}>{record.overallGrade || '-'}</Badge></td>
