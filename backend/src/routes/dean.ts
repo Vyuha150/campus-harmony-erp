@@ -1,4 +1,6 @@
 import type { Request, Response } from 'express';
+import { budgetsByDepartment } from '../lib/departmentBudgets.js';
+import { publishedOutcomes, outcomeFor, combineOutcomes, passPercentage } from '../lib/courseOutcomes.js';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRoles } from '../middleware/auth.js';
@@ -6,7 +8,7 @@ import { sendError, NotFoundError } from '../lib/errors.js';
 import { getTenantContext } from '../lib/tenant.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import * as workflow from '../modules/workflow/workflow.service.js';
-import { openInstanceFor, projectOntoQueue } from '../modules/workflow/bridge.js';
+import { openInstanceFor, projectOntoQueue, ensureDefinition } from '../modules/workflow/bridge.js';
 import { RESULT_PUBLICATION, PURCHASE_REQUEST, CURRICULUM_PROPOSAL } from '../modules/workflow/builtins.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
@@ -32,6 +34,43 @@ import {
 } from '../modules/dean/dean.schemas.js';
 
 const router = Router();
+
+/** Writes on the Dean's screens: the Dean, or the Principal who uses the same screens. */
+const DEAN_WRITE = authorizeRoles('dean', 'principal', 'super_admin');
+
+/**
+ * The Dean oversees every department. List screens were limited to the Dean's
+ * own department (CSE), so the other five were invisible. `?departmentId=`
+ * narrows to one; omitted or "all" means the whole institution.
+ */
+async function departmentFilter(req: Request): Promise<{ departmentId?: string }> {
+  const raw = String(req.query.departmentId ?? '').trim();
+  if (!raw || raw === 'all') return {};
+  const ctx = getTenantContext(req);
+  const department = await prisma.department.findFirst({ where: { id: raw, institutionId: ctx.institutionId } });
+  if (!department) throw new NotFoundError('Department');
+  return { departmentId: department.id };
+}
+
+/** A department of this institution named in a request body, or the caller's own. */
+async function targetDepartment(req: Request, departmentId?: string) {
+  if (departmentId) {
+    const ctx = getTenantContext(req);
+    const department = await prisma.department.findFirst({ where: { id: departmentId, institutionId: ctx.institutionId } });
+    if (!department) throw new NotFoundError('Department');
+    return department;
+  }
+  return getDeanDepartment((req as any).user.id);
+}
+
+const shortDay = (d: string) => d.slice(0, 3);
+/** "Mon 09:00, Wed 10:00 · 5/week" from a course's weekly slots. */
+function scheduleText(schedules: Array<{ day: string; startTime: string; room: string }>): string {
+  if (!schedules.length) return 'Not on the timetable';
+  const order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const sorted = [...schedules].sort((a, b) => order.indexOf(a.day) - order.indexOf(b.day) || a.startTime.localeCompare(b.startTime));
+  return `${sorted.slice(0, 3).map((x) => `${shortDay(x.day)} ${x.startTime}`).join(', ')}${sorted.length > 3 ? ' …' : ''} · ${sorted.length}/week`;
+}
 
 /**
  * Resolve the dean's department.
@@ -78,10 +117,16 @@ async function resolveStudentProfileIdsByEmails(departmentId: string, emails: st
 // ─── Dashboard ───
 router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
   try {
+    const ctx = getTenantContext(req);
     const totalStudents = await prisma.user.count({ where: { role: 'student' } });
     const totalFaculty = await prisma.user.count({ where: { role: 'faculty' } });
-    const pendingApprovals = await prisma.approvalItem.count({ where: { status: 'pending' } });
+    // What is actually waiting on the Dean (leave, waivers, timetable changes,
+    // curriculum, purchases …). Was a count of the legacy approval queue across
+    // every type and department.
+    const pendingApprovals = (await workflow.inbox(ctx, { page: 1, pageSize: 1 })).meta.total;
     const departments = await prisma.department.findMany({ include: { users: true, courses: true } });
+    const academicYear = await prisma.academicYear.findFirst({ where: { isCurrent: true } });
+    const published = await publishedOutcomes(departments.flatMap((d: any) => d.courses.map((c: any) => c.id)));
 
     res.json({
       success: true,
@@ -92,11 +137,15 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
           { label: "Pending Approvals", value: pendingApprovals.toString(), icon: "FileText", color: "text-warning" },
           { label: "Departments", value: departments.length.toString(), icon: "Building2", color: "text-success" }
         ],
+        academicYear: academicYear?.year ?? null,
+        pendingApprovals,
         departments: departments.map((d: any) => ({
           id: d.id, name: d.name,
           totalFaculty: d.users.filter((u: any) => u.role === 'faculty').length,
           totalStudents: d.users.filter((u: any) => u.role === 'student').length,
-          totalCourses: d.courses.length
+          totalCourses: d.courses.length,
+          // Latest published results; null when nothing is graded yet.
+          passPercentage: combineOutcomes(d.courses.map((c: any) => outcomeFor(c, published))).passPercentage
         }))
       }
     });
@@ -133,9 +182,11 @@ router.get('/curriculum-proposals', authenticate, async (req: Request, res: Resp
     // through the (tenant-owned, auto-scoped) Department relation instead.
     const proposals = await prisma.curriculumProposal.findMany({
       where: { department: { institutionId: context.institutionId } },
+      include: { department: { select: { name: true } } },
       orderBy: { submittedAt: 'desc' }
     });
-    res.json({ success: true, data: proposals });
+    // The screen showed a department badge from a field that did not exist.
+    res.json({ success: true, data: proposals.map((p: any) => ({ ...p, department: undefined, departmentName: p.department?.name ?? null })) });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -148,7 +199,7 @@ router.get('/curriculum-proposals', authenticate, async (req: Request, res: Resp
  * the body and no validation at all — any string, including one that skipped the
  * process entirely.
  */
-router.put('/curriculum-proposals/:id', authenticate, validate({ params: z.object({ id: entityId }), body: deanWorkflowDecisionSchema }), asyncHandler(async (req: Request, res: Response) => {
+router.put('/curriculum-proposals/:id', authenticate, DEAN_WRITE, validate({ params: z.object({ id: entityId }), body: deanWorkflowDecisionSchema }), asyncHandler(async (req: Request, res: Response) => {
   const ctx = getTenantContext(req);
   const id = String(req.params.id);
   const decision = String(req.body?.status || '').toLowerCase();
@@ -161,7 +212,22 @@ router.put('/curriculum-proposals/:id', authenticate, validate({ params: z.objec
     return;
   }
 
-  const instance = await openInstanceFor(ctx, CURRICULUM_PROPOSAL.entityType, id);
+  let instance = await openInstanceFor(ctx, CURRICULUM_PROPOSAL.entityType, id);
+  if (!instance) {
+    // A proposal recorded before approvals went through the engine (seeded or
+    // imported) is still pending with no instance; start its approval now.
+    const legacy = await prisma.curriculumProposal.findFirst({ where: { id, status: 'pending_dean' }, include: { department: true } });
+    if (legacy) {
+      await ensureDefinition(ctx, CURRICULUM_PROPOSAL);
+      await workflow.startWorkflow(ctx, {
+        code: CURRICULUM_PROPOSAL.code,
+        entityType: CURRICULUM_PROPOSAL.entityType,
+        entityId: legacy.id,
+        context: { title: legacy.title, type: legacy.type, department: legacy.department?.name ?? '' }
+      });
+      instance = await openInstanceFor(ctx, CURRICULUM_PROPOSAL.entityType, id);
+    }
+  }
   if (!instance) {
     res.status(409).json({
       success: false,
@@ -176,6 +242,7 @@ router.put('/curriculum-proposals/:id', authenticate, validate({ params: z.objec
   const note = typeof req.body?.note === 'string' ? req.body.note.slice(0, 500) : undefined;
   const result = await workflow.act(ctx, instance.id, decision === 'approved' ? 'approved' : 'rejected', note);
 
+  // The proposal leaves the Dean's queue either way; record the outcome.
   await prisma.curriculumProposal.updateMany({
     where: { id },
     data: { status: decision === 'approved' ? 'approved' : 'rejected' }
@@ -230,18 +297,28 @@ router.get('/student-affairs', authenticate, async (req: Request, res: Response)
       where: { department: { institutionId: context.institutionId } },
       orderBy: { reportedAt: 'desc' }
     });
-    const scholarships = await prisma.feeRecord.count({ where: { type: 'other' as any, status: 'paid' } });
-    res.json({ success: true, data: { disciplinaryCases: cases, scholarshipCount: scholarships } });
+    // Was a count of PAID fees of type "other" — nothing to do with scholarships.
+    const waivers = await prisma.feeWaiverRequest.findMany({ where: { status: { in: ['approved', 'pending'] } }, select: { status: true, sanctionedAmount: true } });
+    const sanctioned = waivers.filter((w: any) => w.status === 'approved');
+    res.json({
+      success: true,
+      data: {
+        disciplinaryCases: cases,
+        scholarshipCount: sanctioned.length,
+        scholarshipAmount: sanctioned.reduce((sum: number, w: any) => sum + (w.sanctionedAmount ?? 0), 0),
+        scholarshipPending: waivers.length - sanctioned.length
+      }
+    });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.put('/disciplinary/:id', authenticate, validate({ params: z.object({ id: entityId }), body: disciplinaryDecisionSchema }), async (req: Request, res: Response) => {
+router.put('/disciplinary/:id', authenticate, DEAN_WRITE, validate({ params: z.object({ id: entityId }), body: disciplinaryDecisionSchema }), async (req: Request, res: Response) => {
   try {
     const context = getTenantContext(req);
     const id = String(req.params.id);
-    const { status, severity } = req.body;
+    const { status, severity, actionTaken, remarks } = req.body;
     // `update({ where: { id } })` cannot carry the institution check — the
     // tenant extension constrains a `where` clause but not a unique-key
     // update — so `updateMany` + a department-derived institutionId filter,
@@ -249,7 +326,12 @@ router.put('/disciplinary/:id', authenticate, validate({ params: z.object({ id: 
     // no institutionId column of its own (see curriculumProposal above).
     const changed = await prisma.disciplinaryCase.updateMany({
       where: { id, department: { institutionId: context.institutionId } },
-      data: { status, ...(severity && { severity }) }
+      data: {
+        ...(status ? { status } : {}),
+        ...(severity ? { severity } : {}),
+        ...(actionTaken ? { actionTaken, decidedBy: context.userId, decidedAt: new Date() } : {}),
+        ...(remarks !== undefined ? { decisionRemarks: remarks || null } : {})
+      }
     });
     if (changed.count === 0) {
       res.status(404).json({ success: false, message: 'Disciplinary case not found' });
@@ -266,9 +348,15 @@ router.put('/disciplinary/:id', authenticate, validate({ params: z.object({ id: 
 router.get('/results', authenticate, async (req: Request, res: Response) => {
   try {
     const [departments, approvals] = await Promise.all([
-      prisma.department.findMany({ include: { courses: { include: { enrollments: true } } } }),
+      prisma.department.findMany({
+        include: {
+          courses: { include: { enrollments: true } },
+          users: { where: { role: 'student' }, select: { id: true } }
+        }
+      }),
       prisma.approvalItem.findMany({ where: { type: 'result_publication' } })
     ]);
+    const published = await publishedOutcomes(departments.flatMap((d: any) => d.courses.map((c: any) => c.id)));
 
     const approvalByDepartmentId = new Map<string, any>();
     for (const approval of approvals) {
@@ -280,17 +368,10 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: departments.map((d: any) => {
-        const allEnrollments = d.courses.flatMap((c: any) => c.enrollments);
-        const totalEnrollments = allEnrollments.length;
-        // GRADED, not all enrollments. `failed: total - passed` previously
-        // counted every UNGRADED student as a failure alongside the real ones —
-        // a department with five enrolled students and zero grades entered
-        // reported "0% pass rate," which reads as "everyone failed" rather than
-        // the true fact, "nobody has been graded yet." Mirrors the identical
-        // fix already applied to coe.service.ts's own department-results
-        // computation, which this screen's numbers should agree with.
-        const graded = allEnrollments.filter((e: any) => e.grade != null && e.grade !== '');
-        const passed = graded.filter((e: any) => !['F', 'I'].includes(String(e.grade))).length;
+        // Published results where they exist, legacy grades otherwise — the same
+        // source as the HOD and CoE screens (lib/courseOutcomes.ts), so the three
+        // agree. Nobody assessed yet is `null`, never "0% pass".
+        const outcome = combineOutcomes(d.courses.map((c: any) => outcomeFor(c, published)));
 
         const approval = approvalByDepartmentId.get(String(d.id));
         let status = 'draft';
@@ -300,10 +381,13 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
         return {
           departmentId: d.id,
           department: d.name,
-          totalStudents: totalEnrollments,
-          passed,
-          failed: graded.length - passed,
-          passPercentage: graded.length > 0 ? Math.round((passed / graded.length) * 100) : null,
+          // Students in the department — not course enrolments, which count
+          // each student once per subject.
+          totalStudents: d.users.length,
+          resultsRecorded: outcome.assessed,
+          passed: outcome.passed,
+          failed: outcome.failed,
+          passPercentage: outcome.passPercentage,
           // REMOVED: `avgGPA: 7.2`, a literal presented as this department's
           // average. It never varied by department, semester or cohort. The
           // figure belongs to SemesterResult and is computed there; asserting it
@@ -335,7 +419,7 @@ router.get('/results', authenticate, async (req: Request, res: Response) => {
  * The HTTP contract is unchanged apart from the added failure case — publishing
  * with nothing submitted is now a refusal rather than a fabricated record.
  */
-router.put('/results/:id/approve', authenticate, validate({ body: resultApprovalSchema }), async (req: Request, res: Response) => {
+router.put('/results/:id/approve', authenticate, DEAN_WRITE, validate({ body: resultApprovalSchema }), async (req: Request, res: Response) => {
   try {
     const ctx = getTenantContext(req);
     const identifier = decodeURIComponent(String(req.params.id));
@@ -411,18 +495,13 @@ router.put('/results/:id/approve', authenticate, validate({ body: resultApproval
 router.get('/finance', authenticate, async (req: Request, res: Response) => {
   try {
     const context = getTenantContext(req);
-    // DepartmentBudget carries no institutionId of its own — reach it through
-    // the (tenant-owned, auto-scoped) Department relation instead. Without
-    // this every dean saw every institution's department budgets.
-    const budgets = await prisma.departmentBudget.findMany({
-      where: { department: { institutionId: context.institutionId } },
-      include: { department: true }
-    });
+    // Finance's budget lines, summed per department (lib/departmentBudgets.ts).
+    const budgets = await budgetsByDepartment(context.institutionId);
     res.json({
       success: true,
-      data: budgets.map((b: any) => ({
-        department: b.department.name, allocated: b.allocated, spent: b.spent,
-        remaining: b.allocated - b.spent, categories: []
+      data: budgets.map((b) => ({
+        department: b.department, allocated: b.allocated, spent: b.spent, remaining: b.remaining,
+        categories: b.categories.map((c) => ({ name: c.name, amount: c.allocated, spent: c.spent }))
       }))
     });
   } catch (error: any) {
@@ -434,7 +513,19 @@ router.get('/finance', authenticate, async (req: Request, res: Response) => {
 router.get('/accreditation', authenticate, async (req: Request, res: Response) => {
   try {
     const metrics = await prisma.qualityMetric.findMany();
-    res.json({ success: true, data: metrics });
+    // Stored values are what IQAC last entered. The ratio can be computed, so
+    // it is — the stored "2.6:1" disagreed with the institution's own counts.
+    const [students, faculty] = await Promise.all([
+      prisma.user.count({ where: { role: 'student' } }),
+      prisma.user.count({ where: { role: { in: ['faculty', 'hod'] } } })
+    ]);
+    const ratio = faculty > 0 ? `${(students / faculty).toFixed(1)}:1` : null;
+    res.json({
+      success: true,
+      data: metrics.map((m: any) => (/student.?teacher ratio/i.test(m.metric) && ratio
+        ? { ...m, currentValue: ratio, status: students / faculty <= 20 ? 'on_track' : 'at_risk', computed: true }
+        : m))
+    });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -453,22 +544,18 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
 // ─── Dean Class Management ───
 router.get('/class-management/options', authenticate, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
-
-    const [courses, faculty, rooms] = await Promise.all([
-      prisma.course.findMany({ where: { departmentId: department.id }, orderBy: [{ semester: 'asc' }, { code: 'asc' }] }),
-      prisma.facultyProfile.findMany({ where: { user: { departmentId: department.id } }, include: { user: true } }),
-      prisma.facility.findMany({ orderBy: [{ type: 'asc' }, { name: 'asc' }] })
+    const filter = await departmentFilter(req);
+    const [departments, courses, faculty] = await Promise.all([
+      prisma.department.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, code: true } }),
+      prisma.course.findMany({ where: filter, orderBy: [{ semester: 'asc' }, { code: 'asc' }] }),
+      prisma.facultyProfile.findMany({ where: filter.departmentId ? { user: { departmentId: filter.departmentId } } : {}, include: { user: true } })
     ]);
-
     res.json({
       success: true,
       data: {
-        courses: courses.map((course: any) => ({ id: course.id, code: course.code, name: course.name, semester: course.semester, credits: course.credits })),
-        faculty: faculty.map((item: any) => ({ id: item.id, name: item.user?.name || 'Faculty', email: item.user?.email || '' })),
-        rooms: rooms.map((room: any) => ({ id: room.id, name: room.name, type: room.type, capacity: room.capacity, status: room.status }))
+        departments,
+        courses: courses.map((course: any) => ({ id: course.id, code: course.code, name: course.name, semester: course.semester, credits: course.credits, departmentId: course.departmentId })),
+        faculty: faculty.map((item: any) => ({ id: item.id, name: item.user?.name || 'Faculty', email: item.user?.email || '', departmentId: item.user?.departmentId ?? null }))
       }
     });
   } catch (error: any) {
@@ -476,308 +563,141 @@ router.get('/class-management/options', authenticate, async (req: Request, res: 
   }
 });
 
+function classRow(item: any) {
+  return {
+    id: item.id,
+    courseId: item.courseId,
+    courseCode: item.course.code,
+    courseName: item.course.name,
+    credits: item.course.credits,
+    semester: item.course.semester,
+    departmentId: item.course.departmentId,
+    department: item.course.department?.name ?? null,
+    section: item.section,
+    facultyId: item.facultyId,
+    assignedFaculty: item.faculty?.user?.name || 'Unassigned',
+    students: item.students.length,
+    studentEmails: item.students
+      .map((enrollment: any) => enrollment.student?.user?.email)
+      .filter((email: string | undefined): email is string => Boolean(email)),
+    // From the real timetable (CourseSchedule) — the one students and faculty see.
+    schedule: scheduleText(item.course.schedules ?? [])
+  };
+}
+
+const classInclude = {
+  course: { include: { schedules: true, department: true } },
+  faculty: { include: { user: true } },
+  students: { include: { student: { include: { user: true } } } }
+} as const;
+
 router.get('/class-management', authenticate, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
-
+    const filter = await departmentFilter(req);
     const classes = await prisma.courseClass.findMany({
-      where: { course: { departmentId: department.id } },
-      include: {
-        course: true,
-        faculty: { include: { user: true } },
-        students: { include: { student: { include: { user: true } } } }
-      },
+      where: { course: filter },
+      include: classInclude,
       orderBy: { course: { semester: 'asc' } }
     });
-
-    const slots = await prisma.timetableSlot.findMany({ where: { departmentId: department.id } });
-    const slotByClassKey = new Map<string, any>();
-    for (const slot of slots) {
-      const key = `${slot.courseCode}::${String(slot.section).toUpperCase()}`;
-      if (!slotByClassKey.has(key)) slotByClassKey.set(key, slot);
-    }
-
-    res.json({
-      success: true,
-      data: classes.map((item: any) => ({
-        ...(() => {
-          const slot = slotByClassKey.get(`${item.course.code}::${String(item.section).toUpperCase()}`);
-          return {
-            day: slot?.day || null,
-            startTime: slot?.startTime || null,
-            endTime: slot?.endTime || null,
-            room: slot?.room || null,
-            schedule: slot ? `${slot.day} ${slot.startTime}-${slot.endTime} (${slot.room})` : 'TBD',
-            type: slot?.type || 'theory'
-          };
-        })(),
-        id: item.id,
-        courseId: item.courseId,
-        courseCode: item.course.code,
-        courseName: item.course.name,
-        credits: item.course.credits,
-        semester: item.course.semester,
-        section: item.section,
-        facultyId: item.facultyId,
-        assignedFaculty: item.faculty?.user?.name || 'Unassigned',
-        students: item.students.length,
-        studentEmails: item.students
-          .map((enrollment: any) => enrollment.student?.user?.email)
-          .filter((email: string | undefined): email is string => Boolean(email))
-      }))
-    });
+    res.json({ success: true, data: classes.map(classRow) });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.post('/class-management', authenticate, authorizeRoles('dean', 'hod'), validate({ body: classManagementCreateSchema }), async (req: Request, res: Response) => {
+/**
+ * Create a class (a section of a course with its teacher and students).
+ *
+ * Its timetable is set in Workload & Timetable (HOD raises, Dean approves).
+ * This handler used to write the HOD grid's copy of the timetable directly, so
+ * the students' and teachers' timetables never saw it and no clash check ran.
+ */
+router.post('/class-management', authenticate, DEAN_WRITE, validate({ body: classManagementCreateSchema }), async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
-
-    const { courseId, semester, facultyId, section, studentEmails, type, roomId, day, startTime, endTime } = req.body;
-    if (!courseId || !facultyId || !section || !roomId || !day || !startTime || !endTime) {
-      res.status(400).json({ success: false, message: 'courseId, facultyId, section, roomId, day, startTime and endTime are required' });
-      return;
-    }
-
-    const course = await prisma.course.findFirst({ where: { id: String(courseId), departmentId: department.id } });
+    const { courseId, semester, facultyId, section, studentEmails } = req.body;
+    const course = await prisma.course.findFirst({ where: { id: String(courseId) } });
     if (!course) {
-      res.status(404).json({ success: false, message: 'Course not found in selected department' });
+      res.status(404).json({ success: false, message: 'Course not found' });
       return;
     }
-
     const semesterNum = Number(semester);
     if (Number.isFinite(semesterNum) && semesterNum !== course.semester) {
       res.status(400).json({ success: false, message: 'Selected semester does not match the course semester' });
       return;
     }
-
-    const faculty = await prisma.facultyProfile.findUnique({ where: { id: String(facultyId) }, include: { user: true } });
-    if (!faculty || faculty.user?.departmentId !== department.id) {
-      res.status(400).json({ success: false, message: 'Selected faculty does not belong to the same department' });
+    const faculty = await prisma.facultyProfile.findFirst({ where: { id: String(facultyId) }, include: { user: true } });
+    if (!faculty || faculty.user?.departmentId !== course.departmentId) {
+      res.status(400).json({ success: false, message: 'The teacher must belong to the department that offers the course' });
       return;
     }
-
-    const room = await prisma.facility.findUnique({ where: { id: String(roomId) } });
-    if (!room) {
-      res.status(404).json({ success: false, message: 'Selected room not found' });
-      return;
-    }
-
-    const conflict = await prisma.timetableSlot.findFirst({
-      where: {
-        departmentId: department.id,
-        day: String(day),
-        startTime: String(startTime),
-        OR: [
-          { room: room.name },
-          { faculty: faculty.user?.name || '' }
-        ]
-      }
-    });
-    if (conflict) {
-      res.status(400).json({ success: false, message: 'Timetable conflict detected for room/faculty at selected slot' });
+    const sectionCode = String(section).toUpperCase();
+    const duplicate = await prisma.courseClass.findFirst({ where: { courseId: course.id, section: sectionCode } });
+    if (duplicate) {
+      res.status(409).json({ success: false, message: `${course.code} already has a section ${sectionCode}` });
       return;
     }
 
     const createdClass = await prisma.courseClass.create({
-      data: {
-        courseId: course.id,
-        facultyId: String(facultyId),
-        section: String(section).toUpperCase(),
-        name: `${course.code}-${String(section).toUpperCase()}`
-      }
+      data: { courseId: course.id, facultyId: faculty.id, section: sectionCode, name: `${course.code}-${sectionCode}` }
     });
+    // A course with no teacher takes this one, so attendance has an owner.
+    if (!course.facultyId) await prisma.course.updateMany({ where: { id: course.id }, data: { facultyId: faculty.id } });
 
-    const emails = String(studentEmails || '')
-      .split(/[\n,;]/)
-      .map((entry) => entry.trim().toLowerCase())
-      .filter(Boolean);
-    const studentProfileIds = await resolveStudentProfileIdsByEmails(department.id, emails);
-
+    const emails = String(studentEmails || '').split(/[\n,;]/).map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+    const studentProfileIds = await resolveStudentProfileIdsByEmails(course.departmentId, emails);
     if (studentProfileIds.length > 0) {
-      await prisma.classEnrollment.createMany({
-        data: studentProfileIds.map((studentProfileId: string) => ({ classId: createdClass.id, studentProfileId })),
-        skipDuplicates: true
-      });
+      await prisma.classEnrollment.createMany({ data: studentProfileIds.map((studentProfileId: string) => ({ classId: createdClass.id, studentProfileId })) });
     }
-
-    await prisma.timetableSlot.create({
-      data: {
-        day: String(day),
-        startTime: String(startTime),
-        endTime: String(endTime),
-        courseCode: course.code,
-        courseName: course.name,
-        faculty: faculty.user?.name || 'Unassigned',
-        room: room.name,
-        section: String(section).toUpperCase(),
-        type: String(type || 'theory'),
-        departmentId: department.id
-      }
-    });
-
-    const enrollments = await prisma.classEnrollment.findMany({
-      where: { classId: createdClass.id },
-      include: { student: { include: { user: true } } }
-    });
-    res.json({
-      success: true,
-      data: {
-        id: createdClass.id,
-        courseId: course.id,
-        courseCode: course.code,
-        courseName: course.name,
-        credits: course.credits,
-        semester: course.semester,
-        section: createdClass.section,
-        facultyId: createdClass.facultyId,
-        assignedFaculty: faculty.user?.name || 'Assigned',
-        day: String(day),
-        startTime: String(startTime),
-        endTime: String(endTime),
-        room: room.name,
-        schedule: `${String(day)} ${String(startTime)}-${String(endTime)} (${room.name})`,
-        students: enrollments.length,
-        studentEmails: enrollments
-          .map((enrollment: any) => enrollment.student?.user?.email)
-          .filter((email: string | undefined): email is string => Boolean(email)),
-        type: type || 'theory'
-      }
-    });
+    const created = await prisma.courseClass.findFirst({ where: { id: createdClass.id }, include: classInclude });
+    res.json({ success: true, data: classRow(created), ...(emails.length !== studentProfileIds.length ? { warning: `${emails.length - studentProfileIds.length} email(s) did not match a student of this department` } : {}) });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.put('/class-management/:id', authenticate, authorizeRoles('dean', 'hod'), validate({ params: z.object({ id: entityId }), body: classManagementUpdateSchema }), async (req: Request, res: Response) => {
+router.put('/class-management/:id', authenticate, DEAN_WRITE, validate({ params: z.object({ id: entityId }), body: classManagementUpdateSchema }), async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
-
     const classId = String(req.params.id);
-    const existing = await prisma.courseClass.findFirst({
-      where: { id: classId, course: { departmentId: department.id } },
-      include: { course: true }
-    });
-
+    const existing = await prisma.courseClass.findFirst({ where: { id: classId }, include: { course: true } });
     if (!existing) {
       res.status(404).json({ success: false, message: 'Class not found' });
       return;
     }
+    const { courseCode, courseName, credits, semester, facultyId, section, studentEmails } = req.body;
 
-    const { courseCode, courseName, credits, semester, facultyId, section, studentEmails, type, roomId, day, startTime, endTime } = req.body;
-
-    const updatedCourse = await prisma.course.update({
+    if (facultyId) {
+      const faculty = await prisma.facultyProfile.findFirst({ where: { id: String(facultyId) }, include: { user: true } });
+      if (!faculty || faculty.user?.departmentId !== existing.course.departmentId) {
+        res.status(400).json({ success: false, message: 'The teacher must belong to the department that offers the course' });
+        return;
+      }
+    }
+    await prisma.course.updateMany({
       where: { id: existing.courseId },
       data: {
-        ...(courseCode ? { code: String(courseCode) } : {}),
+        ...(courseCode ? { code: String(courseCode).toUpperCase() } : {}),
         ...(courseName ? { name: String(courseName) } : {}),
         ...(credits != null ? { credits: Number(credits) } : {}),
         ...(semester != null ? { semester: Number(semester) } : {})
       }
     });
-
-    const updatedClass = await prisma.courseClass.update({
+    await prisma.courseClass.updateMany({
       where: { id: classId },
       data: {
         ...(facultyId ? { facultyId: String(facultyId) } : {}),
-        ...(section ? { section: String(section).toUpperCase() } : {}),
-        ...(type ? { name: `${updatedCourse.code}-${String(section || existing.section).toUpperCase()}-${String(type)}` } : {})
-      },
-      include: { faculty: { include: { user: true } } }
-    });
-
-    const room = roomId ? await prisma.facility.findUnique({ where: { id: String(roomId) } }) : null;
-    const slotKeyCourseCode = updatedCourse.code;
-    const slotKeySection = String(updatedClass.section).toUpperCase();
-    const existingSlot = await prisma.timetableSlot.findFirst({
-      where: {
-        departmentId: department.id,
-        courseCode: slotKeyCourseCode,
-        section: slotKeySection
-      },
-      orderBy: { startTime: 'asc' }
-    });
-
-    const chosenDay = String(day || existingSlot?.day || 'Monday');
-    const chosenStart = String(startTime || existingSlot?.startTime || '09:00');
-    const chosenEnd = String(endTime || existingSlot?.endTime || '10:00');
-    const chosenRoom = String(room?.name || existingSlot?.room || 'TBD');
-    const chosenFacultyName = updatedClass.faculty?.user?.name || existingSlot?.faculty || 'Unassigned';
-
-    await prisma.timetableSlot.deleteMany({
-      where: {
-        departmentId: department.id,
-        courseCode: slotKeyCourseCode,
-        section: slotKeySection
+        ...(section ? { section: String(section).toUpperCase(), name: `${courseCode || existing.course.code}-${String(section).toUpperCase()}` } : {})
       }
     });
-    await prisma.timetableSlot.create({
-      data: {
-        day: chosenDay,
-        startTime: chosenStart,
-        endTime: chosenEnd,
-        courseCode: slotKeyCourseCode,
-        courseName: updatedCourse.name,
-        faculty: chosenFacultyName,
-        room: chosenRoom,
-        section: slotKeySection,
-        type: String(type || existingSlot?.type || 'theory'),
-        departmentId: department.id
-      }
-    });
-
     if (studentEmails !== undefined) {
-      const emails = String(studentEmails || '')
-        .split(/[\n,;]/)
-        .map((entry) => entry.trim().toLowerCase())
-        .filter(Boolean);
-
-      const studentProfileIds = await resolveStudentProfileIdsByEmails(department.id, emails);
+      const emails = String(studentEmails || '').split(/[\n,;]/).map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+      const studentProfileIds = await resolveStudentProfileIdsByEmails(existing.course.departmentId, emails);
       await prisma.classEnrollment.deleteMany({ where: { classId } });
       if (studentProfileIds.length > 0) {
-        await prisma.classEnrollment.createMany({
-          data: studentProfileIds.map((studentProfileId: string) => ({ classId, studentProfileId })),
-          skipDuplicates: true
-        });
+        await prisma.classEnrollment.createMany({ data: studentProfileIds.map((studentProfileId: string) => ({ classId, studentProfileId })) });
       }
     }
-
-    const enrollments = await prisma.classEnrollment.findMany({
-      where: { classId },
-      include: { student: { include: { user: true } } }
-    });
-    res.json({
-      success: true,
-      data: {
-        id: classId,
-        courseId: updatedCourse.id,
-        courseCode: updatedCourse.code,
-        courseName: updatedCourse.name,
-        credits: updatedCourse.credits,
-        semester: updatedCourse.semester,
-        section: updatedClass.section,
-        facultyId: updatedClass.facultyId,
-        assignedFaculty: updatedClass.faculty?.user?.name || 'Assigned',
-        day: chosenDay,
-        startTime: chosenStart,
-        endTime: chosenEnd,
-        room: chosenRoom,
-        schedule: `${chosenDay} ${chosenStart}-${chosenEnd} (${chosenRoom})`,
-        students: enrollments.length,
-        studentEmails: enrollments
-          .map((enrollment: any) => enrollment.student?.user?.email)
-          .filter((email: string | undefined): email is string => Boolean(email)),
-        type: type || 'theory'
-      }
-    });
+    const updated = await prisma.courseClass.findFirst({ where: { id: classId }, include: classInclude });
+    res.json({ success: true, data: classRow(updated) });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -790,6 +710,7 @@ router.put('/class-management/:id', authenticate, authorizeRoles('dean', 'hod'),
 router.delete(
   '/class-management/:id',
   authenticate,
+  DEAN_WRITE,
   validate({
     params: z.object({ id: entityId }),
     body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
@@ -811,7 +732,7 @@ router.delete(
   })
 );
 
-router.post('/events', authenticate, validate({ body: eventCreateSchema }), async (req: Request, res: Response) => {
+router.post('/events', authenticate, DEAN_WRITE, validate({ body: eventCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { title, type, date, departments, coordinator, budget } = req.body;
     // institutionId is required on the model since 0038 but injected by the
@@ -826,7 +747,7 @@ router.post('/events', authenticate, validate({ body: eventCreateSchema }), asyn
   }
 });
 
-router.put('/events/:id', authenticate, validate({ params: z.object({ id: entityId }), body: eventUpdateSchema }), async (req: Request, res: Response) => {
+router.put('/events/:id', authenticate, DEAN_WRITE, validate({ params: z.object({ id: entityId }), body: eventUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const updateData: any = {};
@@ -841,8 +762,12 @@ router.put('/events/:id', authenticate, validate({ params: z.object({ id: entity
     if (participants !== undefined) updateData.participants = Number(participants) || 0;
     if (status !== undefined) updateData.status = String(status);
 
-    const event = await prisma.interDeptEvent.update({ where: { id }, data: updateData });
-    res.json({ success: true, data: event });
+    const changed = await prisma.interDeptEvent.updateMany({ where: { id }, data: updateData });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Event not found' });
+      return;
+    }
+    res.json({ success: true, data: await prisma.interDeptEvent.findFirst({ where: { id } }) });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -857,7 +782,7 @@ router.get('/meetings', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/meetings', authenticate, validate({ body: meetingCreateSchema }), async (req: Request, res: Response) => {
+router.post('/meetings', authenticate, DEAN_WRITE, validate({ body: meetingCreateSchema }), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { title, meetingType, date, time, venue, status, agendaItems, attendees, minutes } = req.body;
@@ -889,7 +814,7 @@ router.post('/meetings', authenticate, validate({ body: meetingCreateSchema }), 
   }
 });
 
-router.put('/meetings/:id', authenticate, validate({ params: z.object({ id: entityId }), body: meetingUpdateSchema }), async (req: Request, res: Response) => {
+router.put('/meetings/:id', authenticate, DEAN_WRITE, validate({ params: z.object({ id: entityId }), body: meetingUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const { title, meetingType, date, time, venue, status, agendaItems, attendees, minutes } = req.body;
@@ -905,8 +830,12 @@ router.put('/meetings/:id', authenticate, validate({ params: z.object({ id: enti
     if (attendees !== undefined) updateData.attendees = attendees;
     if (minutes !== undefined) updateData.minutes = minutes ? String(minutes) : null;
 
-    const meeting = await prisma.meeting.update({ where: { id }, data: updateData });
-    res.json({ success: true, data: meeting });
+    const changed = await prisma.meeting.updateMany({ where: { id }, data: updateData });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Meeting not found' });
+      return;
+    }
+    res.json({ success: true, data: await prisma.meeting.findFirst({ where: { id } }) });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -976,7 +905,7 @@ router.get('/mentoring/options', authenticate, async (_req: Request, res: Respon
   }
 });
 
-router.post('/mentoring/assignments', authenticate, validate({ body: mentoringAssignmentCreateSchema }), async (req: Request, res: Response) => {
+router.post('/mentoring/assignments', authenticate, DEAN_WRITE, validate({ body: mentoringAssignmentCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { studentId, facultyId } = req.body;
 
@@ -1088,23 +1017,9 @@ router.delete(
 // ─── Dean Course Management ───
 router.get('/course-management/options', authenticate, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
-
-    const faculty = await prisma.facultyProfile.findMany({
-      where: { user: { departmentId: department.id } },
-      include: { user: true },
-      orderBy: { user: { name: 'asc' } }
-    });
-
-    res.json({
-      success: true,
-      data: {
-        department: { id: department.id, name: department.name, code: department.code },
-        faculty: faculty.map((item: any) => ({ id: item.id, name: item.user?.name || 'Faculty', email: item.user?.email || '' }))
-      }
-    });
+    const own = await getDeanDepartment((req as any).user.id);
+    const departments = await prisma.department.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, code: true } });
+    res.json({ success: true, data: { department: own ? { id: own.id, name: own.name, code: own.code } : null, departments } });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1112,27 +1027,23 @@ router.get('/course-management/options', authenticate, async (req: Request, res:
 
 router.get('/course-management', authenticate, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
-
+    const filter = await departmentFilter(req);
     const courses = await prisma.course.findMany({
-      where: { departmentId: department.id },
-      include: { enrollments: true },
+      where: filter,
+      include: { _count: { select: { enrollments: true } }, department: true },
       orderBy: [{ semester: 'asc' }, { code: 'asc' }]
     });
-
+    const teachers = await prisma.facultyProfile.findMany({
+      where: { id: { in: courses.map((c: any) => c.facultyId).filter(Boolean) } },
+      include: { user: { select: { name: true } } }
+    });
+    const teacher = new Map(teachers.map((t: any) => [t.id, t.user?.name]));
     res.json({
       success: true,
       data: courses.map((course: any) => ({
-        id: course.id,
-        code: course.code,
-        name: course.name,
-        credits: course.credits,
-        semester: course.semester,
-        students: course.enrollments.length,
-        department: department.name,
-        departmentId: department.id
+        id: course.id, code: course.code, name: course.name, credits: course.credits, semester: course.semester,
+        students: course._count.enrollments, department: course.department?.name ?? null, departmentId: course.departmentId,
+        faculty: course.facultyId ? teacher.get(course.facultyId) ?? null : null
       }))
     });
   } catch (error: any) {
@@ -1140,65 +1051,50 @@ router.get('/course-management', authenticate, async (req: Request, res: Respons
   }
 });
 
-router.post('/course-management', authenticate, authorizeRoles('dean', 'hod'), validate({ body: deanCourseCreateSchema }), async (req: Request, res: Response) => {
+router.post('/course-management', authenticate, DEAN_WRITE, validate({ body: deanCourseCreateSchema }), async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
-
+    const department = await targetDepartment(req, req.body.departmentId);
+    if (!department) throw new NotFoundError('Department');
     const { code, name, credits, semester } = req.body;
-    if (!code || !name || !credits || !semester) {
-      res.status(400).json({ success: false, message: 'code, name, credits and semester are required' });
+    const codeUpper = String(code).toUpperCase();
+    const clash = await prisma.course.findFirst({ where: { code: codeUpper } });
+    if (clash) {
+      res.status(409).json({ success: false, message: `A course with code ${codeUpper} already exists` });
       return;
     }
-
     const created = await prisma.course.create({
       data: {
-        // Was absent: courses created here landed with a NULL tenant key and
-        // were then invisible to every scoped query — created successfully,
-        // then unreachable. Exposed by migration 0029.
         institutionId: getTenantContext(req).institutionId,
-        code: String(code).toUpperCase(),
-        name: String(name),
-        credits: Number(credits),
-        semester: Number(semester),
-        departmentId: department.id,
-        facultyId: null
+        code: codeUpper, name: String(name), credits: Number(credits), semester: Number(semester),
+        departmentId: department.id, facultyId: null
       }
     });
-
-    res.json({ success: true, data: created });
+    res.json({ success: true, data: { ...created, department: department.name, students: 0, faculty: null } });
   } catch (error: any) {
     sendError(res, error);
   }
 });
 
-router.put('/course-management/:id', authenticate, authorizeRoles('dean', 'hod'), validate({ params: z.object({ id: entityId }), body: deanCourseUpdateSchema }), async (req: Request, res: Response) => {
+router.put('/course-management/:id', authenticate, DEAN_WRITE, validate({ params: z.object({ id: entityId }), body: deanCourseUpdateSchema }), async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
-
     const id = String(req.params.id);
-    const existing = await prisma.course.findFirst({ where: { id, departmentId: department.id } });
+    const existing = await prisma.course.findFirst({ where: { id } });
     if (!existing) {
       res.status(404).json({ success: false, message: 'Course not found' });
       return;
     }
-
     const payload = req.body ?? {};
-    const updated = await prisma.course.update({
+    // Was `facultyId: null` on every edit: renaming a course removed its teacher.
+    await prisma.course.updateMany({
       where: { id },
       data: {
         ...(payload.code ? { code: String(payload.code).toUpperCase() } : {}),
         ...(payload.name ? { name: String(payload.name) } : {}),
         ...(payload.credits != null ? { credits: Number(payload.credits) } : {}),
-        ...(payload.semester != null ? { semester: Number(payload.semester) } : {}),
-        facultyId: null
+        ...(payload.semester != null ? { semester: Number(payload.semester) } : {})
       }
     });
-
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: await prisma.course.findFirst({ where: { id } }) });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1211,6 +1107,7 @@ router.put('/course-management/:id', authenticate, authorizeRoles('dean', 'hod')
 router.delete(
   '/course-management/:id',
   authenticate,
+  DEAN_WRITE,
   validate({
     params: z.object({ id: entityId }),
     body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
@@ -1241,7 +1138,7 @@ router.get('/facility-management', authenticate, async (_req: Request, res: Resp
   }
 });
 
-router.post('/facility-management', authenticate, authorizeRoles('dean', 'hod'), validate({ body: deanFacilityCreateSchema }), async (req: Request, res: Response) => {
+router.post('/facility-management', authenticate, authorizeRoles('dean', 'principal', 'hod'), validate({ body: deanFacilityCreateSchema }), async (req: Request, res: Response) => {
   try {
     const { name, type, capacity, status } = req.body;
     if (!name || !type || !capacity) {
@@ -1270,7 +1167,7 @@ router.put('/facility-management/:id', authenticate, authorizeRoles('dean', 'hod
     const id = String(req.params.id);
     const payload = req.body ?? {};
 
-    const updated = await prisma.facility.update({
+    const changed = await prisma.facility.updateMany({
       where: { id },
       data: {
         ...(payload.name ? { name: String(payload.name) } : {}),
@@ -1279,8 +1176,11 @@ router.put('/facility-management/:id', authenticate, authorizeRoles('dean', 'hod
         ...(payload.status ? { status: String(payload.status) } : {})
       }
     });
-
-    res.json({ success: true, data: updated });
+    if (changed.count === 0) {
+      res.status(404).json({ success: false, message: 'Facility not found' });
+      return;
+    }
+    res.json({ success: true, data: await prisma.facility.findFirst({ where: { id } }) });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -1293,6 +1193,7 @@ router.put('/facility-management/:id', authenticate, authorizeRoles('dean', 'hod
 router.delete(
   '/facility-management/:id',
   authenticate,
+  DEAN_WRITE,
   validate({
     params: z.object({ id: entityId }),
     body: z.object({ reason: z.string().trim().min(10).max(500) }).strict()
@@ -1320,7 +1221,7 @@ router.get('/semester-management/academic-years', authenticate, async (_req: Req
   }
 });
 
-router.post('/semester-management/academic-years', authenticate, authorizeRoles('dean'), validate({ body: academicYearCreateSchema }), async (req: Request, res: Response) => {
+router.post('/semester-management/academic-years', authenticate, DEAN_WRITE, validate({ body: academicYearCreateSchema }), async (req: Request, res: Response) => {
   try {
     const yearValue = String(req.body?.year || '').trim();
     if (!yearValue || !req.body?.startDate || !req.body?.endDate) {
@@ -1360,7 +1261,7 @@ router.post('/semester-management/academic-years', authenticate, authorizeRoles(
   }
 });
 
-router.put('/semester-management/academic-years/:id', authenticate, authorizeRoles('dean'), validate({ params: z.object({ id: entityId }), body: academicYearUpdateSchema }), async (req: Request, res: Response) => {
+router.put('/semester-management/academic-years/:id', authenticate, DEAN_WRITE, validate({ params: z.object({ id: entityId }), body: academicYearUpdateSchema }), async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
     const payload = req.body ?? {};
@@ -1377,7 +1278,7 @@ router.put('/semester-management/academic-years/:id', authenticate, authorizeRol
 
     const updated = await prisma.$transaction(async (tx) => {
       if (payload.isCurrent === true) {
-        await tx.academicYear.updateMany({ where: { isCurrent: true }, data: { isCurrent: false } });
+        await tx.academicYear.updateMany({ where: { isCurrent: true, institutionId: getTenantContext(req).institutionId }, data: { isCurrent: false } });
       }
       return tx.academicYear.update({ where: { id }, data });
     });
@@ -1391,12 +1292,10 @@ router.put('/semester-management/academic-years/:id', authenticate, authorizeRol
 // ─── Dean Lab Purchase Approvals ───
 router.get('/inventory/purchase-requests', authenticate, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.id;
-    const department = await getDeanDepartment(userId);
-    if (!department) throw new Error('Department unassigned');
-
+    const filter = await departmentFilter(req);
     const requests = await prisma.purchaseRequest.findMany({
-      where: { departmentId: department.id },
+      where: filter,
+      include: { department: { select: { name: true } } },
       orderBy: { requestDate: 'desc' }
     });
 
@@ -1420,7 +1319,7 @@ router.get('/inventory/purchase-requests', authenticate, async (req: Request, re
  * approver, the moment and any note survive; the `status` column becomes a
  * projection of that.
  */
-router.put('/inventory/purchase-requests/:id/status', authenticate, authorizeRoles('dean'), validate({ params: z.object({ id: entityId }), body: deanWorkflowDecisionSchema }), asyncHandler(async (req: Request, res: Response) => {
+router.put('/inventory/purchase-requests/:id/status', authenticate, DEAN_WRITE, validate({ params: z.object({ id: entityId }), body: deanWorkflowDecisionSchema }), asyncHandler(async (req: Request, res: Response) => {
   const ctx = getTenantContext(req);
   const id = String(req.params.id);
   const status = String(req.body?.status || '').toLowerCase();

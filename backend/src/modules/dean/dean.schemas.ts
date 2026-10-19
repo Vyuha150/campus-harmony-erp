@@ -45,7 +45,9 @@ export const resultApprovalSchema = z
 export const disciplinaryDecisionSchema = z
   .object({
     status: z.enum(['escalated', 'under_review', 'action_taken', 'closed']).optional(),
-    severity: z.enum(['minor', 'major', 'critical']).optional()
+    severity: z.enum(['minor', 'major', 'critical']).optional(),
+    actionTaken: optionalTrimmed(120),
+    remarks: optionalTrimmed(2000)
   })
   .strict();
 
@@ -58,10 +60,11 @@ export const classManagementCreateSchema = z
     section: trimmed(20),
     studentEmails: optionalTrimmed(20000),
     type: optionalTrimmed(40),
-    roomId: trimmed(200),
-    day: trimmed(20),
-    startTime: trimmed(20),
-    endTime: trimmed(20)
+    // Ignored: a class's timetable is managed in Workload & Timetable.
+    roomId: optionalTrimmed(200),
+    day: optionalTrimmed(20),
+    startTime: optionalTrimmed(20),
+    endTime: optionalTrimmed(20)
   })
   .strict();
 
@@ -156,7 +159,9 @@ export const deanCourseCreateSchema = z
     code: trimmed(20),
     name: trimmed(200),
     credits: z.coerce.number().int().min(0).max(20),
-    semester: z.coerce.number().int().min(1).max(20)
+    semester: z.coerce.number().int().min(1).max(20),
+    /** Which department offers it; the Dean's own when omitted. */
+    departmentId: optionalTrimmed(200)
   })
   .strict();
 
