@@ -64,7 +64,8 @@ export const companyCreateSchema = z
     name: trimmed(200),
     industry: optionalTrimmed(120),
     email: z.string().trim().toLowerCase().email().max(200).optional(),
-    website: optionalTrimmed(300),
+    // The form sends null when the website is left blank; that was refused.
+    website: optionalTrimmed(300).nullable(),
     totalHires: z.coerce.number().int().min(0).max(1000000).optional()
   })
   .strict();

@@ -1,3 +1,4 @@
+import { notifyInApp } from '../lib/inAppNotify.js';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
@@ -122,9 +123,18 @@ router.put(
       String(req.params.id),
       req.body
     );
+    if (req.body.status) await tellComplainant(req, updated, `Your grievance ${(updated as any).grievanceNumber} is now ${String(req.body.status).replace(/_/g, ' ')}`, req.body.resolution ?? 'See the grievance for details.');
     res.json({ success: true, data: updated });
   })
 );
+
+/** Tell the person who raised a case it moved. Anonymous cases have no complainant id. */
+async function tellComplainant(req: Request, c: any, subject: string, body: string) {
+  if (!c?.complainantId || c.isAnonymous) return;
+  await notifyInApp(getTenantContext(req).institutionId, { userIds: [c.complainantId] }, {
+    eventType: 'grievance.updated', subject, body, relatedEntityType: 'GrievanceCase', relatedEntityId: c.id
+  });
+}
 
 // Add activity/timeline entry to a case
 router.post(
@@ -137,6 +147,7 @@ router.post(
       String(req.params.id),
       req.body
     );
+    await tellComplainant(req, updated, `Update on grievance ${(updated as any).grievanceNumber}: ${req.body.action}`, req.body.notes ?? '');
     res.json({ success: true, data: updated });
   })
 );

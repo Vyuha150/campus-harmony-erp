@@ -160,8 +160,7 @@ router.post('/directory/sync-graduates', authenticate, async (req: Request, res:
       data: eligibleStudents.map((student) => ({
         userId: student.userId,
         graduationYear: Math.min(currentYear, student.admissionYear + defaultProgramDurationYears),
-      })),
-      skipDuplicates: true,
+      }))
     });
 
     res.json({

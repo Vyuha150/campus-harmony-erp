@@ -37,7 +37,7 @@
  *      ever set — permanently zero. Overdue is now computed from `dueAt`.
  */
 
-import { basePrisma } from '../../lib/prisma.js';
+import { basePrisma, lockForUpdate } from '../../lib/prisma.js';
 import { mutate, toSkipTake, paginated, type PageRequest, type Paginated } from '../../lib/service.js';
 
 export { resolveOwnStudentProfileId } from '../../lib/service.js';
@@ -354,16 +354,12 @@ export async function issueBook(
   return basePrisma.$transaction(async (tx) => {
     const db = tx as never as typeof basePrisma;
 
-    const locked = await db.$queryRaw<
-      Array<{ id: string; title: string; accessionNumber: string; status: string }>
-    >`
-      SELECT id, title, "accessionNumber", status
-      FROM "LibraryBook"
-      WHERE id = ${bookId} AND "institutionId" = ${context.institutionId}
-      FOR UPDATE
-    `;
-
-    const book = locked[0];
+    const bookWhere = { id: bookId, institutionId: context.institutionId };
+    await lockForUpdate(db.libraryBook, bookWhere);
+    const book = await db.libraryBook.findFirst({
+      where: bookWhere,
+      select: { id: true, title: true, accessionNumber: true, status: true }
+    });
     if (!book) {
       throw new NotFoundError(`Book ${bookId}`);
     }
@@ -501,14 +497,12 @@ export async function returnBook(
   return basePrisma.$transaction(async (tx) => {
     const db = tx as never as typeof basePrisma;
 
-    const locked = await db.$queryRaw<Array<{ id: string; title: string; accessionNumber: string }>>`
-      SELECT id, title, "accessionNumber"
-      FROM "LibraryBook"
-      WHERE id = ${bookId} AND "institutionId" = ${context.institutionId}
-      FOR UPDATE
-    `;
-
-    const book = locked[0];
+    const bookWhere = { id: bookId, institutionId: context.institutionId };
+    await lockForUpdate(db.libraryBook, bookWhere);
+    const book = await db.libraryBook.findFirst({
+      where: bookWhere,
+      select: { id: true, title: true, accessionNumber: true }
+    });
     if (!book) {
       throw new NotFoundError(`Book ${bookId}`);
     }
@@ -599,14 +593,12 @@ export async function renewLoan(
   return basePrisma.$transaction(async (tx) => {
     const db = tx as never as typeof basePrisma;
 
-    const locked = await db.$queryRaw<Array<{ id: string; title: string }>>`
-      SELECT id, title
-      FROM "LibraryBook"
-      WHERE id = ${bookId} AND "institutionId" = ${context.institutionId}
-      FOR UPDATE
-    `;
-
-    const book = locked[0];
+    const bookWhere = { id: bookId, institutionId: context.institutionId };
+    await lockForUpdate(db.libraryBook, bookWhere);
+    const book = await db.libraryBook.findFirst({
+      where: bookWhere,
+      select: { id: true, title: true }
+    });
     if (!book) {
       throw new NotFoundError(`Book ${bookId}`);
     }
@@ -805,8 +797,13 @@ export async function studentHistory(
   page: PageRequest
 ): Promise<Paginated<{
   loanId: string;
+  bookId: string;
   title: string;
+  author: string | null;
+  category: string | null;
   accessionNumber: string;
+  renewalCount: number;
+  maxRenewals: number;
   issuedAt: Date;
   dueAt: Date;
   returnedAt: Date | null;
@@ -834,7 +831,7 @@ export async function studentHistory(
       orderBy: { issuedAt: 'desc' },
       skip,
       take,
-      include: { book: { select: { title: true, accessionNumber: true } } }
+      include: { book: { select: { title: true, accessionNumber: true, author: true, category: true } } }
     }),
     basePrisma.libraryLoan.count({ where })
   ]);
@@ -842,8 +839,15 @@ export async function studentHistory(
   return paginated(
     loans.map((loan) => ({
       loanId: loan.id,
+      // Renewal is by book (one active loan per copy); the student page renewed
+      // by an id it never received.
+      bookId: loan.bookId,
       title: loan.book.title,
+      author: (loan.book as { author?: string | null }).author ?? null,
+      category: (loan.book as { category?: string | null }).category ?? null,
       accessionNumber: loan.book.accessionNumber,
+      renewalCount: loan.renewalCount,
+      maxRenewals: policy.maxRenewals,
       issuedAt: loan.issuedAt,
       dueAt: loan.dueAt,
       returnedAt: loan.returnedAt,

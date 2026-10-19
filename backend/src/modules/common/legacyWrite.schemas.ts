@@ -43,9 +43,11 @@ export const accreditationDataUpdateSchema = z
     metric: z.string().trim().max(4000).optional(),
     value: z.string().trim().max(4000).optional(),
     year: z.string().trim().max(4000).optional(),
-    status: z.string().trim().max(4000).optional(),
-    updatedBy: z.string().trim().max(4000).optional(),
-    departmentId: z.string().trim().max(4000).optional()
+    // updatedBy / departmentId are no longer accepted: the server sets the
+    // first, and the second let a record be moved to another department.
+    status: z.enum(['pending', 'complete', 'needs_review']).optional(),
+    documentUrl: z.string().trim().regex(/^\/api\/uploads\/[\w-]+$/).nullable().optional(),
+    documentName: z.string().trim().max(300).nullable().optional()
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update.' });

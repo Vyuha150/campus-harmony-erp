@@ -1,4 +1,7 @@
+import { notifyInApp } from '../lib/inAppNotify.js';
 import type { Request, Response } from 'express';
+import { budgetsByDepartment } from '../lib/departmentBudgets.js';
+import { publishedOutcomes, outcomeFor, combineOutcomes, passPercentage } from '../lib/courseOutcomes.js';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
@@ -62,6 +65,10 @@ async function buildDepartmentPerformance() {
     })
   ]);
 
+  const published = await publishedOutcomes(
+    (departments as any[]).flatMap((d) => d.courses.map((c: any) => c.id))
+  );
+
   const selectedByDepartment = new Map<string, number>();
   for (const app of placementApplications as any[]) {
     if (String(app.status || '').toLowerCase() !== 'selected') continue;
@@ -81,10 +88,8 @@ async function buildDepartmentPerformance() {
   return departments.map((d: any) => {
     const studentCount = d.users.filter((u: any) => u.role === 'student').length;
     const facultyCount = d.users.filter((u: any) => u.role === 'faculty').length;
-    const allEnrollments = d.courses.flatMap((c: any) => c.enrollments || []);
-    const evaluated = allEnrollments.filter((e: any) => Boolean(e.grade));
-    const passed = evaluated.filter((e: any) => !['F', 'I'].includes(String(e.grade))).length;
-    const passRate = evaluated.length > 0 ? Math.round((passed / evaluated.length) * 100) : 0;
+    // Same source as the HOD, Dean and CoE screens — lib/courseOutcomes.ts.
+    const passRate = combineOutcomes(d.courses.map((c: any) => outcomeFor(c, published))).passPercentage ?? 0;
     const selected = selectedByDepartment.get(String(d.id)) || 0;
     const placementRate = studentCount > 0 ? Math.min(100, Math.round((selected / studentCount) * 100)) : 0;
     const researchOutput = researchByDepartment.get(String(d.id)) || 0;
@@ -375,6 +380,19 @@ router.post('/messages', authenticate, validate({ body: vcBroadcastCreateSchema 
         recipients: recipients || 'all', pinned: pinned || false
       }
     });
+    // Deliver the circular; it was only stored.
+    const AUDIENCE: Record<string, string[]> = {
+      'All Students': ['student'],
+      'All Faculty': ['faculty', 'hod'],
+      'All Deans & HODs': ['dean', 'hod', 'principal'],
+      'Board Members': ['registrar', 'pro_vc', 'principal', 'dean', 'finance_officer']
+    };
+    const roles = AUDIENCE[String(recipients)] ?? null; // null → everyone
+    const everyone = roles ? null : await prisma.user.findMany({ where: { id: { not: userId } }, select: { id: true } });
+    await notifyInApp(getTenantContext(req).institutionId, roles ? { roles, excludeUserId: userId } : { userIds: everyone!.map((u: any) => u.id) }, {
+      eventType: 'broadcast.vc', subject: `From the Vice-Chancellor: ${subject}`, body: String(content).slice(0, 300),
+      relatedEntityType: 'BroadcastMessage', relatedEntityId: msg.id
+    });
     res.json({ success: true, data: msg });
   } catch (error: any) {
     sendError(res, error);
@@ -435,20 +453,15 @@ router.get('/finance', authenticate, async (req: Request, res: Response) => {
     const context = getTenantContext(req);
     const totalRevenue = await prisma.feeRecord.aggregate({ where: { status: 'paid' }, _sum: { amount: true } });
     const pendingDues = await prisma.feeRecord.aggregate({ where: { status: 'pending' }, _sum: { amount: true } });
-    // DepartmentBudget carries no institutionId of its own — reach it through
-    // the (tenant-owned, auto-scoped) Department relation instead.
-    const budgets = await prisma.departmentBudget.findMany({
-      where: { department: { institutionId: context.institutionId } },
-      include: { department: true }
-    });
+    const budgets = await budgetsByDepartment(context.institutionId);
 
     res.json({
       success: true,
       data: {
         totalRevenue: totalRevenue._sum.amount || 0,
         pendingDues: pendingDues._sum.amount || 0,
-        departmentBudgets: budgets.map((b: any) => ({
-          category: b.department.name, budget: b.allocated, actual: b.spent, variance: b.allocated - b.spent
+        departmentBudgets: budgets.map((b) => ({
+          category: b.department, budget: b.allocated, actual: b.spent, variance: b.remaining
         }))
       }
     });
@@ -563,10 +576,7 @@ router.get('/financialoverview', authenticate, async (req: Request, res: Respons
     const [paid, pending, budgets] = await Promise.all([
       prisma.feeRecord.aggregate({ where: { status: 'paid' }, _sum: { amount: true } }),
       prisma.feeRecord.aggregate({ where: { status: 'pending' }, _sum: { amount: true } }),
-      prisma.departmentBudget.findMany({
-        where: { department: { institutionId: context.institutionId } },
-        include: { department: true }
-      })
+      budgetsByDepartment(context.institutionId)
     ]);
 
     res.json({
@@ -574,8 +584,8 @@ router.get('/financialoverview', authenticate, async (req: Request, res: Respons
       data: {
         totalRevenue: paid._sum.amount || 0,
         pendingDues: pending._sum.amount || 0,
-        totalBudget: budgets.reduce((sum: number, b: any) => sum + Number(b.allocated || 0), 0),
-        totalSpent: budgets.reduce((sum: number, b: any) => sum + Number(b.spent || 0), 0)
+        totalBudget: budgets.reduce((sum, b) => sum + b.allocated, 0),
+        totalSpent: budgets.reduce((sum, b) => sum + b.spent, 0)
       }
     });
   } catch (error: any) {
@@ -586,18 +596,10 @@ router.get('/financialoverview', authenticate, async (req: Request, res: Respons
 router.get('/finance-summary', authenticate, async (req: Request, res: Response) => {
   try {
     const context = getTenantContext(req);
-    const budgets = await prisma.departmentBudget.findMany({
-      where: { department: { institutionId: context.institutionId } },
-      include: { department: true }
-    });
+    const budgets = await budgetsByDepartment(context.institutionId);
     res.json({
       success: true,
-      data: budgets.map((b: any) => ({
-        department: b.department?.name || 'Unknown',
-        allocated: Number(b.allocated || 0),
-        spent: Number(b.spent || 0),
-        remaining: Number(b.allocated || 0) - Number(b.spent || 0)
-      }))
+      data: budgets.map((b) => ({ department: b.department, allocated: b.allocated, spent: b.spent, remaining: b.remaining }))
     });
   } catch (error: any) {
     sendError(res, error);
@@ -616,25 +618,15 @@ router.get('/compliancereports', authenticate, async (_req: Request, res: Respon
 router.get('/department-budgets', authenticate, async (req: Request, res: Response) => {
   try {
     const context = getTenantContext(req);
-    const budgets = await prisma.departmentBudget.findMany({
-      where: { department: { institutionId: context.institutionId } },
-      include: { department: true }
-    });
-    const data = budgets.map((budget: any) => {
-      const allocated = Number(budget.allocated || 0);
-      const spent = Number(budget.spent || 0);
-      const util = allocated > 0 ? Math.round((spent / allocated) * 100) : 0;
-      return {
-        dept: budget.department?.name || 'Unknown',
-        allocated,
-        spent,
-        util,
-        categories: [
-          { name: 'Committed', amount: spent },
-          { name: 'Available', amount: Math.max(0, allocated - spent) }
-        ]
-      };
-    });
+    const budgets = await budgetsByDepartment(context.institutionId);
+    const data = budgets.map((b) => ({
+      dept: b.department,
+      allocated: b.allocated,
+      spent: b.spent,
+      util: b.allocated > 0 ? Math.round((b.spent / b.allocated) * 100) : 0,
+      // Finance's own budget heads, rather than a two-way committed/available split.
+      categories: b.categories.map((c) => ({ name: c.name, amount: c.allocated }))
+    }));
     res.json({ success: true, data });
   } catch (error: any) {
     sendError(res, error);

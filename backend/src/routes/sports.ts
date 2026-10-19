@@ -511,8 +511,21 @@ router.get('/health', authenticate, async (req: Request, res: Response) => {
     // this, an empty studentId filter returned every institution's records.
     const where: any = { student: { institutionId: context.institutionId } };
     if (studentId) where.studentId = studentId;
-    const records = await prisma.fitnessRecord.findMany({ where, orderBy: { testDate: 'desc' } });
-    res.json({ success: true, data: records });
+    const records = await prisma.fitnessRecord.findMany({
+      where,
+      orderBy: { testDate: 'desc' },
+      include: { student: { select: { rollNumber: true, user: { select: { name: true } } } } }
+    });
+    // The page listed `studentId` — an internal profile id — under "Student ID".
+    // Name and roll number are what a sports director recognises.
+    res.json({
+      success: true,
+      data: records.map(({ student, ...record }: any) => ({
+        ...record,
+        studentName: student?.user?.name ?? null,
+        rollNumber: student?.rollNumber ?? null
+      }))
+    });
   } catch (error: any) {
     sendError(res, error);
   }
@@ -527,16 +540,21 @@ router.post('/health/fitness-test', authenticate,
     // FitnessRecord has no institutionId of its own, and studentId is
     // client-supplied — without this check, a sports director could create a
     // fitness record against another institution's student by id.
+    //
+    // The form asks staff for a student, and staff know students by roll
+    // number — never by the internal profile id this used to demand. Either is
+    // accepted; the profile id is what gets stored.
+    const given = String(req.body.studentId).trim();
     const student = await prisma.studentProfile.findFirst({
-      where: { id: String(req.body.studentId), institutionId: context.institutionId },
+      where: { institutionId: context.institutionId, OR: [{ id: given }, { rollNumber: given.toUpperCase() }] },
       select: { id: true }
     });
     if (!student) {
-      res.status(404).json({ success: false, message: 'Student not found' });
+      res.status(404).json({ success: false, message: `No student with roll number ${given}` });
       return;
     }
     const record = await prisma.fitnessRecord.create({
-      data: { ...req.body, conductedBy: userId, testDate: new Date(req.body.testDate || Date.now()) }
+      data: { ...req.body, studentId: student.id, conductedBy: userId, testDate: new Date(req.body.testDate || Date.now()) }
     });
     res.json({ success: true, data: record });
   } catch (error: any) {

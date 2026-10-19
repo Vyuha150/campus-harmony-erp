@@ -618,7 +618,7 @@ router.delete(
       module: 'placements',
       id: String(req.params.id),
       blockers: [
-        { model: 'studentApplication', foreignKey: 'driveId', describe: 'student applications' }
+        { model: 'studentApplication', foreignKey: 'placementDriveId', describe: 'student applications' }
       ],
       reason: String(req.body.reason),
       // PlacementDrive has no institutionId of its own — Prisma throws

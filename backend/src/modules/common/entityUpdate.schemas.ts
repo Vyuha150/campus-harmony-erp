@@ -148,7 +148,8 @@ export const updateTransferRequestSchema = nonEmpty(
       program: text(2, 160).optional(),
       reason: text(1, 2000).optional(),
       documents: jsonValue.nullable().optional(),
-      status: z.enum(['pending', 'approved', 'rejected', 'withdrawn']).optional()
+      status: z.enum(['pending', 'noc_issued', 'migration_issued', 'completed', 'approved', 'rejected', 'withdrawn']).optional(),
+      remarks: text(1, 1000).optional()
     })
     // `studentId` / `studentName` identify the applicant; `requestedAt` is when
     // they applied.
