@@ -13,6 +13,10 @@ import { fetchApi } from '@/lib/apiService';
 import { Link } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+/** Whether a session's date is today's, in the viewer's own time zone. */
+const isToday = (session: { date?: string | Date }) =>
+  !!session.date && new Date(session.date).toDateString() === new Date().toDateString();
+
 export default function FacultyDashboard() {
   const [todaySchedule, setTodaySchedule] = useState<any>([]);
   const [facultyAssignments, setFacultyAssignments] = useState<any>([]);
@@ -40,7 +44,7 @@ export default function FacultyDashboard() {
       fetchApi(`/faculty/assignments${semesterQuery}`),
       fetchApi(`/faculty/dashboard/tasks${semesterQuery}`)
     ]);
-    setTodaySchedule(Array.isArray(sessions) ? sessions : []);
+    setTodaySchedule(Array.isArray(sessions) ? sessions.filter(isToday) : []);
     setFacultyAssignments(Array.isArray(assignments) ? assignments : []);
     setPendingTasks(Array.isArray(tasks) ? tasks : []);
   };
@@ -155,6 +159,9 @@ export default function FacultyDashboard() {
               </Link>
             </CardHeader>
             <CardContent className="space-y-3">
+              {todaySchedule.length === 0 && (
+                <p className="py-6 text-center text-sm text-muted-foreground">No sessions recorded for today.</p>
+              )}
               {todaySchedule.map((session) => (
                 <div key={session.id} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-4">
                   <div className="flex items-center gap-4">
@@ -196,14 +203,21 @@ export default function FacultyDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
+              {pendingTasks.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No published assignments.</p>}
               {pendingTasks.map((task) => (
                 <div key={task.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
                   <ClipboardCheck className={`mt-0.5 h-4 w-4 shrink-0 ${task.urgent ? 'text-destructive' : 'text-muted-foreground'}`} />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-foreground">{task.task}</p>
-                    <p className="text-xs text-muted-foreground">{task.course}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {task.course} · {task.submitted}/{task.classSize} submitted
+                      {task.notSubmitted > 0 ? ` · ${task.notSubmitted} not submitted` : ''}
+                      {task.dueDate ? ` · due ${new Date(task.dueDate).toLocaleDateString('en-IN')}` : ''}
+                    </p>
                   </div>
-                  {task.urgent && <Badge variant="destructive" className="text-[10px]">Urgent</Badge>}
+                  {task.toGrade > 0 && (
+                    <Link to="/faculty/assignments"><Badge variant="destructive" className="text-[10px]">{task.toGrade} to grade</Badge></Link>
+                  )}
                 </div>
               ))}
             </CardContent>

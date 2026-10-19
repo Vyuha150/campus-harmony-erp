@@ -9,9 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Save, Download, Upload, BarChart3 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { fetchApi, putApi } from '@/lib/apiService';
+import { ExamResultSheets } from '@/components/shared/ExamResultSheets';
+import { useTabParam } from '@/hooks/useTabParam';
 import { useToast } from '@/hooks/use-toast';
 
 export default function FacultyMarks() {
+  const tabParam = useTabParam('internal');
   const [facultyCourses, setFacultyCourses] = useState<any>([]);
   const [semesterOptions, setSemesterOptions] = useState<number[]>([]);
   const [selectedSemester, setSelectedSemester] = useState<string>('');
@@ -151,7 +154,7 @@ export default function FacultyMarks() {
           </Select>
         </div>
 
-        <Tabs defaultValue="internal">
+        <Tabs key={tabParam.key} defaultValue={tabParam.defaultValue}>
           <TabsList>
             <TabsTrigger value="internal">Internal Marks</TabsTrigger>
             <TabsTrigger value="exam">End-Semester Entry</TabsTrigger>
@@ -212,17 +215,7 @@ export default function FacultyMarks() {
           </TabsContent>
 
           <TabsContent value="exam" className="mt-4">
-            <Card className="border-border">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">End-Semester Marks Entry</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  End-semester marks entry is not available yet — there is no exam-cell workflow wired up to record
-                  it separately from internal marks. Use the Internal Marks tab for now.
-                </p>
-              </CardContent>
-            </Card>
+            <ExamResultSheets mode="faculty" />
           </TabsContent>
         </Tabs>
       </div>

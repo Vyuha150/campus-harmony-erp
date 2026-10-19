@@ -7,16 +7,19 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   BookOpen, Users, Clock, MapPin, BarChart3, ChevronRight,
-  CheckCircle2, FileText, Upload, PieChart, Pencil
+  CheckCircle2, FileText, Upload, PieChart, Eye
 } from 'lucide-react';
-import { fetchApi, putApi } from '@/lib/apiService';
+import { fetchApi, postApi, putApi, uploadApi, downloadUpload } from '@/lib/apiService';
 import { Link } from 'react-router-dom';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+
+/** A percentage, or a dash when there is nothing to compute it from. */
+const pct = (value: number | null | undefined) => (value == null ? '—' : `${value}%`);
 
 export default function FacultyCourses() {
   const [facultyCourses, setFacultyCourses] = useState<any>([]);
@@ -26,10 +29,8 @@ export default function FacultyCourses() {
   const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
   const [courseMarks, setCourseMarks] = useState<any[]>([]);
   const [_apiLoading, _setApiLoading] = useState(true);
-  const [isSavingCourseDetails, setIsSavingCourseDetails] = useState(false);
   const [isSavingLessonPlan, setIsSavingLessonPlan] = useState(false);
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
-  const [courseDetailForm, setCourseDetailForm] = useState<any>(null);
   const [lessonPlanForm, setLessonPlanForm] = useState<any>(null);
   const { toast } = useToast();
 
@@ -95,11 +96,44 @@ export default function FacultyCourses() {
   const courseLessons = course
     ? lessonPlans.filter((lp: any) => lp.courseId === course.id || lp.courseCode === course.code)
     : [];
-  const courseMaterials = courseLessons.map((lp: any) => ({
-    name: `${lp.topic}.pdf`,
-    type: 'Lesson Note',
-    date: lp.plannedDate,
-  }));
+  // Course materials are real uploads now. This list used to invent a
+  // "<topic>.pdf" per lesson plan, and "Upload Material" had no handler.
+  const [courseMaterials, setCourseMaterials] = useState<any[]>([]);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [materialFile, setMaterialFile] = useState<File | null>(null);
+  const [uploadingMaterial, setUploadingMaterial] = useState(false);
+  const loadMaterials = async (courseId: string) => {
+    try {
+      const rows = await fetchApi<any[]>(`/faculty/courses/${courseId}/materials`);
+      setCourseMaterials(Array.isArray(rows) ? rows : []);
+    } catch {
+      setCourseMaterials([]);
+    }
+  };
+  useEffect(() => {
+    if (course?.id) loadMaterials(course.id);
+    else setCourseMaterials([]);
+  }, [course?.id]);
+  const uploadMaterial = async () => {
+    if (!course?.id || !materialFile) return;
+    setUploadingMaterial(true);
+    try {
+      await uploadApi(materialFile, 'course-materials', {
+        visibility: 'role_restricted',
+        allowedRoles: ['student', 'faculty', 'hod', 'dean'],
+        relatedEntityType: 'Course',
+        relatedEntityId: course.id
+      });
+      await loadMaterials(course.id);
+      setUploadOpen(false);
+      setMaterialFile(null);
+      toast({ title: 'Material uploaded', description: 'Students enrolled in this course can now download it.' });
+    } catch (error: any) {
+      toast({ title: 'Upload failed', description: error?.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setUploadingMaterial(false);
+    }
+  };
 
   useEffect(() => {
     if (selectedCourse && !facultyCourses.some((item: any) => item.id === selectedCourse)) {
@@ -107,28 +141,6 @@ export default function FacultyCourses() {
     }
   }, [facultyCourses, selectedCourse]);
 
-  useEffect(() => {
-    if (!course) {
-      setCourseDetailForm(null);
-      return;
-    }
-    setCourseDetailForm({
-      code: course.code || '',
-      name: course.name || '',
-      credits: Number(course.credits || 0),
-      semester: Number(course.semester || 1),
-      className: course.className || `${course.code} Section ${course.section || 'A'}`,
-      section: course.section || 'A',
-      batch: course.batch || '',
-      schedule: Array.isArray(course.schedule) ? course.schedule.map((item: any) => ({
-        day: item.day || '',
-        startTime: item.startTime || '',
-        endTime: item.endTime || '',
-        room: item.room || '',
-        type: item.type || 'lecture'
-      })) : []
-    });
-  }, [course?.id]);
 
   useEffect(() => {
     if (!course?.id) {
@@ -166,51 +178,41 @@ export default function FacultyCourses() {
     pct: totalGrades > 0 ? Math.round((count / totalGrades) * 100) : 0,
   }));
 
-  const updateScheduleField = (index: number, key: string, value: string) => {
-    setCourseDetailForm((prev: any) => {
-      if (!prev) return prev;
-      const nextSchedule = [...(prev.schedule || [])];
-      nextSchedule[index] = { ...(nextSchedule[index] || {}), [key]: value };
-      return { ...prev, schedule: nextSchedule };
-    });
-  };
 
-  const addScheduleRow = () => {
-    setCourseDetailForm((prev: any) => ({
-      ...(prev || {}),
-      schedule: [...(prev?.schedule || []), { day: 'Monday', startTime: '09:00', endTime: '10:00', room: '', type: 'lecture' }]
-    }));
-  };
 
-  const removeScheduleRow = (index: number) => {
-    setCourseDetailForm((prev: any) => ({
-      ...(prev || {}),
-      schedule: (prev?.schedule || []).filter((_: any, i: number) => i !== index)
-    }));
-  };
 
-  const saveCourseDetails = async () => {
-    if (!course?.id || !courseDetailForm) return;
 
+  // Lesson plan approval (HOD → Dean) and adding weeks — there was no way to
+  // start a plan, and "Upload Plan" did nothing.
+  const [planStatus, setPlanStatus] = useState<Record<string, any>>({});
+  const loadPlanStatus = () => fetchApi<any[]>('/faculty/courses/lesson-plan-status')
+    .then((d) => setPlanStatus(Object.fromEntries((Array.isArray(d) ? d : []).map((x: any) => [x.courseId, x])))).catch(() => undefined);
+  useEffect(() => { loadPlanStatus(); }, []);
+  const [newWeek, setNewWeek] = useState<any | null>(null);
+  const addWeek = async () => {
+    if (!course?.id || !newWeek?.topic?.trim() || !newWeek?.plannedDate) return;
+    const next = courseLessons.reduce((m: number, l: any) => Math.max(m, Number(l.weekNumber) || 0), 0) + 1;
     try {
-      setIsSavingCourseDetails(true);
-      const updated = await putApi(`/faculty/courses/${course.id}/details`, courseDetailForm);
-      setFacultyCourses((prev: any[]) => prev.map((item) => (
-        item.id === course.id
-          ? {
-              ...item,
-              ...updated,
-              averageAttendance: item.averageAttendance,
-              syllabusCompletion: item.syllabusCompletion,
-              averageScore: item.averageScore
-            }
-          : item
-      )));
-      toast({ title: 'Saved', description: 'Class details updated successfully.' });
+      await putApi(`/faculty/courses/${course.id}/lesson-plans/${next}`, {
+        topic: newWeek.topic.trim(), subtopics: String(newWeek.subtopics || '').split(',').map((x: string) => x.trim()).filter(Boolean),
+        courseOutcome: newWeek.courseOutcome || 'CO1', plannedDate: newWeek.plannedDate, status: 'pending'
+      });
+      setNewWeek(null);
+      await loadCourseData(selectedSemester);
+      loadPlanStatus();
+      toast({ title: `Week ${next} added` });
     } catch (error: any) {
-      toast({ title: 'Save failed', description: error?.message || 'Unable to update class details.', variant: 'destructive' });
-    } finally {
-      setIsSavingCourseDetails(false);
+      toast({ title: 'Could not add the week', description: error?.message, variant: 'destructive' });
+    }
+  };
+  const submitPlan = async () => {
+    if (!course?.id) return;
+    try {
+      await postApi(`/faculty/courses/${course.id}/lesson-plan/submit`, {});
+      toast({ title: 'Lesson plan submitted', description: 'Your HOD reviews it, then the Dean.' });
+      loadPlanStatus();
+    } catch (error: any) {
+      toast({ title: 'Could not submit', description: error?.message, variant: 'destructive' });
     }
   };
 
@@ -269,46 +271,36 @@ export default function FacultyCourses() {
               </SelectContent>
             </Select>
             <div className="flex gap-2">
+              {/* Was "Edit Class Details", letting a teacher rewrite the course code,
+                  credits, semester and timetable. Those are the HOD's to set
+                  (Workload & Timetable); a faculty member sees them here. */}
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button size="sm" variant="outline"><Pencil className="mr-1 h-4 w-4" />Edit Class Details</Button>
+                  <Button size="sm" variant="outline"><Eye className="mr-1 h-4 w-4" />Class Details</Button>
                 </DialogTrigger>
-                <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-3xl">
-                  <DialogHeader><DialogTitle>Edit Course and Class Details</DialogTitle></DialogHeader>
-                  {courseDetailForm && (
-                    <div className="space-y-4">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div><Label>Course Code</Label><Input value={courseDetailForm.code} onChange={(event) => setCourseDetailForm((prev: any) => ({ ...prev, code: event.target.value }))} /></div>
-                        <div><Label>Course Name</Label><Input value={courseDetailForm.name} onChange={(event) => setCourseDetailForm((prev: any) => ({ ...prev, name: event.target.value }))} /></div>
-                        <div><Label>Credits</Label><Input type="number" value={courseDetailForm.credits} onChange={(event) => setCourseDetailForm((prev: any) => ({ ...prev, credits: Number(event.target.value) }))} /></div>
-                        <div><Label>Semester</Label><Input type="number" value={courseDetailForm.semester} onChange={(event) => setCourseDetailForm((prev: any) => ({ ...prev, semester: Number(event.target.value) }))} /></div>
-                        <div><Label>Class Name</Label><Input value={courseDetailForm.className} onChange={(event) => setCourseDetailForm((prev: any) => ({ ...prev, className: event.target.value }))} /></div>
-                        <div><Label>Section</Label><Input value={courseDetailForm.section} onChange={(event) => setCourseDetailForm((prev: any) => ({ ...prev, section: event.target.value }))} /></div>
-                        <div><Label>Batch</Label><Input value={courseDetailForm.batch} onChange={(event) => setCourseDetailForm((prev: any) => ({ ...prev, batch: event.target.value }))} /></div>
+                <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
+                  <DialogHeader><DialogTitle>{course.code} – {course.name}</DialogTitle></DialogHeader>
+                  <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+                    {([
+                      ['Course code', course.code], ['Credits', course.credits], ['Semester', course.semester],
+                      ['Class', course.className], ['Section', course.section], ['Batch', course.batch || '—'],
+                      ['Department', course.department || '—'], ['Students', course.totalStudents]
+                    ] as Array<[string, unknown]>).map(([label, value]) => (
+                      <div key={label} className="flex justify-between border-b border-border py-1.5">
+                        <span className="text-muted-foreground">{label}</span><span className="font-medium text-foreground">{String(value ?? '—')}</span>
                       </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label>Class Schedule</Label>
-                          <Button type="button" variant="outline" size="sm" onClick={addScheduleRow}>Add Session</Button>
-                        </div>
-                        {(courseDetailForm.schedule || []).map((slot: any, index: number) => (
-                          <div key={`${slot.day}-${index}`} className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-6">
-                            <Input value={slot.day} onChange={(event) => updateScheduleField(index, 'day', event.target.value)} placeholder="Day" />
-                            <Input value={slot.startTime} onChange={(event) => updateScheduleField(index, 'startTime', event.target.value)} placeholder="Start" />
-                            <Input value={slot.endTime} onChange={(event) => updateScheduleField(index, 'endTime', event.target.value)} placeholder="End" />
-                            <Input value={slot.room} onChange={(event) => updateScheduleField(index, 'room', event.target.value)} placeholder="Room" />
-                            <Input value={slot.type} onChange={(event) => updateScheduleField(index, 'type', event.target.value)} placeholder="Type" />
-                            <Button type="button" variant="outline" className="text-destructive" onClick={() => removeScheduleRow(index)}>Remove</Button>
-                          </div>
-                        ))}
+                    ))}
+                  </div>
+                  <div className="mt-2">
+                    <p className="mb-1 text-sm font-medium">Weekly timetable</p>
+                    {(course.schedule || []).length === 0 && <p className="text-sm text-muted-foreground">No timetable slots set.</p>}
+                    {(course.schedule || []).map((slot: any, index: number) => (
+                      <div key={`${slot.day}-${slot.startTime}-${index}`} className="flex justify-between border-b border-border py-1.5 text-sm last:border-0">
+                        <span>{slot.day} {slot.startTime}–{slot.endTime}</span><span className="text-muted-foreground">{slot.room} · {slot.type}</span>
                       </div>
-
-                      <Button onClick={saveCourseDetails} disabled={isSavingCourseDetails} className="w-full">
-                        {isSavingCourseDetails ? 'Saving...' : 'Save Class Details'}
-                      </Button>
-                    </div>
-                  )}
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Changes to the course or timetable are made by the Head of Department.</p>
                 </DialogContent>
               </Dialog>
               <Link to="/faculty/attendance"><Button size="sm"><CheckCircle2 className="mr-1 h-4 w-4" />Take Attendance</Button></Link>
@@ -320,9 +312,9 @@ export default function FacultyCourses() {
           <div className="grid gap-4 sm:grid-cols-4">
             {[
               { label: 'Students', value: course.totalStudents, icon: Users },
-              { label: 'Avg. Attendance', value: `${course.averageAttendance}%`, icon: CheckCircle2 },
-              { label: 'Syllabus Done', value: `${course.syllabusCompletion}%`, icon: BookOpen },
-              { label: 'Avg. Score', value: `${course.averageScore}%`, icon: BarChart3 },
+              { label: 'Avg. Attendance', value: pct(course.averageAttendance), icon: CheckCircle2 },
+              { label: 'Syllabus Done', value: pct(course.syllabusCompletion), icon: BookOpen },
+              { label: 'Avg. Score', value: pct(course.averageScore), icon: BarChart3 },
             ].map(s => (
               <Card key={s.label} className="border-border">
                 <CardContent className="flex items-center gap-3 p-4">
@@ -375,15 +367,19 @@ export default function FacultyCourses() {
               <Card className="border-border">
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
                   <CardTitle className="text-lg">Lesson Plan & Syllabus Coverage</CardTitle>
-                  <Button size="sm" variant="outline"><Upload className="mr-1 h-4 w-4" />Upload Plan</Button>
+                  <div className="flex items-center gap-2">
+                    {(() => { const st = planStatus[course.id]?.status ?? 'draft'; return <Badge variant={st === 'approved' ? 'default' : st === 'returned' ? 'destructive' : 'secondary'} className="capitalize">{st === 'submitted' ? 'Awaiting approval' : st}</Badge>; })()}
+                    <Button size="sm" variant="outline" onClick={() => setNewWeek({ topic: '', subtopics: '', courseOutcome: 'CO1', plannedDate: '' })}><Upload className="mr-1 h-4 w-4" />Add week</Button>
+                    {!['submitted', 'approved'].includes(planStatus[course.id]?.status) && <Button size="sm" onClick={submitPlan} disabled={courseLessons.length < 4}>Submit for approval</Button>}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="mb-4">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Syllabus Completion</span>
-                      <span className="font-medium text-foreground">{course.syllabusCompletion}%</span>
+                      <span className="font-medium text-foreground">{pct(course.syllabusCompletion)}</span>
                     </div>
-                    <Progress value={course.syllabusCompletion} className="mt-1 h-2" />
+                    <Progress value={course.syllabusCompletion ?? 0} className="mt-1 h-2" />
                   </div>
                   <Table>
                     <TableHeader>
@@ -464,20 +460,35 @@ export default function FacultyCourses() {
               <Card className="border-border">
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
                   <CardTitle className="text-lg">Course Materials</CardTitle>
-                  <Button size="sm"><Upload className="mr-1 h-4 w-4" />Upload Material</Button>
+                  <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm"><Upload className="mr-1 h-4 w-4" />Upload Material</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>Upload material — {course.code}</DialogTitle></DialogHeader>
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <Label htmlFor="material-file">File</Label>
+                          <Input id="material-file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.txt,.png,.jpg,.jpeg" onChange={(e) => setMaterialFile(e.target.files?.[0] ?? null)} />
+                          <p className="text-xs text-muted-foreground">Slides, notes, question banks — PDF, Office documents, images or ZIP, up to 25 MB.</p>
+                        </div>
+                        <Button className="w-full" onClick={uploadMaterial} disabled={!materialFile || uploadingMaterial}>{uploadingMaterial ? 'Uploading…' : 'Upload'}</Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     {courseMaterials.map((mat) => (
-                      <div key={mat.name} className="flex items-center justify-between rounded-lg border border-border p-3">
+                      <div key={mat.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                         <div className="flex items-center gap-3">
                           <FileText className="h-5 w-5 text-muted-foreground" />
                           <div>
                             <p className="text-sm font-medium text-foreground">{mat.name}</p>
-                            <p className="text-xs text-muted-foreground">{mat.type} • {mat.date}</p>
+                            <p className="text-xs text-muted-foreground">{(mat.sizeBytes / 1024).toFixed(0)} KB • uploaded {new Date(mat.uploadedAt).toLocaleDateString('en-IN')}</p>
                           </div>
                         </div>
-                        <Button variant="ghost" size="sm">Download</Button>
+                        <Button variant="ghost" size="sm" onClick={() => downloadUpload(mat.url, mat.name).catch((error) => toast({ title: 'Download failed', description: error?.message, variant: 'destructive' }))}>Download</Button>
                       </div>
                     ))}
                     {courseMaterials.length === 0 && <p className="text-sm text-muted-foreground">No materials available for this course yet.</p>}
@@ -521,6 +532,20 @@ export default function FacultyCourses() {
               </div>
             </TabsContent>
           </Tabs>
+          <Dialog open={!!newWeek} onOpenChange={(o) => { if (!o) setNewWeek(null); }}>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Add a week to the lesson plan</DialogTitle></DialogHeader>
+              {newWeek && <div className="grid gap-3">
+                <Input placeholder="Topic" value={newWeek.topic} onChange={(e) => setNewWeek({ ...newWeek, topic: e.target.value })} />
+                <Input placeholder="Subtopics, comma separated" value={newWeek.subtopics} onChange={(e) => setNewWeek({ ...newWeek, subtopics: e.target.value })} />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input placeholder="Course outcome (CO1)" value={newWeek.courseOutcome} onChange={(e) => setNewWeek({ ...newWeek, courseOutcome: e.target.value })} />
+                  <Input type="date" value={newWeek.plannedDate} onChange={(e) => setNewWeek({ ...newWeek, plannedDate: e.target.value })} />
+                </div>
+              </div>}
+              <DialogFooter><Button variant="outline" onClick={() => setNewWeek(null)}>Cancel</Button><Button onClick={addWeek} disabled={!newWeek?.topic?.trim() || !newWeek?.plannedDate}>Add</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </DashboardLayout>
     );
@@ -559,20 +584,20 @@ export default function FacultyCourses() {
                     <p className="text-[10px] text-muted-foreground">Students</p>
                   </div>
                   <div>
-                    <p className="text-lg font-bold text-foreground">{c.averageAttendance}%</p>
+                    <p className="text-lg font-bold text-foreground">{pct(c.averageAttendance)}</p>
                     <p className="text-[10px] text-muted-foreground">Attendance</p>
                   </div>
                   <div>
-                    <p className="text-lg font-bold text-foreground">{c.averageScore}%</p>
+                    <p className="text-lg font-bold text-foreground">{pct(c.averageScore)}</p>
                     <p className="text-[10px] text-muted-foreground">Avg Score</p>
                   </div>
                 </div>
                 <div>
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Syllabus</span>
-                    <span className="font-medium">{c.syllabusCompletion}%</span>
+                    <span className="font-medium">{pct(c.syllabusCompletion)}</span>
                   </div>
-                  <Progress value={c.syllabusCompletion} className="mt-1 h-1.5" />
+                  <Progress value={c.syllabusCompletion ?? 0} className="mt-1 h-1.5" />
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">

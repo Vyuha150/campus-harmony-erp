@@ -1,4 +1,5 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,7 @@ import {
   Users, AlertTriangle, Phone, Mail, Calendar, FileText,
   Plus, Eye, MessageSquare, TrendingDown, TrendingUp
 } from 'lucide-react';
-import { fetchApi, postApi } from '@/lib/apiService';
+import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -28,6 +29,21 @@ export default function FacultyMentoring() {
   const [savingNote, setSavingNote] = useState(false);
   const [noteForm, setNoteForm] = useState({ topic: '', notes: '', followUpDate: '' });
   const mentee = menteeStudents.find(m => m.id === selectedMentee);
+
+  const updateNoteStatus = async (noteId: string, status: string) => {
+    if (!selectedMentee) return;
+    try {
+      await putApi(`/faculty/mentees/${selectedMentee}/notes/${noteId}`, { status });
+      setMenteeStudents((prev: any[]) => prev.map((student: any) => (
+        student.id === selectedMentee
+          ? { ...student, counselingNotes: (student.counselingNotes || []).map((n: any) => (n.id === noteId ? { ...n, status } : n)) }
+          : student
+      )));
+      toast({ title: 'Note updated', description: `Marked ${status.replace('_', ' ')}.` });
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Please try again.', variant: 'destructive' });
+    }
+  };
 
   const saveCounselingNote = async () => {
     if (!selectedMentee || !noteForm.topic.trim() || !noteForm.notes.trim()) {
@@ -144,7 +160,16 @@ export default function FacultyMentoring() {
                         <span className="text-sm font-medium">{note.date}</span>
                         <Badge variant="outline">{note.topic}</Badge>
                       </div>
-                      <Badge variant={note.status === 'open' ? 'secondary' : 'default'} className="capitalize">{note.status}</Badge>
+                      {/* The status could be shown but not changed. A note now moves from
+                          open to in progress to completed once the student has been seen. */}
+                      <Select value={note.status} onValueChange={(value) => updateNoteStatus(note.id, value)}>
+                        <SelectTrigger className="h-8 w-36 text-xs capitalize"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="open">Open</SelectItem>
+                          <SelectItem value="in_progress">In progress</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground">{note.notes}</p>
                     {note.followUpDate && (

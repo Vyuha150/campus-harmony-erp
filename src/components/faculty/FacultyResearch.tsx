@@ -33,7 +33,67 @@ export default function FacultyResearch() {
     _setApiLoading(false);
   }, []);
 
-  const totalCitations = publications.reduce((sum, p) => sum + p.citations, 0);
+  const totalCitations = publications.reduce((sum, p) => sum + Number(p.citations || 0), 0);
+
+  // Projects & Grants had a create API but no button; Patents had neither a
+  // button handler nor a table. Both forms below raise the record and route it
+  // for approval (RESEARCH_PROJECT_SANCTION / INNOVATION_IPR_FILING).
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [projectForm, setProjectForm] = useState({ title: '', fundingAgency: '', amount: '', startDate: '', endDate: '', coInvestigators: '' });
+  const [patentOpen, setPatentOpen] = useState(false);
+  const [patentForm, setPatentForm] = useState({ title: '', applicationNumber: '', filingDate: '', jurisdiction: 'India', inventors: '' });
+  const [savingResearch, setSavingResearch] = useState(false);
+
+  const saveProject = async () => {
+    if (!projectForm.title.trim() || !projectForm.fundingAgency.trim() || !projectForm.amount) {
+      toast({ title: 'Missing details', description: 'Title, funding agency and amount are required.', variant: 'destructive' });
+      return;
+    }
+    setSavingResearch(true);
+    try {
+      await postApi('/faculty/research/projects', {
+        title: projectForm.title.trim(),
+        fundingAgency: projectForm.fundingAgency.trim(),
+        amount: Number(projectForm.amount),
+        ...(projectForm.startDate ? { startDate: projectForm.startDate } : {}),
+        ...(projectForm.endDate ? { endDate: projectForm.endDate } : {}),
+        coInvestigators: projectForm.coInvestigators.split(',').map((x) => x.trim()).filter(Boolean)
+      });
+      setResearchProjects(await fetchApi('/faculty/research/projects'));
+      setProjectOpen(false);
+      setProjectForm({ title: '', fundingAgency: '', amount: '', startDate: '', endDate: '', coInvestigators: '' });
+      toast({ title: 'Project submitted', description: 'Sent for sanction: HOD, then Dean (Research), Finance and the Vice-Chancellor.' });
+    } catch (error: any) {
+      toast({ title: 'Save failed', description: error?.message || 'Unable to save the project.', variant: 'destructive' });
+    } finally {
+      setSavingResearch(false);
+    }
+  };
+
+  const savePatent = async () => {
+    if (!patentForm.title.trim()) {
+      toast({ title: 'Missing details', description: 'The invention title is required.', variant: 'destructive' });
+      return;
+    }
+    setSavingResearch(true);
+    try {
+      await postApi('/faculty/research/patents', {
+        title: patentForm.title.trim(),
+        ...(patentForm.applicationNumber.trim() ? { applicationNumber: patentForm.applicationNumber.trim() } : {}),
+        ...(patentForm.filingDate ? { filingDate: patentForm.filingDate } : {}),
+        ...(patentForm.jurisdiction.trim() ? { jurisdiction: patentForm.jurisdiction.trim() } : {}),
+        inventors: patentForm.inventors.split(',').map((x) => x.trim()).filter(Boolean)
+      });
+      setPatents(await fetchApi('/faculty/research/patents'));
+      setPatentOpen(false);
+      setPatentForm({ title: '', applicationNumber: '', filingDate: '', jurisdiction: 'India', inventors: '' });
+      toast({ title: 'Patent recorded', description: 'Sent for review: HOD, then the IPR cell (Dean), then Finance for the filing fee.' });
+    } catch (error: any) {
+      toast({ title: 'Save failed', description: error?.message || 'Unable to save the patent.', variant: 'destructive' });
+    } finally {
+      setSavingResearch(false);
+    }
+  };
 
   const savePublication = async () => {
     if (!publicationForm.title.trim() || !publicationForm.journal.trim() || !publicationForm.year) {
@@ -49,7 +109,7 @@ export default function FacultyResearch() {
         year: Number(publicationForm.year),
         status: publicationForm.status
       });
-      setPublications((prev: any[]) => [{ ...created, authors: ['Primary Author'], indexing: 'Scopus', citations: 0 }, ...prev]);
+      setPublications((prev: any[]) => [{ ...created, authors: [], indexing: null, citations: null }, ...prev]);
       setPublicationForm({ title: '', journal: '', year: '', status: 'submitted' });
       toast({ title: 'Publication saved' });
     } catch (error: any) {
@@ -160,7 +220,7 @@ export default function FacultyResearch() {
                         <TableCell><Badge variant="outline">{pub.indexing}</Badge></TableCell>
                         <TableCell className="font-medium">{pub.citations}</TableCell>
                         <TableCell>
-                          <Badge variant={pub.status === 'published' ? 'default' : pub.status === 'accepted' ? 'secondary' : 'outline'} className="capitalize">
+                          <Badge variant={pub.status === 'verified' || pub.status === 'published' ? 'default' : pub.status === 'rejected' ? 'destructive' : pub.status === 'accepted' ? 'secondary' : 'outline'} className="capitalize">
                             {pub.status.replace('_', ' ')}
                           </Badge>
                         </TableCell>
@@ -174,6 +234,28 @@ export default function FacultyResearch() {
 
           <TabsContent value="projects">
             <div className="space-y-4">
+              <div className="flex justify-end">
+                <Dialog open={projectOpen} onOpenChange={setProjectOpen}>
+                  <DialogTrigger asChild><Button size="sm"><Plus className="mr-1 h-4 w-4" />Add Project / Grant</Button></DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader><DialogTitle>Add a research project or grant</DialogTitle></DialogHeader>
+                    <div className="space-y-3">
+                      <div><Label>Project title</Label><Input value={projectForm.title} onChange={(e) => setProjectForm((p) => ({ ...p, title: e.target.value }))} /></div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><Label>Funding agency</Label><Input placeholder="e.g. DST-SERB, AICTE, Industry" value={projectForm.fundingAgency} onChange={(e) => setProjectForm((p) => ({ ...p, fundingAgency: e.target.value }))} /></div>
+                        <div><Label>Sanctioned amount (₹)</Label><Input type="number" min={0} value={projectForm.amount} onChange={(e) => setProjectForm((p) => ({ ...p, amount: e.target.value }))} /></div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><Label>Start date</Label><Input type="date" value={projectForm.startDate} onChange={(e) => setProjectForm((p) => ({ ...p, startDate: e.target.value }))} /></div>
+                        <div><Label>End date</Label><Input type="date" value={projectForm.endDate} onChange={(e) => setProjectForm((p) => ({ ...p, endDate: e.target.value }))} /></div>
+                      </div>
+                      <div><Label>Co-investigators</Label><Input placeholder="Names, separated by commas" value={projectForm.coInvestigators} onChange={(e) => setProjectForm((p) => ({ ...p, coInvestigators: e.target.value }))} /></div>
+                      <Button className="w-full" onClick={saveProject} disabled={savingResearch}>{savingResearch ? 'Saving…' : 'Submit for sanction'}</Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              {researchProjects.length === 0 && <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No research projects recorded yet.</p>}
               {researchProjects.map(proj => (
                 <Card key={proj.id} className="border-border">
                   <CardContent className="p-4">
@@ -185,7 +267,7 @@ export default function FacultyResearch() {
                           <p className="text-xs text-muted-foreground">Co-PIs: {proj.coInvestigators.join(', ')}</p>
                         )}
                         <div className="flex gap-4 text-xs text-muted-foreground">
-                          <span>{proj.startDate} → {proj.endDate}</span>
+                          <span>{proj.startDate || 'Start not set'} → {proj.endDate || 'End not set'}</span>
                         </div>
                       </div>
                       <Badge variant={proj.status === 'ongoing' ? 'default' : 'secondary'} className="capitalize">{proj.status}</Badge>
@@ -195,7 +277,7 @@ export default function FacultyResearch() {
                         <span className="flex items-center gap-1 text-muted-foreground"><IndianRupee className="h-3 w-3" />Budget Utilization</span>
                         <span className="font-medium">₹{(proj.amountSpent / 100000).toFixed(1)}L / ₹{(proj.amount / 100000).toFixed(1)}L</span>
                       </div>
-                      <Progress value={(proj.amountSpent / proj.amount) * 100} className="h-2" />
+                      <Progress value={proj.amount > 0 ? (proj.amountSpent / proj.amount) * 100 : 0} className="h-2" />
                     </div>
                   </CardContent>
                 </Card>
@@ -207,7 +289,22 @@ export default function FacultyResearch() {
             <Card className="border-border">
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-lg">Patents & IPR</CardTitle>
-                <Button size="sm"><Plus className="mr-1 h-4 w-4" />Add Patent</Button>
+                <Dialog open={patentOpen} onOpenChange={setPatentOpen}>
+                  <DialogTrigger asChild><Button size="sm"><Plus className="mr-1 h-4 w-4" />Add Patent</Button></DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader><DialogTitle>Record a patent / IPR filing</DialogTitle></DialogHeader>
+                    <div className="space-y-3">
+                      <div><Label>Title of the invention</Label><Input value={patentForm.title} onChange={(e) => setPatentForm((p) => ({ ...p, title: e.target.value }))} /></div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><Label>Application number</Label><Input placeholder="If already filed" value={patentForm.applicationNumber} onChange={(e) => setPatentForm((p) => ({ ...p, applicationNumber: e.target.value }))} /></div>
+                        <div><Label>Filing date</Label><Input type="date" value={patentForm.filingDate} onChange={(e) => setPatentForm((p) => ({ ...p, filingDate: e.target.value }))} /></div>
+                      </div>
+                      <div><Label>Jurisdiction</Label><Input value={patentForm.jurisdiction} onChange={(e) => setPatentForm((p) => ({ ...p, jurisdiction: e.target.value }))} /></div>
+                      <div><Label>Co-inventors</Label><Input placeholder="Names, separated by commas (you are added automatically)" value={patentForm.inventors} onChange={(e) => setPatentForm((p) => ({ ...p, inventors: e.target.value }))} /></div>
+                      <Button className="w-full" onClick={savePatent} disabled={savingResearch}>{savingResearch ? 'Saving…' : 'Submit for review'}</Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -224,9 +321,9 @@ export default function FacultyResearch() {
                     {patents.map(pat => (
                       <TableRow key={pat.id}>
                         <TableCell className="font-medium">{pat.title}</TableCell>
-                        <TableCell className="font-mono text-xs">{pat.applicationNumber}</TableCell>
-                        <TableCell>{pat.filingDate}</TableCell>
-                        <TableCell className="text-sm">{pat.inventors.join(', ')}</TableCell>
+                        <TableCell className="font-mono text-xs">{pat.applicationNumber || '—'}</TableCell>
+                        <TableCell>{pat.filingDate || '—'}</TableCell>
+                        <TableCell className="text-sm">{(pat.inventors || []).join(', ')}</TableCell>
                         <TableCell>
                           <Badge variant={pat.status === 'granted' ? 'default' : pat.status === 'published' ? 'secondary' : 'outline'} className="capitalize">
                             {pat.status}

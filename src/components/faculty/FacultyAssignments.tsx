@@ -14,9 +14,9 @@ import {
   Plus, FileText, Upload, Download, CheckCircle2, Clock,
   AlertTriangle, Eye, MessageSquare
 } from 'lucide-react';
-import { fetchApi, postApi, putApi, uploadApi } from '@/lib/apiService';
+import { fetchApi, postApi, putApi, uploadApi, downloadUpload } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 
 export default function FacultyAssignments() {
   const [facultyAssignments, setFacultyAssignments] = useState<any>([]);
@@ -24,6 +24,7 @@ export default function FacultyAssignments() {
   const [submissions, setSubmissions] = useState<any>([]);
   const [selectedSemester, setSelectedSemester] = useState<string>('');
   const [_apiLoading, _setApiLoading] = useState(true);
+  const { toast } = useToast();
 
   const loadAssignmentData = async (semester?: string) => {
     const semesterQuery = semester ? `?semester=${semester}` : '';
@@ -63,12 +64,40 @@ export default function FacultyAssignments() {
     loadAssignmentData(selectedSemester).catch((error) => { console.error('API request failed', error); });
   }, [selectedSemester]);
 
-  const { toast } = useToast();
   const [gradingId, setGradingId] = useState<string | null>(null);
+  // Feedback typed per submission; saved with the marks.
+  const [feedbackEdits, setFeedbackEdits] = useState<Record<string, string>>({});
+  const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [creating, setCreating] = useState(false);
   const [savingGrades, setSavingGrades] = useState(false);
   const [gradeEdits, setGradeEdits] = useState<Record<string, string>>({});
+  // Every student in the class, submitted or not (GET /assignments/:id/roster).
+  const [roster, setRoster] = useState<any[] | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const loadRoster = async (assignmentId: string) => {
+    const rows = await fetchApi<any[]>(`/faculty/assignments/${assignmentId}/roster`);
+    setRoster(Array.isArray(rows) ? rows : []);
+  };
+  useEffect(() => {
+    setRoster(null);
+    if (gradingId) loadRoster(gradingId).catch((error) => toast({ title: 'Could not load the class', description: error?.message, variant: 'destructive' }));
+  }, [gradingId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Submitted ↔ not submitted, e.g. for a paper handed in by hand. */
+  const setSubmitted = async (row: any, submitted: boolean) => {
+    if (!gradingId) return;
+    if (!submitted && row.marks != null && !window.confirm(`${row.rollNumber} has been graded (${row.marks}). Marking them not submitted removes the marks and any uploaded file. Continue?`)) return;
+    setTogglingId(row.studentId);
+    try {
+      await putApi(`/faculty/assignments/${gradingId}/students/${row.studentId}/submission`, { submitted });
+      await Promise.all([loadRoster(gradingId), loadAssignmentData(selectedSemester)]);
+    } catch (error: any) {
+      toast({ title: 'Update failed', description: error?.message || 'Unable to change the status.', variant: 'destructive' });
+    } finally {
+      setTogglingId(null);
+    }
+  };
   const [createForm, setCreateForm] = useState({
     classId: '',
     title: '',
@@ -94,8 +123,12 @@ export default function FacultyAssignments() {
       setCreating(true);
       let attachmentUrl: string | undefined;
       if (createAttachment) {
-        const uploaded: any = await uploadApi(createAttachment, 'faculty-assignments');
-        attachmentUrl = uploaded?.url || uploaded?.storagePath;
+        // Uploaded private by default, so the students it was for got a 403.
+        const uploaded: any = await uploadApi(createAttachment, 'faculty-assignments', {
+          visibility: 'role_restricted',
+          allowedRoles: ['student', 'faculty', 'hod']
+        });
+        attachmentUrl = uploaded?.url;
       }
 
       const created = await postApi('/faculty/assignments', {
@@ -105,7 +138,7 @@ export default function FacultyAssignments() {
         dueDate: createForm.dueDate,
         maxMarks: Number(createForm.maxMarks || 100),
         status,
-        attachmentUrl
+        ...(attachmentUrl ? { attachmentUrl, attachmentName: createAttachment?.name } : {})
       });
       const classRecord = facultyClasses.find((item: any) => item.id === createForm.classId) || {};
       setFacultyAssignments((prev: any[]) => [{
@@ -141,8 +174,19 @@ export default function FacultyAssignments() {
   };
 
   const saveGrades = async () => {
-    const targetSubmissions = submissions.filter((submission: any) => !gradingId || submission.assignmentId === gradingId);
-    const toUpdate = targetSubmissions.filter((submission: any) => gradeEdits[submission.id] !== undefined);
+    const targetSubmissions = (roster ?? [])
+      .filter((row: any) => row.submitted)
+      .map((row: any) => ({ ...row, id: row.submissionId, assignmentId: gradingId }));
+    const gradingMax = Number(facultyAssignments.find((a: any) => a.id === gradingId)?.maxMarks ?? 100);
+    const toUpdate = targetSubmissions.filter((submission: any) => gradeEdits[submission.id] !== undefined || feedbackEdits[submission.id] !== undefined);
+    const outOfRange = toUpdate.find((submission: any) => {
+      const value = Number(gradeEdits[submission.id] ?? submission.marks);
+      return gradeEdits[submission.id] !== undefined && (!Number.isFinite(value) || value < 0 || value > gradingMax);
+    });
+    if (outOfRange) {
+      toast({ title: 'Check the marks', description: `Marks for ${outOfRange.studentName} must be between 0 and ${gradingMax}.`, variant: 'destructive' });
+      return;
+    }
     if (toUpdate.length === 0) {
       toast({ title: 'No changes', description: 'No grade edits to save.' });
       return;
@@ -151,17 +195,19 @@ export default function FacultyAssignments() {
       setSavingGrades(true);
       for (const submission of toUpdate) {
         await putApi(`/faculty/assignments/${submission.assignmentId}/submissions/${submission.id}/grade`, {
-          marks: Number(gradeEdits[submission.id] || 0),
-          feedback: submission.feedback || ''
+          marks: Number(gradeEdits[submission.id] ?? submission.marks ?? 0),
+          feedback: feedbackEdits[submission.id] ?? submission.feedback ?? ''
         });
       }
       setSubmissions((prev: any[]) => prev.map((submission) => (
-        gradeEdits[submission.id] !== undefined
-          ? { ...submission, marks: Number(gradeEdits[submission.id]), status: 'evaluated' }
+        gradeEdits[submission.id] !== undefined || feedbackEdits[submission.id] !== undefined
+          ? { ...submission, marks: Number(gradeEdits[submission.id] ?? submission.marks ?? 0), feedback: feedbackEdits[submission.id] ?? submission.feedback, status: 'evaluated' }
           : submission
       )));
       setGradeEdits({});
+      setFeedbackEdits({});
       setGradingId(null);
+      loadAssignmentData(selectedSemester).catch(() => undefined);
       toast({ title: 'Grades saved' });
     } catch (error: any) {
       toast({ title: 'Save failed', description: error?.message || 'Unable to save grades.', variant: 'destructive' });
@@ -192,7 +238,9 @@ export default function FacultyAssignments() {
 
   const downloadSubmission = (submission: any) => {
     if (submission.fileUrl) {
-      window.open(submission.fileUrl, '_blank');
+      // Opening the URL in a tab sends no login token, so the file was refused.
+      downloadUpload(submission.fileUrl, `${submission.rollNumber}-submission`).catch((error) =>
+        toast({ title: 'Download failed', description: error?.message || 'The file could not be downloaded.', variant: 'destructive' }));
       return;
     }
     const blob = new Blob([JSON.stringify(submission, null, 2)], { type: 'application/json' });
@@ -278,15 +326,26 @@ export default function FacultyAssignments() {
                       </div>
                       <h3 className="text-lg font-medium text-foreground">{asn.title}</h3>
                       <p className="text-sm text-muted-foreground">{asn.description}</p>
+                      {asn.attachmentUrl && (
+                        <button
+                          type="button"
+                          className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                          onClick={() => downloadUpload(asn.attachmentUrl, asn.attachmentName || 'assignment').catch((error) =>
+                            toast({ title: 'Download failed', description: error?.message, variant: 'destructive' }))}
+                        >
+                          <FileText className="h-3.5 w-3.5" />{asn.attachmentName || 'Attachment'}
+                        </button>
+                      )}
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>Due: {asn.dueDate}</span>
+                        <span>Due: {asn.dueDate ? new Date(asn.dueDate).toLocaleDateString('en-IN') : '—'}</span>
                         <span>Max Marks: {asn.maxMarks}</span>
-                        <span className="font-medium text-foreground">{asn.totalSubmissions} submissions</span>
+                        <span className="font-medium text-foreground">{asn.totalSubmissions}/{asn.classSize ?? '—'} submitted</span>
+                        {asn.notSubmitted > 0 && <span className="text-amber-600">{asn.notSubmitted} not submitted</span>}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       {asn.pendingEvaluation > 0 && (
-                        <Badge variant="destructive">{asn.pendingEvaluation} pending</Badge>
+                        <Badge variant="destructive">{asn.pendingEvaluation} to grade</Badge>
                       )}
                       <Button size="sm" onClick={() => setGradingId(asn.id)}>
                         <Eye className="mr-1 h-4 w-4" />View Submissions
@@ -326,7 +385,7 @@ export default function FacultyAssignments() {
                       <Badge variant="secondary">Draft</Badge>
                     </div>
                     <h3 className="mt-1 font-medium text-foreground">{asn.title}</h3>
-                    <p className="text-xs text-muted-foreground">Due: {asn.dueDate} • Max: {asn.maxMarks}</p>
+                    <p className="text-xs text-muted-foreground">Due: {asn.dueDate ? new Date(asn.dueDate).toLocaleDateString('en-IN') : '—'} • Max: {asn.maxMarks}</p>
                   </div>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => setGradingId(asn.id)}>View</Button>
@@ -338,53 +397,91 @@ export default function FacultyAssignments() {
           </TabsContent>
         </Tabs>
 
-        {/* Submissions Dialog */}
+        {/* Submissions Dialog — the whole class, so non-submitters are visible too. */}
         <Dialog open={!!gradingId} onOpenChange={() => setGradingId(null)}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Student Submissions</DialogTitle>
+              <DialogTitle>{facultyAssignments.find((x: any) => x.id === gradingId)?.title ?? 'Student Submissions'}</DialogTitle>
+              {roster && (
+                <p className="text-sm text-muted-foreground">
+                  {roster.filter((r) => r.submitted).length}/{roster.length} submitted ·{' '}
+                  {roster.filter((r) => r.status === 'submitted').length} to grade ·{' '}
+                  {roster.filter((r) => !r.submitted).length} not submitted
+                </p>
+              )}
             </DialogHeader>
+            {roster === null ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">Loading class…</p>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Roll No</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Submitted</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Submission</TableHead>
+                  <TableHead>Submitted on</TableHead>
                   <TableHead>Marks</TableHead>
                   <TableHead>Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {submissions.filter((sub) => !gradingId || sub.assignmentId === gradingId).map((sub) => (
-                  <TableRow key={sub.id}>
-                    <TableCell className="font-mono">{sub.rollNumber}</TableCell>
-                    <TableCell>{sub.studentName}</TableCell>
-                    <TableCell className="text-xs">{new Date(sub.submittedAt).toLocaleString('en-IN')}</TableCell>
+                {roster.map((row) => {
+                  const subKey = row.submissionId as string;
+                  return (
+                  <Fragment key={row.studentId}>
+                  <TableRow className={row.submitted ? '' : 'bg-muted/40'}>
+                    <TableCell className="font-mono">{row.rollNumber}</TableCell>
+                    <TableCell>{row.studentName}</TableCell>
                     <TableCell>
-                      <Badge variant={sub.status === 'evaluated' ? 'default' : sub.status === 'late' ? 'destructive' : 'secondary'} className="capitalize">
-                        {sub.status}
-                      </Badge>
+                      {/* Faculty can flip either way: a paper handed in by hand,
+                          or a submission that should not count. */}
+                      <div className="flex w-fit whitespace-nowrap rounded-md border p-0.5 text-xs">
+                        <button type="button" disabled={togglingId === row.studentId}
+                          onClick={() => !row.submitted && setSubmitted(row, true)}
+                          className={`rounded px-2 py-1 ${row.submitted ? 'bg-green-600 text-white' : 'hover:bg-muted'}`}>Submitted</button>
+                        <button type="button" disabled={togglingId === row.studentId}
+                          onClick={() => row.submitted && setSubmitted(row, false)}
+                          className={`rounded px-2 py-1 ${!row.submitted ? 'bg-amber-500 text-white' : 'hover:bg-muted'}`}>Not submitted</button>
+                      </div>
+                      {row.status === 'evaluated' && <Badge className="mt-1 text-[10px]">Graded</Badge>}
+                      {row.late && <Badge variant="destructive" className="ml-1 mt-1 text-[10px]">Late</Badge>}
+                    </TableCell>
+                    <TableCell className="text-xs">{row.submittedAt ? new Date(row.submittedAt).toLocaleString('en-IN') : '—'}</TableCell>
+                    <TableCell>
+                      {row.submitted ? (
+                        <div className="flex items-center gap-1">
+                          <Input type="number" min={0} className="w-20" placeholder="—"
+                            value={gradeEdits[subKey] ?? (row.marks ?? '')}
+                            onChange={(event) => setGradeEdits((prev) => ({ ...prev, [subKey]: event.target.value }))} />
+                          <span className="text-xs text-muted-foreground">/{facultyAssignments.find((a: any) => a.id === gradingId)?.maxMarks ?? 100}</span>
+                        </div>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell>
-                      {sub.marks !== undefined ? (
-                        <span className="font-medium">{sub.marks}/20</span>
-                      ) : (
-                        <Input type="number" className="w-20" placeholder="—" value={gradeEdits[sub.id] ?? ''} onChange={(event) => setGradeEdits((prev) => ({ ...prev, [sub.id]: event.target.value }))} />
+                      {row.submitted && (
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" title={row.fileUrl ? 'Download file' : 'No file (submitted on paper)'} disabled={!row.fileUrl} onClick={() => downloadSubmission(row)}><Download className="h-4 w-4" /></Button>
+                          <Button size="sm" variant="ghost" title="Feedback" onClick={() => setFeedbackFor(feedbackFor === subKey ? null : subKey)}><MessageSquare className="h-4 w-4" /></Button>
+                        </div>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => downloadSubmission(sub)}><Download className="h-4 w-4" /></Button>
-                        <Button size="sm" variant="ghost"><MessageSquare className="h-4 w-4" /></Button>
-                      </div>
-                    </TableCell>
                   </TableRow>
-                ))}
+                  {row.submitted && feedbackFor === subKey && (
+                    <TableRow key={`${subKey}-feedback`}>
+                      <TableCell colSpan={6}>
+                        <Textarea rows={2} placeholder="Feedback for the student (saved with the marks)" value={feedbackEdits[subKey] ?? (row.feedback ?? '')}
+                          onChange={(event) => setFeedbackEdits((prev) => ({ ...prev, [subKey]: event.target.value }))} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
+            )}
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setGradingId(null)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setGradingId(null)}>Close</Button>
               <Button onClick={saveGrades} disabled={savingGrades}>{savingGrades ? 'Saving...' : 'Save Grades'}</Button>
             </div>
           </DialogContent>

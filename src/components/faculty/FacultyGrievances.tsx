@@ -305,10 +305,10 @@ export default function FacultyGrievancesFeedback() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <Badge variant={g.type === 'assigned_review' ? 'secondary' : 'outline'} className="capitalize text-[10px]">
-                          {g.type.replace('_', ' ')}
+                          {String(g.type || 'submitted').replace('_', ' ')}
                         </Badge>
                         <Badge variant={g.status === 'new' || g.status === 'received' ? 'destructive' : g.status === 'under_review' ? 'secondary' : 'default'} className="capitalize">
-                          {g.status.replace('_', ' ')}
+                          {String(g.status || 'received').replace('_', ' ')}
                         </Badge>
                       </div>
                       <h3 className="font-medium text-foreground">{g.subject}</h3>

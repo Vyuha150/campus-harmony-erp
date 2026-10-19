@@ -21,6 +21,11 @@ export default function FacultyCommittees() {
         <h1 className="text-2xl font-bold text-foreground">Committees & Collaboration</h1>
 
         <div className="grid gap-4 md:grid-cols-2">
+          {committees.length === 0 && (
+            <p className="col-span-full rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+              You are not recorded as a member of any committee.
+            </p>
+          )}
           {committees.map((com) => (
             <Card key={com.id} className="border-border">
               <CardHeader className="pb-3">

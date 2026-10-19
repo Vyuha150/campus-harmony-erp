@@ -136,6 +136,11 @@ export default function FacultyCommunication() {
         </div>
 
         <div className="space-y-3">
+          {classMessages.length === 0 && (
+            <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+              No messages sent yet. Use “New Message” to write to a class.
+            </p>
+          )}
           {classMessages.map((msg) => (
             <Card key={msg.id} className="border-border">
               <CardContent className="p-4">

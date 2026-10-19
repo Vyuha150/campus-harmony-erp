@@ -1,3 +1,5 @@
+import { MyPayslips } from '@/components/shared/MyPayslips';
+import { useTabParam } from '@/hooks/useTabParam';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +21,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 
+const ROLE_LABEL: Record<string, string> = {
+  hod: 'HOD', dean: 'Dean', registrar: 'Registrar', principal: 'Principal', vice_chancellor: 'VC', pro_vc: 'Pro-VC',
+  finance_officer: 'Finance', iqac_coordinator: 'IQAC', coe: 'CoE'
+};
+const roleLabel = (role: string) => ROLE_LABEL[role] ?? role.replace(/_/g, ' ');
+
 export default function FacultyProfile() {
+  const tabParam = useTabParam('leave');
   const [facultyProfile, setFacultyProfile] = useState<any>({
     name: '',
     designation: '',
@@ -154,7 +163,7 @@ export default function FacultyProfile() {
         </div>
 
         {/* Tabs: Leave, Payslips, Documents */}
-        <Tabs defaultValue="leave" className="space-y-4">
+        <Tabs key={tabParam.key} defaultValue={tabParam.defaultValue} className="space-y-4">
           <TabsList>
             <TabsTrigger value="leave">Leave Management</TabsTrigger>
             <TabsTrigger value="payslips">Payslips</TabsTrigger>
@@ -232,9 +241,29 @@ export default function FacultyProfile() {
                         <TableCell>{lv.days}</TableCell>
                         <TableCell className="max-w-[200px] truncate">{lv.reason}</TableCell>
                         <TableCell>
-                          <Badge variant={lv.status === 'approved' ? 'default' : lv.status === 'pending' ? 'secondary' : 'destructive'}>
-                            {lv.status}
+                          <Badge variant={lv.status === 'approved' ? 'default' : lv.status === 'pending' ? 'secondary' : 'destructive'} className="capitalize">
+                            {lv.status === 'pending' && lv.approval?.steps?.find((x: any) => x.state === 'current')
+                              ? `Waiting on ${roleLabel(lv.approval.steps.find((x: any) => x.state === 'current').role)}`
+                              : lv.status}
                           </Badge>
+                          {/* Each approver in order: ✓ approved, ✗ rejected, ● waiting, ○ still to come. */}
+                          {lv.approval?.steps?.length > 0 && (
+                            <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px]">
+                              {lv.approval.steps.map((x: any, i: number) => (
+                                <span key={i} className="flex items-center gap-1">
+                                  {i > 0 && <span className="text-muted-foreground">→</span>}
+                                  <span className={
+                                    x.state === 'approved' ? 'text-green-600'
+                                    : x.state === 'rejected' ? 'text-destructive'
+                                    : x.state === 'current' ? 'font-semibold text-amber-600'
+                                    : 'text-muted-foreground'
+                                  }>
+                                    {x.state === 'approved' ? '✓' : x.state === 'rejected' ? '✗' : x.state === 'current' ? '●' : '○'} {roleLabel(x.role)}
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -245,24 +274,8 @@ export default function FacultyProfile() {
           </TabsContent>
 
           <TabsContent value="payslips">
-            <Card className="border-border">
-              <CardContent className="p-6">
-                <div className="space-y-3">
-                  {['February 2026', 'January 2026', 'December 2025', 'November 2025'].map((month) => (
-                    <div key={month} className="flex items-center justify-between rounded-lg border border-border p-4">
-                      <div className="flex items-center gap-3">
-                        <FileText className="h-5 w-5 text-muted-foreground" />
-                        <div>
-                          <p className="text-sm font-medium text-foreground">Salary Slip – {month}</p>
-                          <p className="text-xs text-muted-foreground">Generated on 28th of month</p>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm"><Download className="mr-1 h-4 w-4" />Download</Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            {/* Was four hard-coded months with Download buttons that did nothing. */}
+            <MyPayslips />
           </TabsContent>
 
           <TabsContent value="documents">
