@@ -24,7 +24,7 @@
  *    defect Phase 0 removed was precisely a system inventing plausible records.
  */
 
-import { basePrisma } from '../../lib/prisma.js';
+import { basePrisma, lockForUpdate } from '../../lib/prisma.js';
 import { mutate, requireContext, toSkipTake, paginated, type PageRequest, type TransactionClient } from '../../lib/service.js';
 import { hashPassword, generateTemporaryPassword } from '../../lib/password.js';
 import {
@@ -491,14 +491,13 @@ export async function makeOffer(
 
       // Lock the category row so two concurrent offers cannot both take the
       // last seat in a statutory quota.
-      const seatRows = await db.$queryRaw<Array<{ id: string; totalSeats: number; filledSeats: number }>>`
-        SELECT id, "totalSeats", "filledSeats"
-        FROM "AdmissionSeatMatrix"
-        WHERE "cycleId" = ${application.cycleId} AND category = ${application.category}
-        FOR UPDATE
-      `;
+      const seatWhere = { cycleId: application.cycleId, category: application.category };
+      await lockForUpdate(db.admissionSeatMatrix, seatWhere);
+      const seat = await db.admissionSeatMatrix.findFirst({
+        where: seatWhere,
+        select: { id: true, totalSeats: true, filledSeats: true }
+      });
 
-      const seat = seatRows[0];
       if (!seat) {
         throw new NotFoundError(`Seat allocation for category ${application.category}`);
       }
@@ -856,4 +855,31 @@ export async function listApplications(
   ]);
 
   return paginated(rows, total, page);
+}
+
+
+/** Programmes an admission cycle can be opened for. */
+export async function listProgrammes() {
+  const ctx = requireContext();
+  return basePrisma.programme.findMany({ where: { institutionId: ctx.institutionId }, select: { id: true, name: true, code: true }, orderBy: { name: 'asc' } });
+}
+
+/**
+ * One cycle on one screen: its seats and every application with its latest
+ * offer. The application list alone carried no offer, so nothing could be
+ * confirmed from a screen.
+ */
+export async function cycleBoard(cycleId: string) {
+  const ctx = requireContext();
+  const cycle = await basePrisma.admissionCycle.findFirst({
+    where: { id: cycleId, institutionId: ctx.institutionId },
+    include: { seatMatrix: true, programme: { select: { name: true, code: true } } }
+  });
+  if (!cycle) throw new NotFoundError('Admission cycle');
+  const apps = await basePrisma.admissionApplication.findMany({
+    where: { institutionId: ctx.institutionId, cycleId: cycle.id },
+    include: { offers: { orderBy: { offeredAt: 'desc' }, take: 1 } },
+    orderBy: [{ meritRank: 'asc' }, { submittedAt: 'asc' }]
+  });
+  return { cycle, applications: apps.map(({ offers, ...a }) => ({ ...a, offer: offers[0] ?? null })) };
 }

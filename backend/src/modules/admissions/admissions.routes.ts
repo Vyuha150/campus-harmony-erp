@@ -133,6 +133,24 @@ router.get(
   })
 );
 
+/** Programmes an admission cycle can be opened for. */
+router.get(
+  '/programmes',
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json({ success: true, data: await service.listProgrammes() });
+  })
+);
+
+/** One cycle on one screen: seats, applications and their latest offers. */
+router.get(
+  '/cycles/:id/board',
+  ADMISSIONS_STAFF,
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    res.json({ success: true, data: await service.cycleBoard(pathParam(req, 'id')) });
+  })
+);
+
 // ─── Applications ─────────────────────────────────────────────────────────────
 
 router.post(
