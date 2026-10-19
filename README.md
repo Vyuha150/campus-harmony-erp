@@ -48,7 +48,7 @@ The project is divided into two main parts:
 ### Prerequisites
 - Node.js (v16 or later)
 - npm or yarn
-- PostgreSQL (or any other database supported by Prisma)
+- A MongoDB replica set — a free MongoDB Atlas cluster works (transactions require one)
 
 ### Steps
 
@@ -63,15 +63,17 @@ The project is divided into two main parts:
    npm install
    ```
 
-3. Set up the database:
-   - Update the `DATABASE_URL` in `.env` file.
-   - Run Prisma migrations:
+3. Set up the database (MongoDB):
+   - Copy `backend/.env.example` to `backend/.env` and set `MONGODB_URI`. It must
+     include the database name, e.g.
+     `mongodb+srv://USER:PASSWORD@CLUSTER.mongodb.net/campus_harmony`.
+   - In Atlas, add your IP address under **Network Access**.
+   - Create the collections and indexes, then load the demo data:
      ```bash
-     npx prisma migrate dev
-     ```
-   - Seed the database:
-     ```bash
-     npx ts-node backend/prisma/seed.ts
+     cd backend
+     npm install
+     npx prisma db push
+     npx prisma db seed
      ```
 
 4. Start the development server:
@@ -104,3 +106,21 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ## Acknowledgments
 
 - Thanks to all contributors and open-source libraries used in this project.
+
+## Database notes (MongoDB)
+
+The backend uses Prisma 6 with the MongoDB connector. A few things behave
+differently from a SQL database and are worth knowing before changing data code:
+
+- **No migrations.** `npx prisma db push` syncs collections and indexes from
+  `backend/prisma/schema.prisma`.
+- **Optional fields are stored as explicit `null`** (`backend/src/lib/explicitNulls.ts`),
+  so `where: { field: null }` behaves as it would in SQL. After importing data by
+  any route other than the app, run `npm run db:backfill-nulls` in `backend/`.
+- **Row locks are write locks.** `lockForUpdate()` in `backend/src/lib/prisma.ts`
+  replaces `SELECT … FOR UPDATE`; a concurrent transaction gets a retryable
+  `409` instead of waiting.
+- **Integrity is enforced by the application only.** MongoDB has no foreign
+  keys, CHECK constraints or triggers, so the rules the old SQL schema enforced
+  (positive payment amounts, allowed status values, the append-only
+  `WorkflowTransition` log) hold only for writes that go through the API.
