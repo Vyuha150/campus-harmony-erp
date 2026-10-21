@@ -1,3 +1,4 @@
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { useEffect, useState } from 'react';
 import { BedDouble, Bus, Inbox, Plus, Trash2 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -22,6 +23,7 @@ const blankHostel = { id: '', name: '', block: '', wardenName: '', wardenPhone: 
 const blankRoute = { id: '', code: '', name: '', vehicleNumber: '', driverName: '', driverPhone: '', capacity: '50', stops: [{ name: '', time: '07:30', fee: '' }] as Stop[] };
 
 export default function RegistrarCampusServices() {
+  const [formDialog, ask] = useFormDialog();
   const [hostels, setHostels] = useState<any[]>([]);
   const [routes, setRoutes] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
@@ -68,6 +70,7 @@ export default function RegistrarCampusServices() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Hostel & Transport</h1>
@@ -92,7 +95,7 @@ export default function RegistrarCampusServices() {
                   <Button size="sm" onClick={() => setAlloc(r.service === 'hostel'
                     ? { service: 'hostel', requestId: r.id, studentProfileId: r.studentProfileId, studentName: r.studentName, hostelId: hostels[0]?.id ?? '', roomNumber: '', roomType: r.preference?.roomType ?? 'double' }
                     : { service: 'transport', requestId: r.id, studentProfileId: r.studentProfileId, studentName: r.studentName, routeId: r.preference?.routeId ?? '', stop: r.preference?.stop ?? '' })}>Allocate</Button>
-                  <Button size="sm" variant="outline" onClick={() => { const note = window.prompt('Reason for declining (shown to the student)'); if (note && note.trim().length >= 10) go(() => postApi(`/registrar/service-requests/${r.id}/decline`, { note: note.trim() }), 'Request declined'); }}>Decline</Button>
+                  <Button size="sm" variant="outline" onClick={async () => { const v = await ask({ title: `Decline ${r.studentName}'s request`, fields: [{ name: 'note', label: 'Reason (shown to the student)', type: 'textarea', required: true, minLength: 10 }], submitLabel: 'Decline' }); if (v) go(() => postApi(`/registrar/service-requests/${r.id}/decline`, { note: v.note }), 'Request declined'); }}>Decline</Button>
                 </div>
               </CardContent></Card>
             ))}

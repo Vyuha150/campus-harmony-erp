@@ -1,3 +1,4 @@
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { useEffect, useState } from 'react';
 import { CheckCircle, ListOrdered, Plus, Send, UserPlus, XCircle } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -24,6 +25,7 @@ const STATUS_TONE: Record<string, 'default' | 'secondary' | 'destructive' | 'out
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 export default function RegistrarAdmissions() {
+  const [formDialog, ask] = useFormDialog();
   const [cycles, setCycles] = useState<any[]>([]);
   const [programmes, setProgrammes] = useState<any[]>([]);
   const [cycleId, setCycleId] = useState('');
@@ -82,6 +84,7 @@ export default function RegistrarAdmissions() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -137,7 +140,7 @@ export default function RegistrarAdmissions() {
                         <div className="flex justify-end gap-1">
                           {a.status === 'submitted' && <>
                             <Button size="sm" variant="outline" disabled={!!busy} onClick={() => run(a.id, () => postApi(`/admissions/applications/${a.id}/verify`, { eligible: true, remark: 'Documents verified' }), () => `${a.fullName}: eligible`)}><CheckCircle className="mr-1 h-3 w-3" />Eligible</Button>
-                            <Button size="sm" variant="ghost" className="text-destructive" disabled={!!busy} onClick={() => { const remark = window.prompt('Why is the applicant ineligible?'); if (remark && remark.trim().length >= 5) run(a.id, () => postApi(`/admissions/applications/${a.id}/verify`, { eligible: false, remark: remark.trim() }), () => `${a.fullName}: not eligible`); }}><XCircle className="mr-1 h-3 w-3" />Ineligible</Button>
+                            <Button size="sm" variant="ghost" className="text-destructive" disabled={!!busy} onClick={async () => { const v = await ask({ title: `Mark ${a.fullName} ineligible`, fields: [{ name: 'remark', label: 'Reason (shown on the application)', type: 'textarea', required: true, minLength: 5 }], submitLabel: 'Mark ineligible' }); if (v) run(a.id, () => postApi(`/admissions/applications/${a.id}/verify`, { eligible: false, remark: v.remark }), () => `${a.fullName}: not eligible`); }}><XCircle className="mr-1 h-3 w-3" />Ineligible</Button>
                           </>}
                           {a.status === 'verified' && a.meritRank && <Button size="sm" disabled={!!busy} onClick={() => run(a.id, () => postApi(`/admissions/applications/${a.id}/offer`, { validForDays: 7 }), () => `Seat offered to ${a.fullName}`)}>Offer seat</Button>}
                           {a.offer?.status === 'offered' && a.status !== 'admitted' && <>
