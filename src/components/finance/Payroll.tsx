@@ -66,49 +66,6 @@ export default function Payroll() {
     }
   };
 
-  const processPayrollRecord = async () => {
-    const employeeId = window.prompt('Employee ID:', `EMP-${Date.now()}`);
-    if (!employeeId) return;
-    const employeeName = window.prompt('Employee name:', 'New Employee');
-    if (!employeeName) return;
-    const department = window.prompt('Department:', 'General');
-    if (!department) return;
-    const designation = window.prompt('Designation:', 'Staff');
-    if (!designation) return;
-    const basicSalary = Number(window.prompt('Basic salary:', '30000') || 0);
-    const allowanceAmount = Number(window.prompt('Allowance amount:', '6000') || 0);
-    const deductionAmount = Number(window.prompt('Deduction amount:', '1800') || 0);
-    if (basicSalary <= 0) {
-      toast({ title: 'Invalid salary', description: 'Basic salary must be greater than zero.', variant: 'destructive' });
-      return;
-    }
-
-    try {
-      const now = new Date();
-      // `grossSalary`/`netSalary` and `status` are deliberately not sent:
-      // createPayrollSchema (backend) derives the two totals from
-      // basicSalary + allowances - deductions and computes them itself, and
-      // `status` describes whether payment has actually happened — not
-      // something the record's creation gets to assert.
-      await postApi<any>('/finance/payroll/process', {
-        employeeId,
-        employeeName,
-        department,
-        designation,
-        month: now.toLocaleString('en-IN', { month: 'long' }),
-        year: now.getFullYear(),
-        basicSalary,
-        allowances: [{ name: 'Allowance', amount: allowanceAmount }],
-        deductions: [{ name: 'Deduction', amount: deductionAmount }],
-        paymentMethod: 'bank_transfer',
-      });
-      await loadPayrollData();
-      toast({ title: 'Payroll processed', description: 'A new payroll record has been generated.' });
-    } catch (error: any) {
-      toast({ title: 'Process failed', description: error.message || 'Could not process payroll record.', variant: 'destructive' });
-    }
-  };
-
   const thisMonth = { month: new Date().toLocaleString('en-IN', { month: 'long' }), year: new Date().getFullYear() };
   const generateMonth = async () => {
     try {
