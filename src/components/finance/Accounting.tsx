@@ -1,3 +1,4 @@
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { downloadFinanceReport, downloadTallyExport } from '@/lib/financeReports';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 
 export default function Accounting() {
+  const [formDialog, ask] = useFormDialog();
   const [journalEntries, setJournalEntries] = useState<any>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
@@ -58,10 +60,21 @@ export default function Accounting() {
     };
 
     const createJournalEntry = async () => {
-      const description = window.prompt('Journal description:', 'Manual adjustment entry');
-      if (!description) return;
-      const debit = Number(window.prompt('Total debit amount:', '1000') || 0);
-      const credit = Number(window.prompt('Total credit amount:', '1000') || 0);
+      const v = await ask({
+        title: 'New journal entry',
+        description: 'Debit and credit totals must match.',
+        fields: [
+          { name: 'description', label: 'Description', required: true, defaultValue: 'Manual adjustment entry' },
+          { name: 'debit', label: 'Total debit (₹)', type: 'number', required: true, min: 1 },
+          { name: 'credit', label: 'Total credit (₹)', type: 'number', required: true, min: 1 }
+        ],
+        submitLabel: 'Create entry',
+        validate: (x) => (Number(x.debit) === Number(x.credit) ? null : 'Debit and credit totals must be equal.')
+      });
+      if (!v) return;
+      const description = v.description;
+      const debit = Number(v.debit);
+      const credit = Number(v.credit);
       if (debit <= 0 || credit <= 0 || debit !== credit) {
         toast({ title: 'Invalid entry', description: 'Debit and credit must be equal and greater than zero.', variant: 'destructive' });
         return;
@@ -110,10 +123,15 @@ export default function Accounting() {
   const booksStatus = pendingEntries > 0 ? 'Open' : 'Closed';
 
   const editEntry = async (entry: any) => {
-    const description = window.prompt('Update description:', String(entry.description || ''));
-    if (description === null) return;
-    const reference = window.prompt('Update reference:', String(entry.reference || ''));
-    if (reference === null) return;
+    const v = await ask({
+      title: 'Edit journal entry',
+      fields: [
+        { name: 'description', label: 'Description', required: true, defaultValue: String(entry.description || '') },
+        { name: 'reference', label: 'Reference', defaultValue: String(entry.reference || '') }
+      ]
+    });
+    if (!v) return;
+    const { description, reference } = v;
 
     try {
       await putApi(`/finance/journal-entries/${entry.id}`, { description, reference });
@@ -126,6 +144,7 @@ export default function Accounting() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -135,9 +154,18 @@ export default function Accounting() {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => generateAccountingReport('ledger_export')}><Download className="mr-2 h-4 w-4" />Export Ledger</Button>
             <Button variant="outline" size="sm" onClick={async () => {
-              const from = window.prompt('Tally export — from date (YYYY-MM-DD)', `${new Date().getFullYear()}-04-01`);
-              const to = from && window.prompt('To date (YYYY-MM-DD)', new Date().toISOString().slice(0, 10));
-              if (!from || !to) return;
+              const v = await ask({
+                title: 'Tally export',
+                description: 'Receipts, journals and salary payments in this period, as Tally XML vouchers.',
+                fields: [
+                  { name: 'from', label: 'From', type: 'date', required: true, defaultValue: `${new Date().getFullYear()}-04-01` },
+                  { name: 'to', label: 'To', type: 'date', required: true, defaultValue: new Date().toISOString().slice(0, 10) }
+                ],
+                submitLabel: 'Download',
+                validate: (x) => (x.to < x.from ? 'The end date must be on or after the start date.' : null)
+              });
+              if (!v) return;
+              const { from, to } = v;
               try {
                 const c = await downloadTallyExport(from, to);
                 toast({ title: 'Tally file downloaded', description: `${c.receipts} receipt, ${c.journals} journal and ${c.payments} salary voucher(s). Import in Tally: Gateway → Import → Vouchers.` });

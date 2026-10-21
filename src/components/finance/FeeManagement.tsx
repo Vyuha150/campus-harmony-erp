@@ -1,3 +1,4 @@
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { downloadFinanceReport } from '@/lib/financeReports';
 import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -54,6 +55,7 @@ const normalizeFeeComponents = (value: any) => {
 };
 
 export default function FeeManagement() {
+  const [formDialog, ask] = useFormDialog();
   const [details, setDetails] = useState<Details | null>(null);
   const [feePayments, setFeePayments] = useState<any>([]);
   const [feeStructures, setFeeStructures] = useState<any>([]);
@@ -120,16 +122,23 @@ export default function FeeManagement() {
   };
 
   const createFeeStructure = async () => {
-    const academicYear = window.prompt('Academic year (e.g. 2025-26):', '2025-26');
-    if (!academicYear) return;
-    const semester = window.prompt('Semester (e.g. odd/even):', 'odd');
-    if (!semester) return;
-    const program = window.prompt('Program (e.g. B.Tech CSE):', 'B.Tech CSE');
-    if (!program) return;
-    const totalAmount = Number(window.prompt('Total amount:', '85000') || 0);
-    const lateFeePenalty = Number(window.prompt('Late fee per day:', '100') || 0);
-    const dueDateRaw = window.prompt('Due date (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
-    if (!dueDateRaw) return;
+    const v = await ask({
+      title: 'New fee structure',
+      fields: [
+        { name: 'academicYear', label: 'Academic year', required: true, defaultValue: '2025-26' },
+        { name: 'semester', label: 'Semester', type: 'select', required: true, options: [{ value: 'odd', label: 'Odd' }, { value: 'even', label: 'Even' }], defaultValue: 'odd' },
+        { name: 'program', label: 'Programme', required: true, defaultValue: 'B.Tech CSE' },
+        { name: 'totalAmount', label: 'Total amount (₹)', type: 'number', required: true, min: 1 },
+        { name: 'lateFeePenalty', label: 'Late fee per day (₹)', type: 'number', min: 0, defaultValue: 100 },
+        { name: 'dueDate', label: 'Due date', type: 'date', required: true, defaultValue: new Date().toISOString().slice(0, 10) }
+      ],
+      submitLabel: 'Create'
+    });
+    if (!v) return;
+    const { academicYear, semester, program } = v;
+    const totalAmount = Number(v.totalAmount);
+    const lateFeePenalty = Number(v.lateFeePenalty || 0);
+    const dueDateRaw = v.dueDate;
     const dueDate = new Date(dueDateRaw);
     if (Number.isNaN(dueDate.getTime()) || totalAmount <= 0) {
       toast({ title: 'Invalid input', description: 'Please enter valid amount and due date.', variant: 'destructive' });
@@ -201,6 +210,7 @@ export default function FeeManagement() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>

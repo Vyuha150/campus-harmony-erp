@@ -1,3 +1,4 @@
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { downloadFinanceReport } from '@/lib/financeReports';
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -22,6 +23,7 @@ const formatCurrency = (amount: number) => {
 };
 
 export default function FinanceBudgets() {
+  const [formDialog, ask] = useFormDialog();
   const [budgetAllocations, setBudgetAllocations] = useState<any>([]);
   const [expenditureTrend, setExpenditureTrend] = useState<any[]>([]);
   const [revenueStreams, setRevenueStreams] = useState<any[]>([]);
@@ -99,13 +101,19 @@ export default function FinanceBudgets() {
   };
 
   const createAllocation = async () => {
-    const department = window.prompt('Department:', 'General Administration');
-    if (!department) return;
-    const category = window.prompt('Category:', 'General');
-    if (!category) return;
-    const budgetYear = window.prompt('Budget year:', '2025-26');
-    if (!budgetYear) return;
-    const allocatedAmount = Number(window.prompt('Allocated amount:', '1000000') || 0);
+    const v = await ask({
+      title: 'New budget allocation',
+      fields: [
+        { name: 'department', label: 'Department', required: true, defaultValue: 'General Administration' },
+        { name: 'category', label: 'Category', required: true, defaultValue: 'General' },
+        { name: 'budgetYear', label: 'Budget year', required: true, defaultValue: '2025-26' },
+        { name: 'allocatedAmount', label: 'Allocated amount (₹)', type: 'number', required: true, min: 1 }
+      ],
+      submitLabel: 'Allocate'
+    });
+    if (!v) return;
+    const { department, category, budgetYear } = v;
+    const allocatedAmount = Number(v.allocatedAmount);
     if (allocatedAmount <= 0) {
       toast({ title: 'Invalid input', description: 'Allocated amount must be greater than zero.', variant: 'destructive' });
       return;
@@ -131,8 +139,16 @@ export default function FinanceBudgets() {
   };
 
   const adjustBudget = async (budget: any) => {
-    const allocated = Number(window.prompt(`Allocated amount for ${budget.department}:`, String(budget.allocatedAmount || 0)) || 0);
-    const spent = Number(window.prompt(`Spent amount for ${budget.department}:`, String(budget.spentAmount || 0)) || 0);
+    const v = await ask({
+      title: `Adjust budget — ${budget.department}`,
+      fields: [
+        { name: 'allocated', label: 'Allocated amount (₹)', type: 'number', required: true, min: 1, defaultValue: budget.allocatedAmount || 0 },
+        { name: 'spent', label: 'Spent amount (₹)', type: 'number', required: true, min: 0, defaultValue: budget.spentAmount || 0 }
+      ]
+    });
+    if (!v) return;
+    const allocated = Number(v.allocated);
+    const spent = Number(v.spent);
     if (allocated <= 0 || spent < 0) {
       toast({ title: 'Invalid input', description: 'Allocated amount must be > 0 and spent amount >= 0.', variant: 'destructive' });
       return;
@@ -155,6 +171,7 @@ export default function FinanceBudgets() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
