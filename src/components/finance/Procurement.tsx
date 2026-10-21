@@ -1,3 +1,4 @@
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +22,7 @@ const formatCurrency = (amount: unknown) => `₹${toNumber(amount).toLocaleStrin
 const statusColor = (s: string) => s === 'paid' ? 'default' : s === 'delivered' ? 'default' : s === 'pending' ? 'secondary' : 'outline';
 
 export default function Procurement() {
+  const [formDialog, ask] = useFormDialog();
   const [details, setDetails] = useState<Details | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<any>([]);
   const [vendors, setVendors] = useState<any>([]);
@@ -75,17 +77,24 @@ export default function Procurement() {
       return;
     }
 
-    const vendorHint = vendors.map((vendor: any, index: number) => `${index + 1}. ${vendor.name}`).join('\n');
-    const vendorIndex = Number(window.prompt(`Select vendor by number:\n${vendorHint}`, '1') || 1) - 1;
-    const chosenVendor = vendors[vendorIndex] || vendors[0];
-    const department = window.prompt('Department:', 'General Administration');
-    if (!department) return;
-    const itemDescription = window.prompt('Item description:', 'Office consumables');
-    if (!itemDescription) return;
-    const quantity = Number(window.prompt('Quantity:', '10') || 0);
-    const unitPrice = Number(window.prompt('Unit price:', '7500') || 0);
-    const expectedRaw = window.prompt('Expected delivery date (YYYY-MM-DD):', new Date(Date.now() + (14 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10));
-    if (!expectedRaw) return;
+    const v = await ask({
+      title: 'New purchase order',
+      fields: [
+        { name: 'vendorId', label: 'Vendor', type: 'select', required: true, options: vendors.map((vendor: any) => ({ value: vendor.id, label: vendor.name })), defaultValue: vendors[0].id },
+        { name: 'department', label: 'Department', required: true, defaultValue: 'General Administration' },
+        { name: 'itemDescription', label: 'Item description', required: true },
+        { name: 'quantity', label: 'Quantity', type: 'number', required: true, min: 1, defaultValue: 1 },
+        { name: 'unitPrice', label: 'Unit price (₹)', type: 'number', required: true, min: 1 },
+        { name: 'expected', label: 'Expected delivery', type: 'date', required: true, defaultValue: new Date(Date.now() + (14 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10) }
+      ],
+      submitLabel: 'Create PO'
+    });
+    if (!v) return;
+    const chosenVendor = vendors.find((vendor: any) => vendor.id === v.vendorId) || vendors[0];
+    const { department, itemDescription } = v;
+    const quantity = Number(v.quantity);
+    const unitPrice = Number(v.unitPrice);
+    const expectedRaw = v.expected;
     const expected = new Date(expectedRaw);
     if (Number.isNaN(expected.getTime()) || quantity <= 0 || unitPrice <= 0) {
       toast({ title: 'Invalid input', description: 'Provide valid quantity, unit price, and expected date.', variant: 'destructive' });
@@ -131,14 +140,17 @@ export default function Procurement() {
   };
 
   const recordInvoice = async (po: any) => {
-    const invoiceNumber = window.prompt('Invoice number:', String(po.invoiceNumber || `INV-${Date.now()}`));
-    if (!invoiceNumber) return;
-
-    const paymentDateRaw = window.prompt(
-      'Payment date (YYYY-MM-DD):',
-      po.paymentDate ? new Date(po.paymentDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
-    );
-    if (!paymentDateRaw) return;
+    const v = await ask({
+      title: `Record invoice — ${po.poNumber || 'purchase order'}`,
+      fields: [
+        { name: 'invoiceNumber', label: 'Invoice number', required: true, defaultValue: String(po.invoiceNumber || '') },
+        { name: 'paymentDate', label: 'Payment date', type: 'date', required: true, defaultValue: po.paymentDate ? new Date(po.paymentDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10) }
+      ],
+      submitLabel: 'Mark paid'
+    });
+    if (!v) return;
+    const { invoiceNumber } = v;
+    const paymentDateRaw = v.paymentDate;
 
     const paymentDate = new Date(paymentDateRaw);
     if (Number.isNaN(paymentDate.getTime())) {
@@ -191,6 +203,7 @@ export default function Procurement() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>

@@ -31,7 +31,7 @@ import {
   type PageRequest,
   type Paginated
 } from '../../lib/service.js';
-import { NotFoundError, ValidationError } from '../../lib/errors.js';
+import { BusinessRuleError, NotFoundError, ValidationError } from '../../lib/errors.js';
 import type { TenantContext } from '../../lib/tenant.js';
 
 type Json = Record<string, unknown> | unknown[];
@@ -239,6 +239,21 @@ export async function updatePurchaseOrder(
     where: { id, institutionId: context.institutionId }
   });
   if (!existing) throw new NotFoundError(`Purchase order ${id}`);
+
+  if (input.paymentDate !== undefined && input.status !== 'paid') {
+    throw new ValidationError('A payment date is recorded only when the invoice is paid.');
+  }
+  if (input.status === 'paid') {
+    if (existing.status !== 'delivered') {
+      throw new BusinessRuleError(`Only a delivered order can be paid; PO ${existing.poNumber} is ${existing.status}.`);
+    }
+    if (!String(input.invoiceNumber ?? existing.invoiceNumber ?? '').trim()) {
+      throw new ValidationError('Record the vendor invoice number to mark the order paid.');
+    }
+    const paid = input.paymentDate ? new Date(String(input.paymentDate)) : new Date();
+    if (paid.getTime() > Date.now() + 24 * 60 * 60 * 1000) throw new ValidationError('The payment date cannot be in the future.');
+    input = { ...input, paymentDate: paid };
+  }
 
   return mutate(
     context,

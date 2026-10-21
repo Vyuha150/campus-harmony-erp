@@ -88,10 +88,13 @@ export const createPurchaseOrderSchema = z
 
 export const updatePurchaseOrderSchema = z
   .object({
-    status: z.enum(['pending', 'approved', 'ordered', 'delivered', 'cancelled']).optional(),
+    // `paid` only through recording the vendor's invoice; the service checks
+    // the order was delivered and that the invoice number is there.
+    status: z.enum(['pending', 'approved', 'ordered', 'delivered', 'paid', 'cancelled']).optional(),
     expectedDelivery: isoDate.optional(),
     deliveredDate: isoDate.nullable().optional(),
     invoiceNumber: z.string().trim().max(80).nullable().optional(),
+    paymentDate: isoDate.optional(),
     items: jsonValue.optional(),
     totalAmount: money.optional()
   })
