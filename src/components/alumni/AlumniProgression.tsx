@@ -1,3 +1,4 @@
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +19,7 @@ const formatDate = (value: unknown) => {
 };
 
 export default function AlumniProgression() {
+  const [formDialog, ask] = useFormDialog();
   const { toast } = useToast();
 
   // "Report" had no handler. It now downloads the survey's responses as CSV —
@@ -70,19 +72,32 @@ export default function AlumniProgression() {
 
   const handleLaunchSurvey = async () => {
     const currentYear = new Date().getFullYear();
+    const v = await ask({
+      title: 'Launch progression survey',
+      description: 'Graduates of the chosen batch are asked about higher studies and employment.',
+      fields: [
+        { name: 'title', label: 'Survey title', required: true, defaultValue: `Graduate Progression Survey ${currentYear}` },
+        { name: 'graduationYear', label: 'Graduating batch (year)', type: 'number', required: true, min: 2000, defaultValue: currentYear - 1 },
+        { name: 'startDate', label: 'Opens on', type: 'date', required: true, defaultValue: new Date().toISOString().slice(0, 10) },
+        { name: 'endDate', label: 'Closes on', type: 'date', required: true, defaultValue: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10) }
+      ],
+      submitLabel: 'Launch survey',
+      validate: (x) => (x.endDate <= x.startDate ? 'The survey must close after it opens.' : null)
+    });
+    if (!v) return;
     try {
       await postApi('/alumni/progression/surveys', {
-        title: `Graduate Progression Survey ${currentYear}`,
-        graduationYear: currentYear - 1,
+        title: v.title,
+        graduationYear: Number(v.graduationYear),
         surveyPeriod: `${currentYear}-${currentYear + 1}`,
         questions: [],
         // `status` is not sent: progressionSurveyCreateSchema refuses it, and
         // the route sets 'active' itself since this endpoint is the launch.
-        startDate: new Date().toISOString(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        startDate: new Date(v.startDate).toISOString(),
+        endDate: new Date(v.endDate).toISOString(),
       });
       await loadData();
-      toast({ title: 'Survey launched', description: 'New progression survey created.' });
+      toast({ title: 'Survey launched', description: `${v.title} is open until ${new Date(v.endDate).toLocaleDateString('en-IN')}.` });
     } catch (error: any) {
       toast({ title: 'Launch failed', description: error?.message || 'Unable to launch survey.', variant: 'destructive' });
     }
@@ -90,6 +105,7 @@ export default function AlumniProgression() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
