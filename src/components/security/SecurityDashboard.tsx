@@ -1241,8 +1241,8 @@ export default function SecurityDashboard({ initialTab = 'incidents' }: { initia
                             Close
                           </Button>
                         )}
-                        {String(vc.status || '').toLowerCase() !== 'investigating' && (
-                          <Button size="sm" variant="outline" disabled={submittingAction === `vigilance-${vc.id}`} onClick={() => updateVigilanceStatus(vc.id, 'investigating')}>
+                        {!['investigating', 'under_investigation'].includes(String(vc.status || '').toLowerCase()) && (
+                          <Button size="sm" variant="outline" disabled={submittingAction === `vigilance-${vc.id}`} onClick={() => updateVigilanceStatus(vc.id, 'under_investigation')}>
                             Investigating
                           </Button>
                         )}
