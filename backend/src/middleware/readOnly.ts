@@ -18,10 +18,20 @@ import { logger } from '../lib/logger.js';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+// POST endpoints that only read: the report's period and type travel in the
+// body. Viewing reports is what a read-only auditor is there to do.
+const READ_ONLY_POSTS = new Set(['/api/finance/reports/generate']);
+
 export function enforceReadOnly(req: Request, _res: Response, next: NextFunction): void {
   const role = (req as Request & { user?: { role: string } }).user?.role;
 
   if (!role || !isReadOnlyRole(role)) {
+    next();
+    return;
+  }
+
+  const path = ((req.originalUrl || req.url).split('?')[0] ?? '').replace(/\/+$/, '');
+  if (req.method === 'POST' && READ_ONLY_POSTS.has(path)) {
     next();
     return;
   }
