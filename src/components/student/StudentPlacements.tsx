@@ -103,6 +103,10 @@ export default function StudentPlacements() {
     URL.revokeObjectURL(url);
   };
 
+  const isEligible = (drive: PlacementDrive) => {
+    return profile.cgpa >= drive.eligibility.minCgpa;
+  };
+
   const displayedDrives = placementDrives.filter((drive: PlacementDrive) => {
     const query = searchQuery.trim().toLowerCase();
     const matchesSearch = !query
@@ -157,10 +161,6 @@ export default function StudentPlacements() {
       default:
         return <Clock className="h-4 w-4 text-muted-foreground" />;
     }
-  };
-
-  const isEligible = (drive: PlacementDrive) => {
-    return profile.cgpa >= drive.eligibility.minCgpa;
   };
 
   // Called as a function, not rendered as <DriveCard />: defined inside the page it
