@@ -1,3 +1,4 @@
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { fetchIQACDocuments, updateIQACDocument } from '@/lib/iqacApi';
 
 export default function IQACDocuments() {
+  const [formDialog, ask] = useFormDialog();
   const { toast } = useToast();
   const [qualityDocuments, setQualityDocuments] = useState<any>([]);
   const [apiLoading, setApiLoading] = useState(true);
@@ -109,12 +111,15 @@ export default function IQACDocuments() {
 
   const handleReviewStatus = async (documentId: string, status: 'approved' | 'needs_revision') => {
     try {
-      const reviewComments = status === 'needs_revision'
-        ? window.prompt('Enter revision comments for the uploader:', 'Please address review feedback and re-upload updated evidence.')
-        : '';
-
-      if (status === 'needs_revision' && reviewComments === null) {
-        return;
+      let reviewComments = '';
+      if (status === 'needs_revision') {
+        const v = await ask({
+          title: 'Send back for revision',
+          fields: [{ name: 'comments', label: 'Comments for the uploader', type: 'textarea', required: true, minLength: 10, defaultValue: 'Please address review feedback and re-upload updated evidence.' }],
+          submitLabel: 'Send back'
+        });
+        if (!v) return;
+        reviewComments = v.comments;
       }
 
       const updated = await updateIQACDocument(documentId, {
@@ -145,6 +150,7 @@ export default function IQACDocuments() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>

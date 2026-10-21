@@ -1,3 +1,4 @@
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +13,7 @@ import { createIQACMeeting, fetchAQARReports, fetchIQACCriteriaProgress, fetchIQ
 import { useToast } from '@/hooks/use-toast';
 
 export default function IQACReports() {
+  const [formDialog, ask] = useFormDialog();
   const { toast } = useToast();
   const [iqacMeetings, setIqacMeetings] = useState<any>([]);
   const [aqarSections, setAqarSections] = useState<any>([]);
@@ -61,12 +63,17 @@ export default function IQACReports() {
     : 0;
 
   const handleScheduleMeeting = async () => {
-    const title = window.prompt('Meeting title', 'IQAC Review Meeting');
-    if (!title) return;
-    const date = window.prompt('Meeting date (YYYY-MM-DD)', new Date().toISOString().slice(0, 10));
-    if (!date) return;
-    const venue = window.prompt('Venue', 'Board Room');
-    if (!venue) return;
+    const v = await ask({
+      title: 'Schedule IQAC meeting',
+      fields: [
+        { name: 'title', label: 'Meeting title', required: true, defaultValue: 'IQAC Review Meeting' },
+        { name: 'date', label: 'Date', type: 'date', required: true, defaultValue: new Date().toISOString().slice(0, 10) },
+        { name: 'venue', label: 'Venue', required: true, defaultValue: 'Board Room' }
+      ],
+      submitLabel: 'Schedule'
+    });
+    if (!v) return;
+    const { title, date, venue } = v;
 
     try {
       await createIQACMeeting({
@@ -146,8 +153,13 @@ export default function IQACReports() {
   };
 
   const handleEditAgenda = async (meeting: any) => {
-    const value = window.prompt('Edit agenda (comma separated)', Array.isArray(meeting.agenda) ? meeting.agenda.join(', ') : '');
-    if (value === null) return;
+    const v = await ask({
+      title: 'Edit agenda',
+      description: 'One item per line.',
+      fields: [{ name: 'agenda', label: 'Agenda items', type: 'textarea', defaultValue: Array.isArray(meeting.agenda) ? meeting.agenda.join('\n') : '' }]
+    });
+    if (!v) return;
+    const value = v.agenda.replace(/\n/g, ',');
     const agenda = value.split(',').map((item) => item.trim()).filter(Boolean);
     try {
       await updateIQACMeeting(meeting.id, { agenda });
@@ -205,6 +217,7 @@ export default function IQACReports() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
