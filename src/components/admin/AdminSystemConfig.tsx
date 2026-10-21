@@ -14,10 +14,12 @@ import {
 } from 'lucide-react';
 import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { useState, useEffect } from 'react';
+import { useFormDialog } from '@/components/shared/FormDialog';
 import { safeArray, safeBoolean, safeDate, safeString } from '@/lib/normalize';
 import { toast } from '@/hooks/use-toast';
 
 export default function AdminSystemConfig() {
+  const [formDialog, ask] = useFormDialog();
   type SemesterFormItem = {
     id: string;
     name: string;
@@ -277,9 +279,16 @@ export default function AdminSystemConfig() {
   };
 
   const addDepartment = async () => {
-    const name = window.prompt('Department name');
-    const code = window.prompt('Department code (e.g. CSE)');
-    if (!name || !code) return;
+    const v = await ask({
+      title: 'Add department',
+      fields: [
+        { name: 'name', label: 'Department name', required: true, placeholder: 'Computer Science and Engineering' },
+        { name: 'code', label: 'Department code', required: true, placeholder: 'CSE' }
+      ],
+      submitLabel: 'Add department'
+    });
+    if (!v) return;
+    const { name, code } = v;
 
     try {
       const created = await postApi('/admin/departments', {
@@ -307,6 +316,7 @@ export default function AdminSystemConfig() {
 
   return (
     <DashboardLayout>
+      {formDialog}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
