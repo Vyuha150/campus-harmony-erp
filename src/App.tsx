@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { PageErrorBoundary } from "@/components/shared/PageErrorBoundary";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { UserRole } from "@/types/erp";
 
@@ -406,7 +407,9 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <AppRoutes />
+          <PageErrorBoundary>
+            <AppRoutes />
+          </PageErrorBoundary>
         </BrowserRouter>
       </AuthProvider>
     </TooltipProvider>
