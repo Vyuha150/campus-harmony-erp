@@ -173,7 +173,7 @@ export default function HODAccreditation() {
             </div>
             <Progress value={readiness} className="mt-2 h-2" />
             <CardDescription className="pt-2">
-              Figures marked <Badge variant="outline" className="mx-1 gap-1 text-[10px]"><Database className="h-3 w-3" />ERP</Badge> are calculated from the department's records and update by themselves.
+              Figures marked <span className="mx-1 inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold"><Database className="h-3 w-3" />ERP</span> are calculated from the department's records and update by themselves.
               Check each one and press <b>Verify</b>; attach evidence where NAAC asks for it. Readiness rises as you verify.
             </CardDescription>
           </CardHeader>
