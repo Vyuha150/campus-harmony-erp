@@ -87,8 +87,15 @@ The project is divided into two main parts:
 
 - `npm run dev`: Start the development server.
 - `npm run build`: Build the project for production.
-- `npm run test`: Run tests.
 - `npm run lint`: Lint the codebase.
+- `cd backend && npm test`: Run the backend test suite.
+
+## Deployment
+
+Production runs at **https://campus-erp.ivyuha.in** on the company VPS (nginx + PM2),
+with the database on MongoDB Atlas. Setup and update steps are in
+[`deploy/README.md`](deploy/README.md); after pushing to `main`, run
+`bash deploy/deploy.sh` on the VPS.
 
 ## Contributing
 
