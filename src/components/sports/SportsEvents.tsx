@@ -15,6 +15,7 @@ export default function SportsEvents() {
   const [sportsEvents, setSportsEvents] = useState<any>([]);
   const [selectedEventResults, setSelectedEventResults] = useState<any[] | null>(null);
   const [isResultOpen, setIsResultOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [resultTarget, setResultTarget] = useState<any | null>(null);
   const [resultForm, setResultForm] = useState({
     studentName: '',
@@ -69,6 +70,7 @@ export default function SportsEvents() {
         // SportsEvent.status already defaults to "planning" — the exact value
         // this hardcoded. Sending it rejected every event creation.
       });
+      setIsCreateOpen(false);
       setForm({
         name: '',
         type: 'tournament',
@@ -201,7 +203,7 @@ export default function SportsEvents() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={exportResults}><Download className="mr-2 h-4 w-4" />Export Results</Button>
-            <Dialog>
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild><Button size="sm"><Plus className="mr-2 h-4 w-4" />Create Event</Button></DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Create Sports Event</DialogTitle></DialogHeader>

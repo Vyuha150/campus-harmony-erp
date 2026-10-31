@@ -21,7 +21,7 @@ import { toast } from '@/hooks/use-toast';
  * admission, which creates the student's account and records the admission fee.
  */
 const CATEGORIES = ['GENERAL', 'EWS', 'OBC_NCL', 'SC', 'ST', 'PWD', 'MINORITY'];
-const STATUS_TONE: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = { submitted: 'outline', verified: 'secondary', ineligible: 'destructive', offered: 'secondary', admitted: 'default', declined: 'outline', rejected: 'destructive' };
+const STATUS_TONE: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = { submitted: 'outline', verified: 'secondary', eligible: 'secondary', shortlisted: 'secondary', ineligible: 'destructive', offered: 'secondary', admitted: 'default', declined: 'outline', rejected: 'destructive' };
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 export default function RegistrarAdmissions() {
@@ -142,8 +142,8 @@ export default function RegistrarAdmissions() {
                             <Button size="sm" variant="outline" disabled={!!busy} onClick={() => run(a.id, () => postApi(`/admissions/applications/${a.id}/verify`, { eligible: true, remark: 'Documents verified' }), () => `${a.fullName}: eligible`)}><CheckCircle className="mr-1 h-3 w-3" />Eligible</Button>
                             <Button size="sm" variant="ghost" className="text-destructive" disabled={!!busy} onClick={async () => { const v = await ask({ title: `Mark ${a.fullName} ineligible`, fields: [{ name: 'remark', label: 'Reason (shown on the application)', type: 'textarea', required: true, minLength: 5 }], submitLabel: 'Mark ineligible' }); if (v) run(a.id, () => postApi(`/admissions/applications/${a.id}/verify`, { eligible: false, remark: v.remark }), () => `${a.fullName}: not eligible`); }}><XCircle className="mr-1 h-3 w-3" />Ineligible</Button>
                           </>}
-                          {a.status === 'verified' && a.meritRank && <Button size="sm" disabled={!!busy} onClick={() => run(a.id, () => postApi(`/admissions/applications/${a.id}/offer`, { validForDays: 7 }), () => `Seat offered to ${a.fullName}`)}>Offer seat</Button>}
-                          {a.offer?.status === 'offered' && a.status !== 'admitted' && <>
+                          {a.status === 'shortlisted' && a.meritRank && <Button size="sm" disabled={!!busy} onClick={() => run(a.id, () => postApi(`/admissions/applications/${a.id}/offer`, { validForDays: 7 }), () => `Seat offered to ${a.fullName}`)}>Offer seat</Button>}
+                          {a.offer?.status === 'pending' && a.status !== 'admitted' && <>
                             <Button size="sm" disabled={!!busy} onClick={() => confirm(a.offer.id)}>Confirm admission</Button>
                             <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run(a.id, () => postApi(`/admissions/offers/${a.offer.id}/decline`, { reason: 'Declined by candidate' }), () => 'Offer declined; seat released')}>Declined</Button>
                           </>}

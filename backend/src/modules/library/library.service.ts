@@ -528,9 +528,9 @@ export async function returnBook(
         status: 'returned',
         returnedAt,
         fineAmount: fine.fine,
-        // A fine of zero is settled by definition; anything else is owed until
-        // it is actually collected.
-        finePaid: fine.fine === 0,
+        // Settled when nothing is left after any waiver given while the book was
+        // out; anything else is owed until it is actually collected.
+        finePaid: round2(fine.fine - loan.fineWaivedAmount) <= 0,
         returnedTo: context.userId
       }
     });
@@ -695,7 +695,11 @@ export async function waiveFine(
     throw new NotFoundError(`Loan ${loanId}`);
   }
 
-  const alreadyOwed = round2(loan.fineAmount - loan.fineWaivedAmount);
+  // An open loan's fine is still accruing (stored as 0 until the return), so a
+  // librarian forgiving it before the book comes back waives against what has
+  // accrued so far; the return then records the fine less what was waived.
+  const fineBase = loan.returnedAt ? loan.fineAmount : accruedFine(loan.dueAt, await getPolicy(context)).fine;
+  const alreadyOwed = round2(fineBase - loan.fineWaivedAmount);
 
   if (amount > alreadyOwed) {
     throw new BusinessRuleError(
@@ -710,7 +714,7 @@ export async function waiveFine(
       action: 'UPDATE',
       module: 'library',
       resource: `LibraryLoan:${loan.id}`,
-      details: `Waived Rs.${amount.toFixed(2)} of a Rs.${loan.fineAmount.toFixed(2)} library fine`,
+      details: `Waived Rs.${amount.toFixed(2)} of a Rs.${fineBase.toFixed(2)} library fine`,
       reason,
       oldValue: { fineWaivedAmount: loan.fineWaivedAmount },
       newValue: { fineWaivedAmount: round2(loan.fineWaivedAmount + amount) },
@@ -719,7 +723,7 @@ export async function waiveFine(
     async (tx) => {
       const db = tx as never as typeof basePrisma;
       const waived = round2(loan.fineWaivedAmount + amount);
-      const remaining = round2(loan.fineAmount - waived);
+      const remaining = round2(fineBase - waived);
 
       await db.libraryLoan.updateMany({
         where: { id: loan.id, institutionId: context.institutionId },

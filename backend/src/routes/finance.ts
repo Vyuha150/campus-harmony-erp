@@ -330,7 +330,7 @@ router.get('/fee-payments', authenticate, async (req: Request, res: Response) =>
       where,
       include: { student: { include: { user: true } } },
       orderBy: { paidDate: 'desc' },
-      take: 100
+      take: 1000
     });
 
     res.json({

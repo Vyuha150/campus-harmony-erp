@@ -112,6 +112,30 @@ export default function FeeManagement() {
     }
   };
 
+  // Fees are paid at the Finance office: record it, a receipt number is generated and the student is notified.
+  const recordPayment = async (p: any) => {
+    const v = await ask({
+      title: `Record payment — ${p.studentName}`,
+      description: `${p.studentId} · ${formatCurrency(p.amount)}. The student is notified and can print the receipt.`,
+      fields: [
+        { name: 'mode', label: 'Paid by', type: 'select', required: true, defaultValue: 'cash', options: [
+          { value: 'cash', label: 'Cash' }, { value: 'upi', label: 'UPI' }, { value: 'neft', label: 'NEFT / bank transfer' },
+          { value: 'cheque', label: 'Cheque' }, { value: 'dd', label: 'Demand draft' }, { value: 'card', label: 'Card (POS)' }
+        ] },
+        { name: 'reference', label: 'Reference (UTR / cheque / DD no.)', placeholder: 'Leave blank to generate a receipt number' }
+      ],
+      submitLabel: 'Record payment'
+    });
+    if (!v) return;
+    try {
+      const saved: any = await putApi(`/finance/fee-payments/${p.id}`, { status: 'successful', mode: v.mode, ...(v.reference ? { reference: v.reference } : {}) });
+      setFeePayments((prev: any[]) => prev.map((x: any) => x.id === p.id ? { ...x, status: 'successful', paymentDate: new Date() } : x));
+      toast({ title: 'Payment recorded', description: `Receipt ${saved?.transactionId ?? ''} — ${p.studentName} has been notified.` });
+    } catch (error: any) {
+      toast({ title: 'Could not record payment', description: error?.message || 'Please try again.', variant: 'destructive' });
+    }
+  };
+
   const generateFeeReport = async (type: string) => {
     try {
       await downloadFinanceReport(type);
@@ -270,7 +294,7 @@ export default function FeeManagement() {
                           <td className="px-4 py-3"><div className="flex items-center gap-2 text-sm">{methodIcon(p.paymentMethod)}<span className="capitalize">{p.paymentMethod.replace('_', ' ')}</span></div></td>
                           <td className="px-4 py-3 text-sm text-muted-foreground">{formatDate(p.paymentDate)}</td>
                           <td className="px-4 py-3"><div className="flex items-center gap-1">{statusIcon(p.status)}<Badge variant={p.status === 'successful' ? 'default' : p.status === 'failed' ? 'destructive' : 'secondary'} className="capitalize">{p.status}</Badge></div></td>
-                          <td className="px-4 py-3"><Button variant="ghost" size="sm" onClick={() => viewPayment(p)}>View</Button>{p.status === 'failed' && <Button variant="outline" size="sm" className="ml-1" onClick={() => rectifyPayment(p.id)}>Rectify</Button>}</td>
+                          <td className="px-4 py-3"><Button variant="ghost" size="sm" onClick={() => viewPayment(p)}>View</Button>{p.status === 'failed' && <Button variant="outline" size="sm" className="ml-1" onClick={() => rectifyPayment(p.id)}>Rectify</Button>}{p.status === 'pending' && <Button size="sm" className="ml-1" onClick={() => recordPayment(p)}>Record payment</Button>}</td>
                         </tr>
                       ))}
                     </tbody>

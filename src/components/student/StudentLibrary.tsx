@@ -55,6 +55,8 @@ export default function StudentLibrary() {
   const issuedBooks = libraryBooks.filter(b => b.status === 'issued');
   const overdueBooks = libraryBooks.filter(b => b.status === 'overdue');
   const returnedBooks = libraryBooks.filter(b => b.status === 'returned');
+  // Still with the student, whether or not the due date has passed.
+  const borrowedBooks = libraryBooks.filter(b => b.status === 'issued' || b.status === 'overdue');
   const totalFines = libraryBooks.reduce((sum, b) => sum + (b.fine || 0), 0);
   // The catalogue: every title the library holds, searched on the server.
   // (This used to filter the student's own loan history.)
@@ -169,7 +171,7 @@ export default function StudentLibrary() {
             <CardContent className="flex items-center justify-between p-6">
               <div>
                 <p className="text-sm text-muted-foreground">Books Borrowed</p>
-                <p className="text-3xl font-bold">{issuedBooks.length}</p>
+                <p className="text-3xl font-bold">{borrowedBooks.length}</p>
               </div>
               <BookOpen className="h-8 w-8 text-primary" />
             </CardContent>
@@ -212,8 +214,8 @@ export default function StudentLibrary() {
           <TabsList>
             <TabsTrigger value="borrowed" className="relative">
               Currently Borrowed
-              {issuedBooks.length > 0 && (
-                <span className="ml-2 text-xs">({issuedBooks.length})</span>
+              {borrowedBooks.length > 0 && (
+                <span className="ml-2 text-xs">({borrowedBooks.length})</span>
               )}
             </TabsTrigger>
             <TabsTrigger value="history">Borrowing History</TabsTrigger>
@@ -222,9 +224,9 @@ export default function StudentLibrary() {
 
           {/* Currently Borrowed */}
           <TabsContent value="borrowed" className="space-y-4">
-            {issuedBooks.length > 0 ? (
+            {borrowedBooks.length > 0 ? (
               <div className="space-y-4">
-                {issuedBooks.map((book) => {
+                {borrowedBooks.map((book) => {
                   const daysLeft = getDaysRemaining(book.dueDate);
                   const isNearDue = daysLeft <= 3 && daysLeft >= 0;
                   const isOverdue = daysLeft < 0;

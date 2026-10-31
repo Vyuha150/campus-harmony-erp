@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CalendarClock, CheckCircle, Plus, Send, Ticket, Trash2, Users, XCircle } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +30,9 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 export default function COEExamSessions() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // The selection as it is now, for reloads that run after an action changed it (e.g. a new session).
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selected;
   const [detail, setDetail] = useState<any | null>(null);
   const [courses, setCourses] = useState<any[]>([]);
   const [busy, setBusy] = useState('');
@@ -54,7 +57,7 @@ export default function COEExamSessions() {
       const r = await fn();
       toast({ title: ok(r) });
       await loadSessions();
-      loadDetail();
+      loadDetail(selectedRef.current);
     } catch (e: any) {
       toast({ title: 'Could not complete', description: e?.message, variant: 'destructive' });
     } finally {
