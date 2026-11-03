@@ -7,6 +7,8 @@
  * makes the real thing as little work as the fake one was.
  */
 
+import { toast } from '@/hooks/use-toast';
+
 /** Escape a single CSV cell: quote it, and double any embedded quote. */
 function cell(value: unknown): string {
   const text = value === null || value === undefined ? '' : String(value);
@@ -24,6 +26,10 @@ export function downloadCsv(
   headers: string[],
   rows: Array<Array<unknown>>
 ): void {
+  if (rows.length === 0) {
+    toast({ title: 'Nothing to export', description: `${filename} has no rows.`, variant: 'destructive' });
+    return;
+  }
   const csv = [headers.map(cell).join(','), ...rows.map((r) => r.map(cell).join(','))].join('\n');
   downloadBlob(filename, new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
 }
@@ -38,4 +44,5 @@ export function downloadBlob(filename: string, blob: Blob): void {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+  toast({ title: `Downloaded ${filename}` });
 }

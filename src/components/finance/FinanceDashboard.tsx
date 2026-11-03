@@ -83,7 +83,6 @@ export default function FinanceDashboard() {
   const generateDashboardReport = async (type: string) => {
     try {
       await downloadFinanceReport(type);
-      toast({ title: 'Report generated', description: `${type} report generated successfully.` });
     } catch (error: any) {
       toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });
     }

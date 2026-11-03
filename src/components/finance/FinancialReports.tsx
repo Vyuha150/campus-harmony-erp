@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 export default function FinancialReports() {
   const [reports, setReports] = useState<any>([]);
   const [fiscalYear, setFiscalYear] = useState('2025-26');
+  const [summaryLoaded, setSummaryLoaded] = useState(false);
   const { toast } = useToast();
   const [preview, setPreview] = useState<{ report: FinanceReport; fy: string } | null>(null);
   // `null` for every field: there is no report-generation log, audit-
@@ -31,8 +32,16 @@ export default function FinancialReports() {
 
   useEffect(() => {
     fetchApi('/finance/reports/catalog').then(d => setReports(d)).catch((error) => { console.error('API request failed', error); });
-    fetchApi('/finance/reports/summary').then(d => setReportSummary(d)).catch((error) => { console.error('API request failed', error); });
   }, []);
+
+  // Refetched whenever the year changes, so the tiles never show another year's figures.
+  useEffect(() => {
+    setSummaryLoaded(false);
+    fetchApi(`/finance/reports/summary?fy=${encodeURIComponent(fiscalYear)}`)
+      .then(d => setReportSummary(d))
+      .catch((error) => { console.error('API request failed', error); })
+      .finally(() => setSummaryLoaded(true));
+  }, [fiscalYear]);
 
   const getFiscalYearRange = (fy: string) => {
     const [startYearRaw, endYearRaw] = fy.split('-');
@@ -59,10 +68,9 @@ export default function FinancialReports() {
     try {
       const { startDate, endDate } = getFiscalYearRange(fiscalYear);
       await downloadFinanceReport(type, startDate, endDate);
-      toast({ title: 'Report request submitted', description: `${type} generated for ${fiscalYear}.` });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to generate report', error);
-      toast({ title: 'Generation failed', description: 'Could not generate report.', variant: 'destructive' });
+      toast({ title: 'Generation failed', description: error?.message || 'Could not generate report.', variant: 'destructive' });
     }
   };
 
@@ -100,12 +108,18 @@ export default function FinancialReports() {
         </div>
 
         {/* Quick Stats — "N/A" where nothing has ever been recorded, rather than a number borrowed from an unrelated count. */}
+        {!summaryLoaded ? (
+          <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Loading FY {fiscalYear}…</p>
+        ) : [reportSummary.reportsGenerated, reportSummary.auditObservations, reportSummary.lastAuditPeriod, reportSummary.complianceScore].every((v) => v == null) ? (
+          <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground" data-testid="no-fy-data">No reports or audits recorded for FY {fiscalYear}.</p>
+        ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Reports Generated</p><p className="text-2xl font-bold text-foreground">{reportSummary.reportsGenerated ?? 'N/A'}</p><p className="text-xs text-muted-foreground">Not yet tracked</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Audit Observations</p><p className="text-2xl font-bold text-foreground">{reportSummary.auditObservations ?? 'N/A'}</p><p className="text-xs text-muted-foreground">{reportSummary.pendingAuditResolutions == null ? 'Not yet tracked' : `${reportSummary.pendingAuditResolutions} pending resolution`}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Last Audit</p><p className="text-2xl font-bold text-foreground">{reportSummary.lastAuditPeriod ?? 'N/A'}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Compliance Score</p><p className="text-2xl font-bold text-foreground">{reportSummary.complianceScore ?? 'N/A'}</p></CardContent></Card>
         </div>
+        )}
 
         {/* Report Categories */}
         {['statements', 'analysis', 'operational', 'compliance', 'audit'].map((cat) => (

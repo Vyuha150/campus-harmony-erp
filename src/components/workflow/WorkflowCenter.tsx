@@ -139,6 +139,7 @@ export default function WorkflowCenter() {
   const [mine, setMine] = useState<MineItem[]>([]);
   const [definitions, setDefinitions] = useState<Definition[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [viewing, setViewing] = useState<{ instanceId: string; title: string; canDecide: boolean } | null>(null);
@@ -155,8 +156,10 @@ export default function WorkflowCenter() {
       fetchApi<MineItem[]>('/workflow/mine?pageSize=100'),
       fetchApi<Definition[]>('/workflow/definitions')
     ]);
-    setInbox(inboxData.status === 'fulfilled' && Array.isArray(inboxData.value) ? inboxData.value : []);
-    setMine(mineData.status === 'fulfilled' && Array.isArray(mineData.value) ? mineData.value : []);
+    // A failed fetch keeps what was on screen and says so; it never shows "0".
+    if (inboxData.status === 'fulfilled' && Array.isArray(inboxData.value)) { setInbox(inboxData.value); setLoadError(null); }
+    else setLoadError('Could not load your approvals. Try again.');
+    if (mineData.status === 'fulfilled' && Array.isArray(mineData.value)) setMine(mineData.value);
     setDefinitions(definitionData.status === 'fulfilled' && Array.isArray(definitionData.value) ? definitionData.value : []);
     setLoading(false);
   }, []);
@@ -207,6 +210,10 @@ export default function WorkflowCenter() {
       await load();
     } catch (error) {
       toast({ title: 'Could not record the decision', description: (error as Error).message, variant: 'destructive' });
+      // The item was probably decided already; drop it from the list.
+      setDecision(null);
+      setNote('');
+      await load();
     } finally {
       setBusy(false);
     }
@@ -239,20 +246,22 @@ export default function WorkflowCenter() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Awaiting me</p><p className="text-2xl font-bold">{inbox.length}</p><p className="text-xs text-muted-foreground">{inbox.filter((i) => i.overdue).length} overdue</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">My requests in progress</p><p className="text-2xl font-bold">{mine.filter((m) => m.status === 'pending').length}</p><p className="text-xs text-muted-foreground">{mine.length} raised in total</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Awaiting me</p><p className="text-2xl font-bold">{loading ? '…' : inbox.length}</p><p className="text-xs text-muted-foreground">{loading ? 'Loading…' : `${inbox.filter((i) => i.overdue).length} overdue`}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">My requests in progress</p><p className="text-2xl font-bold">{loading ? '…' : mine.filter((m) => m.status === 'pending').length}</p><p className="text-xs text-muted-foreground">{loading ? 'Loading…' : `${mine.length} raised in total`}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Defined workflows</p><p className="text-2xl font-bold">{definitions.length}</p><p className="text-xs text-muted-foreground">mapped to NAAC and NIRF</p></CardContent></Card>
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
-            <TabsTrigger value="inbox">Awaiting me ({inbox.length})</TabsTrigger>
+            <TabsTrigger value="inbox">Awaiting me ({loading ? '…' : inbox.length})</TabsTrigger>
             <TabsTrigger value="mine">My requests ({mine.length})</TabsTrigger>
             <TabsTrigger value="catalogue">Catalogue ({definitions.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="inbox" className="mt-4 space-y-3">
-            {!loading && inbox.length === 0 && (
+            {loading && <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Loading your approvals…</p>}
+            {!loading && loadError && <p className="rounded-lg border border-destructive/40 p-4 text-center text-sm text-destructive">{loadError}</p>}
+            {!loading && !loadError && inbox.length === 0 && (
               <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Nothing is waiting for your approval.</p>
             )}
             {inbox.map((item) => (

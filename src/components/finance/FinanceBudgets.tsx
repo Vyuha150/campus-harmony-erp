@@ -110,8 +110,7 @@ export default function FinanceBudgets() {
   const generateBudgetReport = async (type: string) => {
     try {
       await downloadFinanceReport(type);
-      toast({ title: 'Report generated', description: `${type} generated successfully.` });
-    } catch (error: any) {
+          } catch (error: any) {
       toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });
     }
   };

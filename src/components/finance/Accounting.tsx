@@ -114,8 +114,7 @@ export default function Accounting() {
     const generateAccountingReport = async (type: string) => {
       try {
         await downloadFinanceReport(type);
-        toast({ title: 'Report generated', description: `${type} generated successfully.` });
-      } catch (error: any) {
+              } catch (error: any) {
         toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });
       }
     };
@@ -194,7 +193,7 @@ export default function Accounting() {
               const { from, to } = v;
               try {
                 const c = await downloadTallyExport(from, to);
-                toast({ title: 'Tally file downloaded', description: `${c.receipts} receipt, ${c.journals} journal and ${c.payments} salary voucher(s). Import in Tally: Gateway → Import → Vouchers.` });
+                toast({ title: `Downloaded tally-vouchers-${from}-to-${to}.xml`, description: `${c.receipts} receipt, ${c.journals} journal and ${c.payments} salary voucher(s). Import in Tally: Gateway → Import → Vouchers.` });
               } catch (error: any) {
                 toast({ title: 'Export failed', description: error?.message, variant: 'destructive' });
               }

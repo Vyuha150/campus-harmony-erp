@@ -88,7 +88,7 @@ export default function Payroll() {
   // Bank upload file: employee, net pay — for the bank's bulk-transfer portal.
   const exportBankFile = () => {
     const due = payrollRecords.filter((r: any) => r.month === thisMonth.month && r.year === thisMonth.year && r.status === 'approved');
-    if (!due.length) { toast({ title: 'Nothing approved this month', description: 'Approve the drafts first.' }); return; }
+    if (!due.length) { toast({ title: 'Nothing approved this month', description: 'Approve the drafts first.', variant: 'destructive' }); return; }
     downloadCsv(`bank-transfer-${thisMonth.month}-${thisMonth.year}.csv`, ['Employee ID', 'Name', 'Department', 'Net pay'], due.map((r: any) => [r.employeeId, r.employeeName, r.department, Number(r.netSalary).toFixed(2)]));
   };
 
