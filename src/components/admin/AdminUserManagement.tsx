@@ -93,8 +93,9 @@ export default function AdminUserManagement() {
       name: userForm.name.trim(),
       email: userForm.email.trim(),
       role: userForm.role,
-      designation: userForm.designation.trim() || null,
-      departmentId: userForm.departmentId || null
+      // An empty designation clears it; an unset department is left alone.
+      designation: userForm.designation.trim(),
+      ...(userForm.departmentId ? { departmentId: userForm.departmentId } : {})
     };
 
     if (userForm.password.trim()) {
@@ -358,6 +359,7 @@ export default function AdminUserManagement() {
                         <div>
                           <p className="font-medium text-foreground">{u.name}</p>
                           <p className="text-xs text-muted-foreground">{u.email}</p>
+                          {u.designation && <p className="text-xs text-muted-foreground">{u.designation}</p>}
                         </div>
                       </div>
                     </TableCell>

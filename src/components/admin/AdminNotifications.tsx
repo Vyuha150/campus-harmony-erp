@@ -12,10 +12,12 @@ import { Bell, Send, Plus, Mail, Eye, Clock } from 'lucide-react';
 import { fetchApi, postApi } from '@/lib/apiService';
 import { safeArray, safeDate, safeNumber, safeString } from '@/lib/normalize';
 import { toast } from '@/hooks/use-toast';
+import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
 import { useState, useEffect } from 'react';
 
 export default function AdminNotifications() {
   const [systemNotifications, setSystemNotifications] = useState<any>([]);
+  const [details, setDetails] = useState<Details | null>(null);
   const [_apiLoading, _setApiLoading] = useState(true);
 
   const normalizeNotification = (raw: any) => ({
@@ -151,7 +153,19 @@ export default function AdminNotifications() {
         {/* Notification List */}
         <div className="space-y-3">
           {systemNotifications.map(n => (
-            <Card key={n.id}>
+            <Card key={n.id} role="button" tabIndex={0} className="cursor-pointer transition-colors hover:bg-muted/30"
+              onClick={() => setDetails({
+                title: n.title,
+                description: `${n.type} · ${n.status}`,
+                rows: [
+                  ['Message', n.message],
+                  ['Sent by', n.sentBy],
+                  ['Date', n.sentDate.toLocaleString('en-IN')],
+                  ['Audience', n.targetRoles.length ? n.targetRoles.map((r: string) => r.replace('_', ' ')).join(', ') : 'Everyone'],
+                  ['Delivery', `${n.readCount.toLocaleString()} read of ${n.totalRecipients.toLocaleString()} recipients`],
+                ],
+              })}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLElement).click(); }}>
               <CardContent className="p-5">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3 flex-1">
@@ -177,7 +191,7 @@ export default function AdminNotifications() {
                   <div className="flex flex-col items-end gap-2">
                     <Badge variant={n.status === 'sent' ? 'default' : n.status === 'scheduled' ? 'secondary' : 'outline'} className="capitalize">{n.status}</Badge>
                     <div className="text-xs text-muted-foreground">
-                      {Math.round((n.readCount / n.totalRecipients) * 100)}% read rate
+                      {n.totalRecipients > 0 ? Math.round((n.readCount / n.totalRecipients) * 100) : 0}% read rate
                     </div>
                   </div>
                 </div>
@@ -186,6 +200,7 @@ export default function AdminNotifications() {
           ))}
         </div>
       </div>
+      <DetailsDialog details={details} onClose={() => setDetails(null)} />
     </DashboardLayout>
   );
 }

@@ -22,6 +22,7 @@ export default function FacultyGrievancesFeedback() {
   const [feedbackSummaries, setFeedbackSummaries] = useState<any>([]);
   const [semesterOptions, setSemesterOptions] = useState<number[]>([]);
   const [selectedSemester, setSelectedSemester] = useState<string>('');
+  const [grievanceStatus, setGrievanceStatus] = useState('all');
   const [_apiLoading, _setApiLoading] = useState(true);
 
   const loadFeedbackSummaries = async (semester?: string) => {
@@ -236,7 +237,7 @@ export default function FacultyGrievancesFeedback() {
             </Dialog>
 
             <Select value={selectedSemester || 'all'} onValueChange={(value) => setSelectedSemester(value === 'all' ? '' : value)}>
-              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Semester" /></SelectTrigger>
+              <SelectTrigger className="w-[200px]" title="Applies to student feedback"><SelectValue placeholder="Semester" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Semesters</SelectItem>
                 {semesterOptions.map((semester) => (
@@ -298,7 +299,16 @@ export default function FacultyGrievancesFeedback() {
           </TabsContent>
 
           <TabsContent value="grievances" className="space-y-3">
-            {facultyGrievances.map((g) => (
+            <Select value={grievanceStatus} onValueChange={setGrievanceStatus}>
+              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {Array.from(new Set<string>(facultyGrievances.map((g: any) => String(g.status || 'received')))).map((st) => (
+                  <SelectItem key={st} value={st} className="capitalize">{st.replace('_', ' ')}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {facultyGrievances.filter((g: any) => grievanceStatus === 'all' || String(g.status || 'received') === grievanceStatus).map((g) => (
               <Card key={g.id} className="border-border">
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between">

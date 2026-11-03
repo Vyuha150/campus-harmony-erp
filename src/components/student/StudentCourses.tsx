@@ -260,7 +260,7 @@ export default function StudentCourses() {
           <div>
             <h1 className="page-title">My Courses</h1>
             <p className="page-description">
-              {profile.program} {profile.branch} • Semester {profile.semester}
+              {profile.program} {profile.branch} • {selectedSemester && selectedSemester !== 'all' ? `Semester ${selectedSemester}` : 'All semesters'}{String(profile.semester) !== selectedSemester ? ` (currently in semester ${profile.semester})` : ''}
             </p>
           </div>
           <div className="flex gap-4">

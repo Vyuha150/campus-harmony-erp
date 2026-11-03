@@ -189,7 +189,9 @@ export const publicationCreateSchema = z
     title: trimmed(500),
     journal: trimmed(300),
     year: z.coerce.number().int().min(1900).max(2100),
-    status: optionalTrimmed(40)
+    status: optionalTrimmed(40),
+    authors: z.array(z.string().trim().min(1).max(160)).max(30).optional(),
+    doi: optionalTrimmed(200)
   })
   .strict();
 

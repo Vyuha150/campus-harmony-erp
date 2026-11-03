@@ -1,5 +1,6 @@
 import { useFormDialog } from '@/components/shared/FormDialog';
-import { downloadFinanceReport, downloadTallyExport } from '@/lib/financeReports';
+import { downloadFinanceReport, downloadTallyExport, buildFinanceReport, type FinanceReport } from '@/lib/financeReports';
+import { ReportPreviewDialog } from '@/components/finance/ReportPreviewDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +19,7 @@ export default function Accounting() {
   const [journalEntries, setJournalEntries] = useState<any>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
+  const [statement, setStatement] = useState<FinanceReport | null>(null);
   const [_apiLoading, _setApiLoading] = useState(true);
 
   const loadJournalEntries = async () => {
@@ -100,6 +102,15 @@ export default function Accounting() {
       }
     };
 
+    const viewStatement = async (type: string) => {
+      try {
+        const year = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;
+        setStatement(await buildFinanceReport(type, `${year}-04-01`, new Date().toISOString().slice(0, 10)));
+      } catch (error: any) {
+        toast({ title: 'Generation failed', description: error?.message || 'Could not build the statement.', variant: 'destructive' });
+      }
+    };
+
     const generateAccountingReport = async (type: string) => {
       try {
         await downloadFinanceReport(type);
@@ -108,6 +119,21 @@ export default function Accounting() {
         toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });
       }
     };
+
+  const ledgerAccounts = (() => {
+    const map = new Map<string, { code: string; name: string; debit: number; credit: number }>();
+    for (const je of journalEntries) {
+      for (const acc of toArray(je.accounts)) {
+        const code = String(acc.accountCode ?? '');
+        const name = String(acc.accountName ?? '');
+        const row = map.get(code + name) ?? { code, name, debit: 0, credit: 0 };
+        row.debit += Number(acc.debitAmount || 0);
+        row.credit += Number(acc.creditAmount || 0);
+        map.set(code + name, row);
+      }
+    }
+    return [...map.values()].sort((x, y) => x.code.localeCompare(y.code));
+  })();
 
   const filteredEntries = journalEntries.filter((entry: any) => {
     const query = searchTerm.trim().toLowerCase();
@@ -251,12 +277,21 @@ export default function Accounting() {
             ))}
           </TabsContent>
 
-          <TabsContent value="ledger">
-            <Card><CardContent className="flex flex-col items-center justify-center py-16">
-              <BookOpen className="h-16 w-16 text-muted-foreground/30" />
-              <h3 className="mt-4 text-lg font-semibold">General Ledger</h3>
-              <p className="text-sm text-muted-foreground">View chart of accounts and transaction history per account</p>
-              <Button className="mt-4" onClick={() => loadJournalEntries().then(() => toast({ title: 'Ledger refreshed', description: 'Journal entries synced from backend.' }))}>Refresh Ledger</Button>
+          <TabsContent value="ledger" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Account balances across all journal entries.</p>
+              <Button size="sm" onClick={() => loadJournalEntries().then(() => toast({ title: 'Ledger refreshed', description: 'Journal entries synced from backend.' }))}>Refresh Ledger</Button>
+            </div>
+            <Card><CardContent className="p-0">
+              <table className="w-full" data-testid="ledger-table">
+                <thead><tr className="border-b bg-muted/50"><th className="px-4 py-3 text-left text-sm text-muted-foreground">Code</th><th className="px-4 py-3 text-left text-sm text-muted-foreground">Account</th><th className="px-4 py-3 text-right text-sm text-muted-foreground">Debit</th><th className="px-4 py-3 text-right text-sm text-muted-foreground">Credit</th></tr></thead>
+                <tbody>
+                  {ledgerAccounts.map((a) => (
+                    <tr key={a.code + a.name} className="border-b last:border-0"><td className="px-4 py-2 text-sm text-muted-foreground">{a.code}</td><td className="px-4 py-2 text-sm">{a.name}</td><td className="px-4 py-2 text-right text-sm">{a.debit ? formatCurrency(a.debit) : '-'}</td><td className="px-4 py-2 text-right text-sm">{a.credit ? formatCurrency(a.credit) : '-'}</td></tr>
+                  ))}
+                  {ledgerAccounts.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-muted-foreground">No journal entries yet.</td></tr>}
+                </tbody>
+              </table>
             </CardContent></Card>
           </TabsContent>
 
@@ -272,7 +307,7 @@ export default function Accounting() {
                     <s.icon className="h-12 w-12 text-primary/50" />
                     <h3 className="mt-3 font-semibold text-foreground">{s.title}</h3>
                     <p className="mt-1 text-sm text-muted-foreground">{s.desc}</p>
-                    <Button variant="outline" size="sm" className="mt-4" onClick={() => generateAccountingReport(s.title)}>Generate</Button>
+                    <Button variant="outline" size="sm" className="mt-4" onClick={() => viewStatement(s.title)}>Generate</Button>
                   </CardContent>
                 </Card>
               ))}
@@ -292,6 +327,7 @@ export default function Accounting() {
           </TabsContent>
         </Tabs>
       </div>
+      <ReportPreviewDialog report={statement} onClose={() => setStatement(null)} />
     </DashboardLayout>
   );
 }

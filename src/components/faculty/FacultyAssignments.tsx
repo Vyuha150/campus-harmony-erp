@@ -314,6 +314,7 @@ export default function FacultyAssignments() {
           </TabsList>
 
           <TabsContent value="active" className="mt-4 space-y-3">
+            {facultyAssignments.filter(a => a.status === 'published').length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No active assessments. Create one to get started.</p>}
             {facultyAssignments.filter(a => a.status === 'published').map((asn) => (
               <Card key={asn.id} className="border-border">
                 <CardContent className="p-4">
@@ -358,6 +359,7 @@ export default function FacultyAssignments() {
           </TabsContent>
 
           <TabsContent value="graded" className="mt-4 space-y-3">
+            {facultyAssignments.filter(a => a.status === 'graded').length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No graded assessments yet.</p>}
             {facultyAssignments.filter(a => a.status === 'graded').map((asn) => (
               <Card key={asn.id} className="border-border">
                 <CardContent className="flex items-center justify-between p-4">
@@ -376,6 +378,7 @@ export default function FacultyAssignments() {
           </TabsContent>
 
           <TabsContent value="drafts" className="mt-4 space-y-3">
+            {facultyAssignments.filter(a => a.status === 'draft').length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No drafts saved.</p>}
             {facultyAssignments.filter(a => a.status === 'draft').map((asn) => (
               <Card key={asn.id} className="border-border">
                 <CardContent className="flex items-center justify-between p-4">

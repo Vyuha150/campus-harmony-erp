@@ -21,6 +21,7 @@ export default function FacultyDashboard() {
   const [todaySchedule, setTodaySchedule] = useState<any>([]);
   const [facultyAssignments, setFacultyAssignments] = useState<any>([]);
   const [semesterOptions, setSemesterOptions] = useState<number[]>([]);
+  const [allCourses, setAllCourses] = useState<any[]>([]);
   const [selectedSemester, setSelectedSemester] = useState<string>('');
   const [menteeStudents, setMenteeStudents] = useState<any>([]);
   const [facultyProfile, setFacultyProfile] = useState<any>({
@@ -62,6 +63,7 @@ export default function FacultyDashboard() {
         ]);
         const semesters = Array.from(new Set((Array.isArray(allCoursesResponse) ? allCoursesResponse : []).map((course: any) => Number(course?.semester)).filter((value) => Number.isFinite(value)))).sort((a: any, b: any) => a - b);
         setSemesterOptions(semesters);
+        setAllCourses(Array.isArray(allCoursesResponse) ? allCoursesResponse : []);
         const apiCurrentSemester = Number((currentSemesterResponse as any)?.currentSemester);
         const defaultSemester = Number.isFinite(apiCurrentSemester) && semesters.includes(apiCurrentSemester)
           ? String(apiCurrentSemester)
@@ -86,6 +88,15 @@ export default function FacultyDashboard() {
     if (_apiLoading) return;
     loadDashboardData(selectedSemester).catch((error) => { console.error('API request failed', error); });
   }, [selectedSemester]);
+
+  // Course, student and hour tiles follow the semester switch.
+  const toMinutes = (t: string) => { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+  const scopedCourses = selectedSemester ? allCourses.filter((c) => String(c.semester) === selectedSemester) : allCourses;
+  const scopedStats = allCourses.length === 0 ? null : {
+    courses: scopedCourses.length,
+    students: scopedCourses.reduce((n, c) => n + Number(c.totalStudents || 0), 0),
+    hours: Math.round(scopedCourses.reduce((n, c) => n + (Array.isArray(c.schedule) ? c.schedule.reduce((m: number, x: any) => m + Math.max(0, toMinutes(x.endTime) - toMinutes(x.startTime)), 0) : 0), 0) / 6) / 10,
+  };
 
   const pendingAssignments = facultyAssignments.filter(a => a.pendingEvaluation > 0);
   const atRiskStudents = menteeStudents.filter(m => m.riskLevel === 'high');
@@ -127,9 +138,9 @@ export default function FacultyDashboard() {
         {/* Quick Stats */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {[
-            { label: 'Courses', value: facultyProfile.coursesThisSemester, icon: BookOpen, color: 'text-primary' },
-            { label: 'Students', value: facultyProfile.totalStudents, icon: Users, color: 'text-blue-600' },
-            { label: 'Weekly Hours', value: `${facultyProfile.weeklyHours}h`, icon: Clock, color: 'text-amber-600' },
+            { label: 'Courses', value: scopedStats?.courses ?? facultyProfile.coursesThisSemester, icon: BookOpen, color: 'text-primary' },
+            { label: 'Students', value: scopedStats?.students ?? facultyProfile.totalStudents, icon: Users, color: 'text-blue-600' },
+            { label: 'Weekly Hours', value: `${scopedStats?.hours ?? facultyProfile.weeklyHours}h`, icon: Clock, color: 'text-amber-600' },
             { label: 'Publications', value: facultyProfile.totalPublications, icon: TrendingUp, color: 'text-green-600' },
           ].map((stat) => (
             <Card key={stat.label} className="border-border">
@@ -154,7 +165,7 @@ export default function FacultyDashboard() {
                 <Calendar className="h-5 w-5 text-primary" />
                 Today's Schedule
               </CardTitle>
-              <Link to="/faculty/courses">
+              <Link to="/faculty/attendance">
                 <Button variant="ghost" size="sm" className="text-xs">View All <ChevronRight className="ml-1 h-3 w-3" /></Button>
               </Link>
             </CardHeader>

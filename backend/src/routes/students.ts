@@ -1655,6 +1655,10 @@ router.post('/campus-services', authenticate, validate({ body: z.object({
   const profile = await getStudentProfile((req as any).user.id);
   res.status(201).json({ success: true, data: await campus.requestService(getTenantContext(req), profile.id, req.body) });
 }));
+router.post('/campus-services/:id/cancel', authenticate, validate({ params: z.object({ id: z.string().min(1).max(64) }) }), wrap(async (req: Request, res: Response) => {
+  const profile = await getStudentProfile((req as any).user.id);
+  res.json({ success: true, data: await campus.cancelMyRequest(getTenantContext(req), profile.id, String(req.params.id)) });
+}));
 
 // ─── Printable documents ───
 async function institutionHeader(institutionId: string) {

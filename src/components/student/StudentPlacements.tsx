@@ -36,8 +36,9 @@ export default function StudentPlacements() {
     role: safeString(drive.role),
     driveDate: safeDate(drive.driveDate),
     eligibility: {
-      minCgpa: safeNumber(drive?.eligibility?.minCgpa),
-      backlogs: safeNumber(drive?.eligibility?.backlogs),
+      // Null = the placement cell has not recorded a criterion; shown as "Not specified", never as 0.
+      minCgpa: drive?.eligibility?.minCgpa == null ? null : safeNumber(drive.eligibility.minCgpa),
+      backlogs: drive?.eligibility?.backlogs == null ? null : safeNumber(drive.eligibility.backlogs),
       allowedBranches: safeArray(drive?.eligibility?.allowedBranches).map((b: any) => safeString(b)),
     },
     rounds: safeArray(drive?.rounds).map((round: any) => ({
@@ -104,7 +105,7 @@ export default function StudentPlacements() {
   };
 
   const isEligible = (drive: PlacementDrive) => {
-    return profile.cgpa >= drive.eligibility.minCgpa;
+    return drive.eligibility.minCgpa == null || profile.cgpa >= drive.eligibility.minCgpa;
   };
 
   const displayedDrives = placementDrives.filter((drive: PlacementDrive) => {
@@ -216,11 +217,11 @@ export default function StudentPlacements() {
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground">Eligibility</p>
             <div className="flex flex-wrap gap-2">
-              <Badge variant={profile.cgpa >= drive.eligibility.minCgpa ? 'outline' : 'destructive'}>
-                Min CGPA: {drive.eligibility.minCgpa}
+              <Badge variant={isEligible(drive) ? 'outline' : 'destructive'}>
+                Min CGPA: {drive.eligibility.minCgpa ?? 'Not specified'}
               </Badge>
               <Badge variant="outline">
-                Backlogs: {drive.eligibility.backlogs}
+                Backlogs: {drive.eligibility.backlogs ?? 'Not specified'}
               </Badge>
             </div>
           </div>
@@ -288,15 +289,15 @@ export default function StudentPlacements() {
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <div className="rounded-lg bg-muted/50 p-3">
                         <p className="text-xs text-muted-foreground">Minimum CGPA</p>
-                        <p className="font-bold">{drive.eligibility.minCgpa}</p>
+                        <p className="font-bold">{drive.eligibility.minCgpa ?? 'Not specified'}</p>
                       </div>
                       <div className="rounded-lg bg-muted/50 p-3">
                         <p className="text-xs text-muted-foreground">Max Backlogs</p>
-                        <p className="font-bold">{drive.eligibility.backlogs}</p>
+                        <p className="font-bold">{drive.eligibility.backlogs ?? 'Not specified'}</p>
                       </div>
                       <div className="col-span-2 rounded-lg bg-muted/50 p-3">
                         <p className="text-xs text-muted-foreground">Eligible Branches</p>
-                        <p className="font-medium">{drive.eligibility.allowedBranches.join(', ')}</p>
+                        <p className="font-medium">{drive.eligibility.allowedBranches.join(', ') || 'Not specified'}</p>
                       </div>
                     </div>
                   </div>

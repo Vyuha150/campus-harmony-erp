@@ -211,6 +211,15 @@ export async function requestService(ctx: TenantContext, studentProfileId: strin
   return created;
 }
 
+/** A student withdraws their own request while it is still waiting. */
+export async function cancelMyRequest(ctx: TenantContext, studentProfileId: string, requestId: string) {
+  const req = await basePrisma.campusServiceRequest.findFirst({ where: { id: requestId, institutionId: ctx.institutionId, studentProfileId } });
+  if (!req) throw new NotFoundError('Request');
+  if (req.status !== 'requested') throw new ConflictError(`This request is already ${req.status}.`);
+  await basePrisma.campusServiceRequest.updateMany({ where: { id: requestId }, data: { status: 'cancelled', decidedBy: ctx.userId, decidedAt: new Date(), decisionNote: 'Withdrawn by the student' } });
+  return { status: 'cancelled' };
+}
+
 export async function listRequests(ctx: TenantContext, filter: { studentProfileId?: string } = {}) {
   const rows = await basePrisma.campusServiceRequest.findMany({ where: { institutionId: ctx.institutionId, ...filter }, orderBy: { createdAt: 'desc' }, take: 300 });
   const students = await basePrisma.studentProfile.findMany({ where: { id: { in: rows.map((r) => r.studentProfileId) }, institutionId: ctx.institutionId }, include: { user: { select: { name: true } } } });

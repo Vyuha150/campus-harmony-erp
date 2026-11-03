@@ -13,6 +13,7 @@ import {
   Calculator, PieChart, ArrowUpRight, ArrowDownRight, Settings, RefreshCw
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { downloadCsv } from '@/lib/download';
 import { fetchApi, postApi, putApi } from '@/lib/apiService';
 import { useToast } from '@/hooks/use-toast';
 
@@ -30,6 +31,13 @@ export default function FinanceBudgets() {
   const [yearFilter, setYearFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [_apiLoading, _setApiLoading] = useState(true);
+  const [customScenarios, setCustomScenarios] = useState<Array<{ name: string; intake: number; fees: number; costs: number }>>(() => {
+    try { return JSON.parse(localStorage.getItem('finance-budget-scenarios') || '[]'); } catch { return []; }
+  });
+  const saveScenarios = (next: typeof customScenarios) => {
+    setCustomScenarios(next);
+    try { localStorage.setItem('finance-budget-scenarios', JSON.stringify(next)); } catch { /* storage unavailable */ }
+  };
   const { toast } = useToast();
 
   const loadBudgetData = async () => {
@@ -48,25 +56,6 @@ export default function FinanceBudgets() {
     _setApiLoading(false);
   }, []);
 
-  const totalAllocated = budgetAllocations.reduce((s, b) => s + Number(b.allocatedAmount || 0), 0);
-  const totalSpent = budgetAllocations.reduce((s, b) => s + Number(b.spentAmount || 0), 0);
-  const totalAvailable = budgetAllocations.reduce((s, b) => s + Number(b.availableAmount || 0), 0);
-  const overallUtilization = totalAllocated > 0 ? ((totalSpent / totalAllocated) * 100).toFixed(1) : '0.0';
-  const baseRevenueCr = Number((totalAllocated / 10000000).toFixed(2));
-  const baseExpensesCr = Number((totalSpent / 10000000).toFixed(2));
-  const scenarioData = [
-    { scenario: 'Base Case', revenue: baseRevenueCr, expenses: baseExpensesCr, surplus: Number((baseRevenueCr - baseExpensesCr).toFixed(2)) },
-    { scenario: '+10% Intake', revenue: Number((baseRevenueCr * 1.1).toFixed(2)), expenses: Number((baseExpensesCr * 1.055).toFixed(2)), surplus: Number(((baseRevenueCr * 1.1) - (baseExpensesCr * 1.055)).toFixed(2)) },
-    { scenario: '-5% Fees', revenue: Number((baseRevenueCr * 0.95).toFixed(2)), expenses: baseExpensesCr, surplus: Number(((baseRevenueCr * 0.95) - baseExpensesCr).toFixed(2)) },
-    { scenario: 'Cost Cut 8%', revenue: baseRevenueCr, expenses: Number((baseExpensesCr * 0.92).toFixed(2)), surplus: Number((baseRevenueCr - (baseExpensesCr * 0.92)).toFixed(2)) },
-  ];
-  const varianceData = budgetAllocations.map((ba: any) => ({
-    name: ba.department.length > 12 ? ba.department.slice(0, 12) + '…' : ba.department,
-    allocated: ba.allocatedAmount / 100000,
-    spent: ba.spentAmount / 100000,
-    variance: ba.allocatedAmount > 0 ? ((ba.spentAmount / ba.allocatedAmount) * 100) - 50 : 0,
-  }));
-
   const filteredBudgetAllocations = budgetAllocations.filter((ba: any) => {
     const year = String(ba.budgetYear || '').toLowerCase();
     const department = String(ba.department || '').toLowerCase();
@@ -74,6 +63,33 @@ export default function FinanceBudgets() {
     const matchesDepartment = departmentFilter === 'all' || department === departmentFilter;
     return matchesYear && matchesDepartment;
   });
+
+  const totalAllocated = filteredBudgetAllocations.reduce((s, b) => s + Number(b.allocatedAmount || 0), 0);
+  const totalSpent = filteredBudgetAllocations.reduce((s, b) => s + Number(b.spentAmount || 0), 0);
+  const totalAvailable = filteredBudgetAllocations.reduce((s, b) => s + Number(b.availableAmount || 0), 0);
+  const overallUtilization = totalAllocated > 0 ? ((totalSpent / totalAllocated) * 100).toFixed(1) : '0.0';
+  const baseRevenueCr = Number((totalAllocated / 10000000).toFixed(2));
+  const baseExpensesCr = Number((totalSpent / 10000000).toFixed(2));
+  const baseScenarios = [
+    { scenario: 'Base Case', revenue: baseRevenueCr, expenses: baseExpensesCr, surplus: Number((baseRevenueCr - baseExpensesCr).toFixed(2)) },
+    { scenario: '+10% Intake', revenue: Number((baseRevenueCr * 1.1).toFixed(2)), expenses: Number((baseExpensesCr * 1.055).toFixed(2)), surplus: Number(((baseRevenueCr * 1.1) - (baseExpensesCr * 1.055)).toFixed(2)) },
+    { scenario: '-5% Fees', revenue: Number((baseRevenueCr * 0.95).toFixed(2)), expenses: baseExpensesCr, surplus: Number(((baseRevenueCr * 0.95) - baseExpensesCr).toFixed(2)) },
+    { scenario: 'Cost Cut 8%', revenue: baseRevenueCr, expenses: Number((baseExpensesCr * 0.92).toFixed(2)), surplus: Number((baseRevenueCr - (baseExpensesCr * 0.92)).toFixed(2)) },
+  ];
+  const scenarioData = [
+    ...baseScenarios,
+    ...customScenarios.map((c) => {
+      const revenue = Number((baseRevenueCr * (1 + c.intake / 100) * (1 + c.fees / 100)).toFixed(2));
+      const expenses = Number((baseExpensesCr * (1 + c.costs / 100)).toFixed(2));
+      return { scenario: c.name, revenue, expenses, surplus: Number((revenue - expenses).toFixed(2)) };
+    }),
+  ];
+  const varianceData = budgetAllocations.map((ba: any) => ({
+    name: ba.department.length > 12 ? ba.department.slice(0, 12) + '…' : ba.department,
+    allocated: ba.allocatedAmount / 100000,
+    spent: ba.spentAmount / 100000,
+    variance: ba.allocatedAmount > 0 ? ((ba.spentAmount / ba.allocatedAmount) * 100) - 50 : 0,
+  }));
 
   const filteredVarianceData = filteredBudgetAllocations.map((ba: any) => ({
     name: ba.department.length > 12 ? ba.department.slice(0, 12) + '…' : ba.department,
@@ -98,6 +114,22 @@ export default function FinanceBudgets() {
     } catch (error: any) {
       toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });
     }
+  };
+
+  const addCustomScenario = async () => {
+    const v = await ask({
+      title: 'Custom scenario',
+      fields: [
+        { name: 'name', label: 'Scenario name', required: true, defaultValue: `Scenario ${customScenarios.length + 1}` },
+        { name: 'intake', label: 'Intake change (%)', type: 'number', required: true, defaultValue: 0 },
+        { name: 'fees', label: 'Fee change (%)', type: 'number', required: true, defaultValue: 0 },
+        { name: 'costs', label: 'Cost change (%)', type: 'number', required: true, defaultValue: 0 },
+      ],
+      submitLabel: 'Save scenario',
+    });
+    if (!v) return;
+    saveScenarios([...customScenarios, { name: String(v.name).trim(), intake: Number(v.intake) || 0, fees: Number(v.fees) || 0, costs: Number(v.costs) || 0 }]);
+    toast({ title: 'Scenario saved', description: `${v.name} added to the table.` });
   };
 
   const createAllocation = async () => {
@@ -190,7 +222,7 @@ export default function FinanceBudgets() {
             <CardContent className="p-5">
               <p className="text-sm text-muted-foreground">Total Budget</p>
               <p className="text-2xl font-bold text-foreground">{formatCurrency(totalAllocated)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{budgetAllocations.length} departments</p>
+              <p className="mt-1 text-xs text-muted-foreground">{filteredBudgetAllocations.length} allocations</p>
             </CardContent>
           </Card>
           <Card>
@@ -213,10 +245,31 @@ export default function FinanceBudgets() {
           <Card>
             <CardContent className="p-5">
               <p className="text-sm text-muted-foreground">Over-budget Depts</p>
-              <p className="text-2xl font-bold text-destructive">{budgetAllocations.filter(b => b.utilizationPercentage > 75).length}</p>
+              <p className="text-2xl font-bold text-destructive">{filteredBudgetAllocations.filter(b => b.utilizationPercentage > 75).length}</p>
               <p className="mt-1 text-xs text-destructive">Needs attention</p>
             </CardContent>
           </Card>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Select value={yearFilter} onValueChange={setYearFilter}>
+            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Years</SelectItem>
+              {yearOptions.map((year) => (
+                <SelectItem key={year} value={year.toLowerCase()}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Departments</SelectItem>
+              {departmentOptions.map((department) => (
+                <SelectItem key={department} value={department.toLowerCase()}>{department}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Tabs defaultValue="allocations" className="space-y-4">
@@ -229,26 +282,6 @@ export default function FinanceBudgets() {
 
           {/* Allocations Tab */}
           <TabsContent value="allocations" className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Select value={yearFilter} onValueChange={setYearFilter}>
-                <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  {yearOptions.map((year) => (
-                    <SelectItem key={year} value={year.toLowerCase()}>{year}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departmentOptions.map((department) => (
-                    <SelectItem key={department} value={department.toLowerCase()}>{department}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
             <div className="grid gap-4">
               {filteredBudgetAllocations.map((ba) => (
@@ -318,7 +351,7 @@ export default function FinanceBudgets() {
               <Card className="border-destructive/30">
                 <CardHeader><CardTitle className="flex items-center gap-2 text-base"><TrendingUp className="h-4 w-4 text-destructive" />Over-utilized (&gt;75%)</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
-                  {budgetAllocations.filter(b => b.utilizationPercentage > 75).map(b => (
+                  {filteredBudgetAllocations.filter(b => b.utilizationPercentage > 75).map(b => (
                     <div key={b.id} className="flex items-center justify-between rounded-lg bg-destructive/5 p-3">
                       <div>
                         <p className="font-medium text-foreground">{b.department}</p>
@@ -333,7 +366,7 @@ export default function FinanceBudgets() {
               <Card className="border-amber-300/30">
                 <CardHeader><CardTitle className="flex items-center gap-2 text-base"><TrendingDown className="h-4 w-4 text-amber-600" />Under-utilized (&lt;40%)</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
-                  {budgetAllocations.filter(b => b.utilizationPercentage < 40).map(b => (
+                  {filteredBudgetAllocations.filter(b => b.utilizationPercentage < 40).map(b => (
                     <div key={b.id} className="flex items-center justify-between rounded-lg bg-amber-50 p-3">
                       <div>
                         <p className="font-medium text-foreground">{b.department}</p>
@@ -342,7 +375,7 @@ export default function FinanceBudgets() {
                       <Badge variant="secondary">{b.utilizationPercentage}%</Badge>
                     </div>
                   ))}
-                  {budgetAllocations.filter(b => b.utilizationPercentage < 40).length === 0 && (
+                  {filteredBudgetAllocations.filter(b => b.utilizationPercentage < 40).length === 0 && (
                     <p className="text-sm text-muted-foreground">No significantly under-utilized departments</p>
                   )}
                 </CardContent>
@@ -400,8 +433,8 @@ export default function FinanceBudgets() {
                   </table>
                 </div>
                 <div className="mt-4 flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => generateBudgetReport('custom_scenario')}><RefreshCw className="mr-1 h-3 w-3" />Run Custom Scenario</Button>
-                  <Button size="sm" onClick={() => generateBudgetReport('scenario_projection_export')}><Download className="mr-1 h-3 w-3" />Export Projections</Button>
+                  <Button variant="outline" size="sm" onClick={addCustomScenario}><RefreshCw className="mr-1 h-3 w-3" />Run Custom Scenario</Button>
+                  <Button size="sm" onClick={() => downloadCsv('scenario-projections.csv', ['Scenario', 'Revenue (Cr)', 'Expenses (Cr)', 'Surplus (Cr)'], scenarioData.map((x) => [x.scenario, x.revenue, x.expenses, x.surplus]))}><Download className="mr-1 h-3 w-3" />Export Projections</Button>
                 </div>
               </CardContent>
             </Card>

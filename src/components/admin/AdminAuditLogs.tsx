@@ -11,11 +11,14 @@ import {
   Search, Filter, Download, Clock, AlertTriangle, Activity, LogIn, FileText
 } from 'lucide-react';
 import { fetchApi } from '@/lib/apiService';
+import { downloadCsv } from '@/lib/download';
+import { useToast } from '@/hooks/use-toast';
 import { ROLE_INFO } from '@/types/erp';
 import { useState, useEffect } from 'react';
 import { safeArray, safeDate, safeString } from '@/lib/normalize';
 
 export default function AdminAuditLogs() {
+  const { toast } = useToast();
   const [auditLogs, setAuditLogs] = useState<any>([]);
   const [userActivities, setUserActivities] = useState<any>([]);
   const [_apiLoading, _setApiLoading] = useState(true);
@@ -25,11 +28,11 @@ export default function AdminAuditLogs() {
     timestamp: safeDate(raw?.timestamp),
     userName: safeString(raw?.userName, 'System'),
     role: safeString(raw?.role),
-    action: safeString(raw?.action),
+    action: safeString(raw?.action).toLowerCase(),
     module: safeString(raw?.module),
     details: safeString(raw?.details),
     ipAddress: safeString(raw?.ipAddress, '0.0.0.0'),
-    severity: safeString(raw?.severity, 'info'),
+    severity: safeString(raw?.severity, 'info').toLowerCase(),
     status: 'success'
   });
 
@@ -47,30 +50,19 @@ export default function AdminAuditLogs() {
   const [actionFilter, setActionFilter] = useState('all');
 
   const exportLogs = () => {
-    const rows = filteredLogs.map((log) => ({
-      timestamp: log.timestamp.toISOString(),
-      userName: log.userName,
-      role: log.role,
-      action: log.action,
-      module: log.module,
-      details: log.details,
-      ipAddress: log.ipAddress,
-      severity: log.severity
-    }));
-
-    const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(
+      `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Timestamp', 'User', 'Role', 'Action', 'Module', 'Details', 'IP address', 'Severity'],
+      filteredLogs.map((log) => [log.timestamp.toISOString(), log.userName, log.role, log.action, log.module, parseAuditDetails(log.details).summary, log.ipAddress, log.severity])
+    );
+    toast({ title: 'Export started', description: `${filteredLogs.length} audit events downloaded.` });
   };
 
   const filteredLogs = auditLogs.filter(l => {
     if (severityFilter !== 'all' && l.severity !== severityFilter) return false;
-    if (actionFilter !== 'all' && l.action !== actionFilter) return false;
-    if (searchTerm && !l.userName.toLowerCase().includes(searchTerm.toLowerCase()) && !l.details.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    if (actionFilter !== 'all' && !l.action.includes(actionFilter)) return false;
+    const q = searchTerm.trim().toLowerCase();
+    if (q && ![l.userName, l.details, l.module, l.action].some((f) => f.toLowerCase().includes(q))) return false;
     return true;
   });
 

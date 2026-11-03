@@ -689,7 +689,9 @@ router.post('/reports/generate', authenticate, validate({ body: financeReportGen
       columns = ['Month', 'Year', 'Employee ID', 'Name', 'Department', 'Gross', 'Net', 'Status'];
       rows = ps.map((p: any) => [p.month, p.year, p.employeeId, p.employeeName, p.department, inr(p.grossSalary), inr(p.netSalary), p.status]);
     } else if (/budget|variance/.test(t)) {
-      const bs = await prisma.budgetAllocation.findMany({ orderBy: { department: 'asc' } });
+      // Budgets are kept per academic year ("2025-26"); follow the period chosen on screen.
+      const fy = startDate ? `${from.getUTCFullYear()}-${String((from.getUTCFullYear() + 1) % 100).padStart(2, '0')}` : null;
+      const bs = await prisma.budgetAllocation.findMany({ where: fy ? { budgetYear: fy } : {}, orderBy: { department: 'asc' } });
       columns = ['Department', 'Category', 'Year', 'Allocated', 'Spent', 'Available', 'Utilisation %'];
       rows = bs.map((b: any) => [b.department, b.category, b.budgetYear, inr(b.allocatedAmount), inr(b.spentAmount), inr(b.availableAmount), Math.round(b.utilizationPercentage ?? 0)]);
     } else if (/procure|purchase|vendor/.test(t)) {
@@ -700,7 +702,55 @@ router.post('/reports/generate', authenticate, validate({ body: financeReportGen
       const fs = await prisma.feeRecord.findMany({ where: { status: { in: ['pending', 'overdue', 'partial'] } }, include: { student: { include: { user: { select: { name: true } } } } }, orderBy: { dueDate: 'asc' } });
       columns = ['Roll no', 'Name', 'Fee', 'Due date', 'Amount', 'Paid', 'Waived', 'Outstanding'];
       rows = fs.map((f: any) => [f.student?.rollNumber ?? '', f.student?.user?.name ?? '', f.description, day(f.dueDate), inr(f.amount), inr(f.paidAmount), inr(f.waivedAmount), inr(f.amount - f.paidAmount - (f.waivedAmount ?? 0))]);
-    } else if (/income|expenditure|cash|balance|statement|audit|compliance/.test(t)) {
+    } else if (/balance/.test(t)) {
+      // Position at the end of the period, from what the ERP records.
+      const [fees, pay, pos] = await Promise.all([
+        prisma.feeRecord.findMany({ select: { status: true, amount: true, paidAmount: true, waivedAmount: true, paidDate: true } }),
+        prisma.payrollRecord.findMany({ select: { status: true, grossSalary: true, netSalary: true, paymentDate: true } }),
+        prisma.purchaseOrder.findMany({ select: { status: true, totalAmount: true, paymentDate: true } })
+      ]);
+      const upTo = (d: Date | null | undefined) => !!d && new Date(d) <= to;
+      const received = (fees as any[]).filter((f) => f.status === 'paid' && upTo(f.paidDate)).reduce((a, f) => a + (f.paidAmount || f.amount), 0);
+      const receivable = (fees as any[]).filter((f) => ['pending', 'overdue', 'partial'].includes(f.status)).reduce((a, f) => a + Math.max(0, f.amount - (f.paidAmount ?? 0) - (f.waivedAmount ?? 0)), 0);
+      const salariesPaid = (pay as any[]).filter((p) => p.status === 'paid' && upTo(p.paymentDate)).reduce((a, p) => a + p.grossSalary, 0);
+      const salariesPayable = (pay as any[]).filter((p) => p.status === 'approved').reduce((a, p) => a + p.netSalary, 0);
+      const poPaid = (pos as any[]).filter((p) => upTo(p.paymentDate)).reduce((a, p) => a + p.totalAmount, 0);
+      const poPayable = (pos as any[]).filter((p) => !p.paymentDate && !['cancelled', 'rejected', 'pending'].includes(p.status)).reduce((a, p) => a + p.totalAmount, 0);
+      const cash = received - salariesPaid - poPaid;
+      const assets = cash + receivable;
+      const liabilities = salariesPayable + poPayable;
+      title = `Balance sheet as at ${day(to)}`;
+      columns = ['Section', 'Head', 'Amount'];
+      rows = [
+        ['Assets', 'Cash and bank (receipts less payments)', inr(cash)],
+        ['Assets', 'Fees receivable', inr(receivable)],
+        ['Assets', 'Total assets', inr(assets)],
+        ['Liabilities', 'Salaries payable (approved, not disbursed)', inr(salariesPayable)],
+        ['Liabilities', 'Vendor payables (orders not yet paid)', inr(poPayable)],
+        ['Liabilities', 'Total liabilities', inr(liabilities)],
+        ['Equity', 'Net assets (assets less liabilities)', inr(assets - liabilities)]
+      ];
+    } else if (/cash/.test(t)) {
+      const [fees, pay, pos] = await Promise.all([
+        prisma.feeRecord.findMany({ where: { status: 'paid', paidDate: { gte: from, lte: to } }, select: { paidAmount: true, amount: true } }),
+        prisma.payrollRecord.findMany({ where: { status: 'paid', paymentDate: { gte: from, lte: to } }, select: { netSalary: true } }),
+        prisma.purchaseOrder.findMany({ where: { paymentDate: { gte: from, lte: to } }, select: { totalAmount: true } })
+      ]);
+      const inflow = (fees as any[]).reduce((a, f) => a + (f.paidAmount || f.amount), 0);
+      const salaries = (pay as any[]).reduce((a, p) => a + p.netSalary, 0);
+      const purchases = (pos as any[]).reduce((a, p) => a + p.totalAmount, 0);
+      title = `Cash flow ${day(from)} to ${day(to)}`;
+      columns = ['Activity', 'Head', 'Amount'];
+      rows = [
+        ['Operating', 'Fee receipts', inr(inflow)],
+        ['Operating', 'Salaries paid (net)', inr(-salaries)],
+        ['Operating', 'Vendor payments', inr(-purchases)],
+        ['Operating', 'Net cash from operations', inr(inflow - salaries - purchases)],
+        ['Investing', 'Capital purchases (not recorded separately)', 0],
+        ['Financing', 'Borrowings and grants (not recorded)', 0],
+        ['Net', 'Net change in cash', inr(inflow - salaries - purchases)]
+      ];
+    } else if (/income|expenditure|statement|audit|compliance/.test(t)) {
       // Income & expenditure from what the ERP records: fee receipts in, salaries and paid purchase orders out.
       const [fees, pay, pos] = await Promise.all([
         prisma.feeRecord.findMany({ where: { status: 'paid', paidDate: { gte: from, lte: to } }, select: { type: true, paidAmount: true, amount: true } }),

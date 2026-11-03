@@ -91,8 +91,7 @@ export default function StudentGrievances() {
   const pendingFeedback = feedbackForms.filter(f => f.status === 'pending');
   const filteredGrievances = grievances.filter((grievance) => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return true;
-    const matchesQuery = `${grievance.subject} ${grievance.description} ${grievance.category}`.toLowerCase().includes(query);
+    const matchesQuery = !query || `${grievance.subject} ${grievance.description} ${grievance.category}`.toLowerCase().includes(query);
     const matchesStatus = statusFilter === 'all' || grievance.status === statusFilter;
     return matchesQuery && matchesStatus;
   });
@@ -452,9 +451,11 @@ export default function StudentGrievances() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="submitted">Submitted</SelectItem>
+                  <SelectItem value="under_review">Under Review</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="resolved">Resolved</SelectItem>
+                  <SelectItem value="closed">Closed</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -44,12 +44,12 @@ export default function SuperAdminDashboard() {
       const totalUsers = safeNumber(stats.find((s: any) => safeString(s?.label).toLowerCase() === 'total users')?.value);
       const students = safeNumber(stats.find((s: any) => safeString(s?.label).toLowerCase() === 'students')?.value);
       const faculty = safeNumber(stats.find((s: any) => safeString(s?.label).toLowerCase() === 'faculty')?.value);
-      setSystemHealth({
-        ...systemHealth,
-        totalUsers,
-        activeUsers: students + faculty,
+      setSystemHealth((prev: any) => ({
+        ...prev,
+        totalUsers: safeNumber(d?.summary?.totalUsers, totalUsers),
+        activeUsers: safeNumber(d?.summary?.activeUsers, students + faculty),
         uptime: safeString(d?.systemHealth?.uptime, '0h')
-      });
+      }));
     }).catch((error) => { console.error('API request failed', error); });
     fetchApi('/admin/audit-logs').then((d: any) => {
       const logs = safeArray(d).map(normalizeAuditLog);
@@ -91,7 +91,7 @@ export default function SuperAdminDashboard() {
                   <p className="text-xl font-bold text-foreground">{systemHealth.activeUsers}</p>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">of {systemHealth.totalUsers?.toLocaleString?.() ?? 0} total</p>
+              <p className="text-xs text-muted-foreground mt-2">active in the last 24h · {systemHealth.totalUsers?.toLocaleString?.() ?? 0} total accounts</p>
             </CardContent>
           </Card>
           <Card>

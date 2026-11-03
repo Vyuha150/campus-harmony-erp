@@ -1,5 +1,6 @@
 import { useFormDialog } from '@/components/shared/FormDialog';
-import { downloadFinanceReport } from '@/lib/financeReports';
+import { buildFinanceReport, type FinanceReport } from '@/lib/financeReports';
+import { ReportPreviewDialog } from '@/components/finance/ReportPreviewDialog';
 import { DetailsDialog, type Details } from '@/components/shared/DetailsDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,6 +65,7 @@ export default function FeeManagement() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [_apiLoading, _setApiLoading] = useState(true);
   const { toast } = useToast();
+  const [report, setReport] = useState<FinanceReport | null>(null);
 
   const loadFinanceData = async () => {
     const [payments, structures] = await Promise.all([
@@ -138,8 +140,10 @@ export default function FeeManagement() {
 
   const generateFeeReport = async (type: string) => {
     try {
-      await downloadFinanceReport(type);
-      toast({ title: 'Report generated', description: `${type} generated successfully.` });
+      const today = new Date().toISOString().slice(0, 10);
+      // Daily report is today only; the register covers the current financial year to date.
+      const fyStart = `${new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1}-04-01`;
+      setReport(await buildFinanceReport(type, type === 'daily_collection' ? today : fyStart, today));
     } catch (error: any) {
       toast({ title: 'Generation failed', description: error.message || 'Could not generate report.', variant: 'destructive' });
     }
@@ -223,6 +227,21 @@ export default function FeeManagement() {
     });
   };
 
+  const reconciliationRows = (() => {
+    const map = new Map<string, { date: string; mode: string; count: number; amount: number }>();
+    for (const p of successfulPayments) {
+      const date = formatDate(p.paymentDate);
+      const mode = String(p.paymentMethod || 'offline').replace('_', ' ');
+      const k = `${date}|${mode}`;
+      const row = map.get(k) ?? { date, mode, count: 0, amount: 0 };
+      row.count += 1;
+      row.amount += Number(p.amount || 0);
+      map.set(k, row);
+    }
+    return [...map.values()];
+  })();
+  const unmatchedPayments = feePayments.filter((p: any) => ['pending', 'failed'].includes(String(p.status || '').toLowerCase()));
+
   const refreshReconciliation = async () => {
     try {
       await loadFinanceData();
@@ -243,7 +262,7 @@ export default function FeeManagement() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => generateFeeReport('daily_collection')}><Download className="mr-2 h-4 w-4" />Daily Report</Button>
-            <Button size="sm" onClick={() => generateFeeReport('payment_register')}><Plus className="mr-2 h-4 w-4" />Payment Register</Button>
+            <Button size="sm" onClick={() => generateFeeReport('payment_register')}><Receipt className="mr-2 h-4 w-4" />Payment Register</Button>
           </div>
         </div>
 
@@ -335,16 +354,44 @@ export default function FeeManagement() {
             <Button variant="outline" className="w-full" onClick={createFeeStructure}><Plus className="mr-2 h-4 w-4" />Create New Fee Structure</Button>
           </TabsContent>
 
-          <TabsContent value="reconciliation">
-            <Card><CardContent className="flex flex-col items-center justify-center py-16">
-              <Receipt className="h-16 w-16 text-muted-foreground/30" />
-              <h3 className="mt-4 text-lg font-semibold text-foreground">Daily Reconciliation</h3>
-              <p className="text-sm text-muted-foreground">Match online payments with bank statements and resolve discrepancies</p>
-              <Button className="mt-4" onClick={refreshReconciliation}>Refresh Reconciliation Data</Button>
+          <TabsContent value="reconciliation" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Daily receipts by mode, and payments still to be matched (pending or failed).</p>
+              <Button size="sm" onClick={refreshReconciliation}>Refresh Reconciliation Data</Button>
+            </div>
+            <Card><CardContent className="p-0">
+              <table className="w-full" data-testid="reconciliation-table">
+                <thead><tr className="border-b bg-muted/50">
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Date</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Mode</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Receipts</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Amount</th>
+                </tr></thead>
+                <tbody>
+                  {reconciliationRows.map((r) => (
+                    <tr key={`${r.date}-${r.mode}`} className="border-b last:border-0">
+                      <td className="px-4 py-3 text-sm">{r.date}</td>
+                      <td className="px-4 py-3 text-sm capitalize">{r.mode}</td>
+                      <td className="px-4 py-3 text-right text-sm">{r.count}</td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold">{formatCurrency(r.amount)}</td>
+                    </tr>
+                  ))}
+                  {reconciliationRows.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-muted-foreground">No receipts recorded yet.</td></tr>}
+                </tbody>
+              </table>
+            </CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-base">Unmatched ({unmatchedPayments.length})</CardTitle></CardHeader><CardContent className="space-y-2">
+              {unmatchedPayments.slice(0, 20).map((p: any) => (
+                <div key={p.id} className="flex items-center justify-between rounded-lg bg-muted/30 p-3 text-sm">
+                  <span>{p.studentName} · {p.studentId}</span><span className="flex items-center gap-2">{formatCurrency(p.amount)}<Badge variant={p.status === 'failed' ? 'destructive' : 'secondary'} className="capitalize">{p.status}</Badge></span>
+                </div>
+              ))}
+              {unmatchedPayments.length === 0 && <p className="text-sm text-muted-foreground">Everything is matched.</p>}
             </CardContent></Card>
           </TabsContent>
         </Tabs>
       </div>
+      <ReportPreviewDialog report={report} onClose={() => setReport(null)} />
       <DetailsDialog details={details} onClose={() => setDetails(null)} />
     </DashboardLayout>
   );

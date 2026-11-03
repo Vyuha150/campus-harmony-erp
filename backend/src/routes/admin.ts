@@ -44,6 +44,13 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
     const students = await prisma.user.count({ where: { role: 'student' } });
     const faculty = await prisma.user.count({ where: { role: 'faculty' } });
     const incidents = await prisma.incidentReport.count({ where: { status: 'pending' } });
+    // Active = accounts that did anything audited in the last 24 hours.
+    const recent = await db.systemAuditLog.findMany({
+      where: { timestamp: { gte: new Date(Date.now() - 864e5) }, user: { institutionId: getTenantContext(req).institutionId } },
+      select: { userId: true },
+      distinct: ['userId'],
+      take: 5000
+    });
 
     // `status: 'operational', uptime: '99.9%'` were literals — a health claim
     // and a specific reliability percentage that no monitoring in this system
@@ -68,8 +75,10 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
           { label: "Faculty", value: faculty.toString(), icon: "BookOpen", color: "text-purple-500" },
           { label: "System Errors", value: incidents.toString(), icon: "AlertTriangle", color: "text-destructive" }
         ],
+        summary: { totalUsers, activeUsers: recent.length },
         systemHealth: {
           status: dbConnected ? 'operational' : 'degraded',
+          uptime: `${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`,
           processUptimeSeconds: Math.floor(process.uptime())
         }
       }

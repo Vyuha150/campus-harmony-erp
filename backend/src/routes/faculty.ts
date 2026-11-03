@@ -1574,7 +1574,7 @@ router.get('/research/publications', authenticate, async (req: Request, res: Res
       success: true,
       // Authors, indexing and citations were literals ('Primary Author',
       // 'Scopus', 0) on every paper. None is recorded, so none is asserted.
-      data: pubs.map((publication: any) => ({ ...publication, authors: [], indexing: null, citations: null }))
+      data: pubs.map((publication: any) => ({ ...publication, authors: publication.authors ?? [], indexing: null, citations: null }))
     });
   } catch (error: any) {
     sendError(res, error);
@@ -1585,9 +1585,9 @@ router.post('/research/publications', authenticate, validate({ body: publication
   try {
     const userId = (req as any).user.id;
     const profile = await getFacultyProfile(userId);
-    const { title, journal, year, status } = req.body;
+    const { title, journal, year, status, authors, doi } = req.body;
     const pub = await prisma.publication.create({
-      data: { facultyProfileId: profile.id, title, journal, year, status: status || 'submitted' }
+      data: { facultyProfileId: profile.id, title, journal, year, status: status || 'submitted', authors: authors ?? [], ...(doi ? { doi } : {}) }
     });
     // Indexing and affiliation are checked by the HOD, then locked by IQAC.
     const approval = await startApprovalFor(getTenantContext(req), 'PUBLICATION_VERIFICATION', 'Publication', pub.id);

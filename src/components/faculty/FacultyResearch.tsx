@@ -24,7 +24,7 @@ export default function FacultyResearch() {
   const [patents, setPatents] = useState<any>([]);
   const [_apiLoading, _setApiLoading] = useState(true);
   const [savingPublication, setSavingPublication] = useState(false);
-  const [publicationForm, setPublicationForm] = useState({ title: '', journal: '', year: '', status: 'submitted' });
+  const [publicationForm, setPublicationForm] = useState({ title: '', authors: '', doi: '', journal: '', year: '', status: 'submitted' });
   const { toast } = useToast();
   useEffect(() => {
     fetchApi('/faculty/research/publications').then(d => setPublications(d)).catch((error) => { console.error('API request failed', error); });
@@ -107,10 +107,12 @@ export default function FacultyResearch() {
         title: publicationForm.title.trim(),
         journal: publicationForm.journal.trim(),
         year: Number(publicationForm.year),
-        status: publicationForm.status
+        status: publicationForm.status,
+        authors: publicationForm.authors.split(',').map((a) => a.trim()).filter(Boolean),
+        ...(publicationForm.doi.trim() ? { doi: publicationForm.doi.trim() } : {})
       });
-      setPublications((prev: any[]) => [{ ...created, authors: [], indexing: null, citations: null }, ...prev]);
-      setPublicationForm({ title: '', journal: '', year: '', status: 'submitted' });
+      setPublications((prev: any[]) => [{ ...created, indexing: null, citations: null }, ...prev]);
+      setPublicationForm({ title: '', authors: '', doi: '', journal: '', year: '', status: 'submitted' });
       toast({ title: 'Publication saved' });
     } catch (error: any) {
       toast({ title: 'Save failed', description: error?.message || 'Unable to save publication.', variant: 'destructive' });
@@ -163,11 +165,11 @@ export default function FacultyResearch() {
                     <DialogHeader><DialogTitle>Add Publication</DialogTitle></DialogHeader>
                     <div className="space-y-4">
                       <div><Label>Title</Label><Input placeholder="Paper title" value={publicationForm.title} onChange={(event) => setPublicationForm((prev) => ({ ...prev, title: event.target.value }))} /></div>
-                      <div><Label>Authors</Label><Input placeholder="Author1, Author2, ..." disabled value="Primary Author" /></div>
+                      <div><Label>Authors</Label><Input placeholder="Author1, Author2, ..." value={publicationForm.authors} onChange={(event) => setPublicationForm((prev) => ({ ...prev, authors: event.target.value }))} /></div>
                       <div><Label>Journal / Conference</Label><Input placeholder="Journal name" value={publicationForm.journal} onChange={(event) => setPublicationForm((prev) => ({ ...prev, journal: event.target.value }))} /></div>
                       <div className="grid grid-cols-2 gap-4">
                         <div><Label>Year</Label><Input type="number" placeholder="2026" value={publicationForm.year} onChange={(event) => setPublicationForm((prev) => ({ ...prev, year: event.target.value }))} /></div>
-                        <div><Label>DOI</Label><Input placeholder="10.xxxx/..." /></div>
+                        <div><Label>DOI</Label><Input placeholder="10.xxxx/..." value={publicationForm.doi} onChange={(event) => setPublicationForm((prev) => ({ ...prev, doi: event.target.value }))} /></div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div><Label>Type</Label>
@@ -213,7 +215,7 @@ export default function FacultyResearch() {
                       <TableRow key={pub.id}>
                         <TableCell>
                           <p className="max-w-[300px] truncate font-medium">{pub.title}</p>
-                          <p className="text-xs text-muted-foreground">{pub.authors.join(', ')}</p>
+                          <p className="text-xs text-muted-foreground">{(pub.authors ?? []).join(', ')}</p>
                         </TableCell>
                         <TableCell className="text-sm">{pub.journal}</TableCell>
                         <TableCell>{pub.year}</TableCell>

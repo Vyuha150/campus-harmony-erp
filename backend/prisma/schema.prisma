@@ -1019,6 +1019,9 @@ model Publication {
   journal          String
   year             Int
   status           String
+  /// Author names as entered by the faculty member (empty on older records).
+  authors          String[]
+  doi              String?
 
   faculty FacultyProfile @relation(fields: [facultyProfileId], references: [id], onDelete: Cascade)
 }

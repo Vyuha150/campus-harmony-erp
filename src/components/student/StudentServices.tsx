@@ -36,6 +36,19 @@ export default function StudentServices() {
     }
   };
 
+  const cancel = async (id: string) => {
+    setBusy('cancel');
+    try {
+      await postApi(`/students/campus-services/${id}/cancel`, {});
+      toast({ title: 'Request withdrawn' });
+      load();
+    } catch (e: any) {
+      toast({ title: 'Could not withdraw', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBusy('');
+    }
+  };
+
   if (!data) return <DashboardLayout><p className="py-10 text-center text-sm text-muted-foreground">Loading…</p></DashboardLayout>;
   const pending = (s: string) => data.requests.find((r: any) => r.service === s && r.status === 'requested');
   const route = data.routes.find((r: any) => r.id === routeId);
@@ -58,7 +71,10 @@ export default function StudentServices() {
                   <p>Warden: {data.hostel.warden} ({data.hostel.wardenPhone})</p>
                 </div>
               ) : pending('hostel') ? (
-                <Badge variant="secondary">Request with the Registrar’s office</Badge>
+                <div className="flex items-center gap-3">
+                  <Badge variant="secondary">Request with the Registrar’s office</Badge>
+                  <Button variant="outline" size="sm" disabled={!!busy} onClick={() => cancel(pending('hostel').id)}>Withdraw request</Button>
+                </div>
               ) : (
                 <>
                   <div className="space-y-1"><Label>Room type</Label>
@@ -81,7 +97,10 @@ export default function StudentServices() {
                   <p className="text-muted-foreground">{[data.transport.vehicleNumber, data.transport.driverName && `Driver ${data.transport.driverName}`, data.transport.driverPhone].filter(Boolean).join(' · ')}</p>
                 </div>
               ) : pending('transport') ? (
-                <Badge variant="secondary">Request with the Registrar’s office</Badge>
+                <div className="flex items-center gap-3">
+                  <Badge variant="secondary">Request with the Registrar’s office</Badge>
+                  <Button variant="outline" size="sm" disabled={!!busy} onClick={() => cancel(pending('transport').id)}>Withdraw request</Button>
+                </div>
               ) : !data.routes.length ? (
                 <p className="text-sm text-muted-foreground">No bus routes have been set up yet.</p>
               ) : (

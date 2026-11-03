@@ -99,6 +99,7 @@ export default function FacultyMarks() {
     )));
   };
 
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const submitInternalMarks = async () => {
     if (!selectedCourseId) {
       toast({ title: 'Select a course', description: 'Please select a course first.', variant: 'destructive' });
@@ -115,6 +116,7 @@ export default function FacultyMarks() {
           grade: entry.total === '' || entry.total === undefined ? null : String(entry.total)
         }))
       });
+      setSavedAt(new Date());
       toast({ title: 'Marks submitted', description: 'Internal marks saved successfully.' });
     } catch (error: any) {
       toast({ title: 'Submit failed', description: error?.message || 'Unable to submit marks.', variant: 'destructive' });
@@ -206,6 +208,7 @@ export default function FacultyMarks() {
                   </TableBody>
                 </Table>
                 <div className="mt-4 flex justify-end gap-2">
+                  {savedAt && <span role="status" className="mr-3 text-sm text-green-600">Marks saved at {savedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
                   <Button onClick={submitInternalMarks} disabled={submittingMarks}>
                     <Save className="mr-1 h-4 w-4" />{submittingMarks ? 'Submitting...' : 'Submit Marks'}
                   </Button>

@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { useAuth } from '@/context/AuthContext';
 import { fetchApi, postApi } from '@/lib/apiService';
 import { cn } from '@/lib/utils';
 import { safeArray, safeDate, safeNumber, safeString } from '@/lib/normalize';
@@ -21,6 +22,7 @@ export default function StudentLibrary() {
   const [libraryBooks, setLibraryBooks] = useState<any[]>([]);
   const [_apiLoading, _setApiLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('borrowed');
+  const { user: authUser } = useAuth();
   const [renewingBookId, setRenewingBookId] = useState<string | null>(null);
 
   const normalizeBook = (raw: any) => ({
@@ -114,6 +116,8 @@ export default function StudentLibrary() {
     const cardText = [
       'Campus Harmony ERP - Library Card',
       '',
+      `Member: ${authUser?.name ?? ''}`,
+      `Email: ${authUser?.email ?? ''}`,
       `Issued Books: ${issuedBooks.length}`,
       `Outstanding Fine: INR ${totalFines}`,
       `Generated On: ${new Date().toLocaleString()}`
@@ -128,6 +132,7 @@ export default function StudentLibrary() {
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+    toast({ title: 'Library card downloaded', description: 'Saved as library_card.txt.' });
   };
 
   const handleRenew = async (book: any) => {
@@ -264,7 +269,10 @@ export default function StudentLibrary() {
                             {getStatusBadge(book.status, book.dueDate)}
                           </div>
                           <div className="flex gap-2">
-                            {book.renewalCount < book.maxRenewals && (
+                            {book.status === 'overdue' && (
+                              <p className="self-center text-xs text-destructive">Overdue — return the book and settle the fine; it can't be renewed.</p>
+                            )}
+                            {book.status !== 'overdue' && book.renewalCount < book.maxRenewals && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -319,8 +327,11 @@ export default function StudentLibrary() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
+                    {returnedBooks.length === 0 && (
+                      <TableRow><TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">No returned books yet. Books you return will be listed here.</TableCell></TableRow>
+                    )}
                     {returnedBooks.map((book) => (
-                      <TableRow key={book.id}>
+                      <TableRow key={book.loanId || book.id}>
                         <TableCell className="font-medium">{book.title}</TableCell>
                         <TableCell>{book.author}</TableCell>
                         <TableCell>{book.issuedDate.toLocaleDateString('en-IN')}</TableCell>

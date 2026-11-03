@@ -53,6 +53,8 @@ export default function Procurement() {
     .filter((po: any) => !['paid', 'closed'].includes(String(po.status || '').toLowerCase()))
     .reduce((sum: number, po: any) => sum + Number(po.totalAmount || 0), 0);
 
+  const invoiceRows = purchaseOrders.filter((po: any) => po.invoiceNumber || String(po.status || '').toLowerCase() === 'delivered');
+
   const formatDate = (value: any) => {
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-IN');
@@ -311,12 +313,35 @@ export default function Procurement() {
             </CardContent></Card>
           </TabsContent>
 
-          <TabsContent value="invoices">
-            <Card><CardContent className="flex flex-col items-center justify-center py-16">
-              <FileText className="h-16 w-16 text-muted-foreground/30" />
-              <h3 className="mt-4 text-lg font-semibold">Invoice Management</h3>
-              <p className="text-sm text-muted-foreground">Record vendor invoices, schedule payments, and track dues</p>
-              <Button className="mt-4" onClick={() => setActiveTab('orders')}><Plus className="mr-2 h-4 w-4" />Record Invoice</Button>
+          <TabsContent value="invoices" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Vendor invoices recorded against purchase orders, and delivered orders still awaiting an invoice.</p>
+              <Button size="sm" onClick={() => setActiveTab('orders')}><Plus className="mr-2 h-4 w-4" />Record Invoice</Button>
+            </div>
+            <Card><CardContent className="p-0">
+              <table className="w-full" data-testid="invoices-table">
+                <thead><tr className="border-b bg-muted/50">
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Invoice</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">PO</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Vendor</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Amount</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Paid on</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
+                </tr></thead>
+                <tbody>
+                  {invoiceRows.map((po: any) => (
+                    <tr key={po.id} className="border-b last:border-0">
+                      <td className="px-4 py-3 text-sm font-medium">{po.invoiceNumber || '—'}</td>
+                      <td className="px-4 py-3 text-sm">{po.poNumber}</td>
+                      <td className="px-4 py-3 text-sm">{po.vendor?.name ?? po.vendorName ?? '-'}</td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold">₹{Number(po.totalAmount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{po.paymentDate ? formatDate(po.paymentDate) : '-'}</td>
+                      <td className="px-4 py-3 text-sm capitalize">{po.invoiceNumber ? (po.paymentDate ? 'paid' : 'invoiced') : 'awaiting invoice'}</td>
+                    </tr>
+                  ))}
+                  {invoiceRows.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">No invoices recorded and no delivered orders awaiting one.</td></tr>}
+                </tbody>
+              </table>
             </CardContent></Card>
           </TabsContent>
         </Tabs>

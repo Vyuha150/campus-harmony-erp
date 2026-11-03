@@ -1,6 +1,14 @@
 import { fetchApi, postApi } from '@/lib/apiService';
 import { downloadCsv } from '@/lib/download';
 
+export interface FinanceReport { title: string; columns: string[]; rows: Array<Array<string | number>>; recordCount: number }
+
+/** Build a finance report on the server without downloading it (for on-screen preview). */
+export async function buildFinanceReport(type: string, startDate?: string, endDate?: string): Promise<FinanceReport> {
+  const r = await postApi<any>('/finance/reports/generate', { type, ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}) });
+  return { title: String(r?.title ?? type), columns: r?.columns ?? [], rows: r?.rows ?? [], recordCount: Number(r?.recordCount ?? 0) };
+}
+
 /** Build a finance report on the server and download it as CSV. Returns the row count. */
 export async function downloadFinanceReport(type: string, startDate?: string, endDate?: string): Promise<number> {
   const r = await postApi<any>('/finance/reports/generate', { type, ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}) });

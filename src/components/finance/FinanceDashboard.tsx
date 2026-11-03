@@ -1,4 +1,5 @@
-import { downloadFinanceReport } from '@/lib/financeReports';
+import { downloadFinanceReport, buildFinanceReport, type FinanceReport } from '@/lib/financeReports';
+import { ReportPreviewDialog } from '@/components/finance/ReportPreviewDialog';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +38,7 @@ export default function FinanceDashboard() {
   const [financeTasks, setFinanceTasks] = useState<any>([]);
   const [budgetAllocations, setBudgetAllocations] = useState<any>([]);
   const { toast } = useToast();
+  const [statement, setStatement] = useState<FinanceReport | null>(null);
   const [_apiLoading, _setApiLoading] = useState(true);
   useEffect(() => {
     fetchApi('/finance/snapshot').then(d => setFinancialSnapshot(d)).catch((error) => { console.error('API request failed', error); });
@@ -66,6 +68,15 @@ export default function FinanceDashboard() {
       setFinanceTasks((prev: any[]) => prev.map((task: any) => task.id === id ? { ...task, status } : task));
     } catch (error) {
       console.error('Failed to update task', error);
+    }
+  };
+
+  const viewStatement = async () => {
+    try {
+      const year = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;
+      setStatement(await buildFinanceReport('Income & Expenditure', `${year}-04-01`, new Date().toISOString().slice(0, 10)));
+    } catch (error: any) {
+      toast({ title: 'Generation failed', description: error.message || 'Could not generate statement.', variant: 'destructive' });
     }
   };
 
@@ -105,7 +116,7 @@ export default function FinanceDashboard() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => generateDashboardReport('dashboard_export')}><FileText className="mr-2 h-4 w-4" />Export Report</Button>
-            <Button size="sm" onClick={() => generateDashboardReport('financial_statement')}><BarChart3 className="mr-2 h-4 w-4" />Generate Statement</Button>
+            <Button size="sm" onClick={viewStatement}><BarChart3 className="mr-2 h-4 w-4" />Generate Statement</Button>
           </div>
         </div>
 
@@ -326,6 +337,7 @@ export default function FinanceDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+      <ReportPreviewDialog report={statement} onClose={() => setStatement(null)} />
     </DashboardLayout>
   );
 }
