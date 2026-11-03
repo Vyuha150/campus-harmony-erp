@@ -34,15 +34,22 @@ export function downloadCsv(
   downloadBlob(filename, new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
 }
 
-/** Download an arbitrary blob under `filename`. */
+/**
+ * Download an arbitrary blob under `filename`.
+ *
+ * The toast comes first and stays up for a minute; the download starts a
+ * moment later so the click that triggered it has finished by then.
+ */
 export function downloadBlob(filename: string, blob: Blob): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-  toast({ title: `Downloaded ${filename}` });
+  toast({ title: `Downloaded ${filename}`, duration: 60000 });
+  setTimeout(() => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, 300);
 }
