@@ -42,3 +42,6 @@ backend/prisma/*.bak-*
 
 # MongoDB Atlas onboarding credentials. Holds a live database password.
 personal.env
+
+# Ids of the workflow instances the Finance demo-data script created, so `down` can remove them.
+backend/scripts/seed-testsprite-finance.manifest.json
